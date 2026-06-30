@@ -1,0 +1,702 @@
+{
+    "shop_name": "Bijouterie GoldShop",
+    "shop_address": "Adresse du magasin",
+    "shop_phone": "0555 00 00 00",
+    "shop_rc": "azeazea",
+    "shop_nif": "zeazeazea",
+    "invoice_path": "../factures",
+    "currency": "DA",
+    "backup_paths": [],
+    "theme": "Standard (Gold)",
+    "zoom_level": 99,
+    "animations": true,
+    "auto_virtual_keyboard_enabled": false,
+    "auto_virtual_keyboard_targets": {
+        "line_edit": true,
+        "text_edit": true,
+        "spin_box": false,
+        "editable_combo": true,
+        "combo_box": false
+    },
+    "ui_customization": {
+        "active_theme": "ERP Clair",
+        "themes": {
+            "ERP Clair": {
+                "description": "Theme clair, sobre et dense pour usage ERP.",
+                "palette": {
+                    "primary": "#007572",
+                    "primary_hover": "#006a67",
+                    "accent": "#d88a21",
+                    "background": "#f5f7f9",
+                    "surface": "#ffffff",
+                    "surface_alt": "#eef3f7",
+                    "text": "#1f2933",
+                    "muted": "#6b7280",
+                    "border": "#d9e1e8",
+                    "success": "#1f8f61",
+                    "danger": "#b42318",
+                    "sidebar": "#ffffff",
+                    "selection": "#dff2f1"
+                },
+                "layout": {
+                    "font_size": 13,
+                    "button_height": 32,
+                    "input_height": 32,
+                    "table_row_height": 34,
+                    "radius": 5,
+                    "container_radius": 2,
+                    "spacing": 8,
+                    "sidebar_full_width": 250,
+                    "sidebar_compact_width": 70,
+                    "density": "compact"
+                }
+            },
+            "ERP Sombre": {
+                "description": "Theme sombre complet pour usage tactile et caisse.",
+                "palette": {
+                    "primary": "#33c7b8",
+                    "primary_hover": "#4fd9cb",
+                    "accent": "#f1a849",
+                    "background": "#111820",
+                    "surface": "#17222c",
+                    "surface_alt": "#22303d",
+                    "text": "#eef4f8",
+                    "muted": "#a8b5c2",
+                    "border": "#354655",
+                    "success": "#58d68d",
+                    "danger": "#ff7b72",
+                    "sidebar": "#0e151c",
+                    "selection": "#204f55"
+                },
+                "layout": {
+                    "font_size": 13,
+                    "button_height": 32,
+                    "input_height": 32,
+                    "table_row_height": 34,
+                    "radius": 5,
+                    "container_radius": 2,
+                    "spacing": 8,
+                    "sidebar_full_width": 250,
+                    "sidebar_compact_width": 70,
+                    "density": "compact"
+                }
+            }
+        },
+        "element_overrides": {},
+        "custom_qss": "",
+        "active_qss_profile": "",
+        "qss_profiles": {},
+        "layout_structure": {
+            "sidebar": {
+                "groups": [
+                    {
+                        "id": "main",
+                        "label": "Principal",
+                        "items": [
+                            "nav_sales",
+                            "nav_inventory",
+                            "nav_client_commands",
+                            "nav_inventory_count",
+                            "nav_official_suppliers"
+                        ]
+                    },
+                    {
+                        "id": "management",
+                        "label": "Gestion",
+                        "items": [
+                            "nav_partners"
+                        ]
+                    },
+                    {
+                        "id": "system",
+                        "label": "Systeme",
+                        "items": [
+                            "nav_data",
+                            "nav_settings"
+                        ]
+                    }
+                ],
+                "hidden": []
+            },
+            "tabs": {
+                "nav_inventory": {
+                    "order": [
+                        "tab_inv_list",
+                        "tab_inv_form"
+                    ],
+                    "advanced": [],
+                    "hidden": []
+                },
+                "nav_partners": {
+                    "order": [
+                        "tab_clients",
+                        "tab_suppliers"
+                    ],
+                    "advanced": [],
+                    "hidden": []
+                },
+                "nav_services": {
+                    "order": [
+                        "tab_repairs",
+                        "tab_artisans"
+                    ],
+                    "advanced": [],
+                    "hidden": []
+                },
+                "nav_finance": {
+                    "order": [
+                        "finance_view",
+                        "tab_treasury_ops",
+                        "tab_cashbox",
+                        "tab_expenses"
+                    ],
+                    "advanced": [],
+                    "hidden": []
+                },
+                "nav_data": {
+                    "order": [
+                        "tab_metals",
+                        "tab_categories",
+                        "tab_product_names",
+                        "tab_locations",
+                        "tab_currencies",
+                        "tab_treasury_locs",
+                        "tab_exp_cats",
+                        "tab_invoice_notes"
+                    ],
+                    "advanced": [],
+                    "hidden": []
+                },
+                "nav_settings": {
+                    "order": [
+                        "tab_config",
+                        "tab_users",
+                        "tab_system_logs"
+                    ],
+                    "advanced": [],
+                    "hidden": []
+                },
+                "nav_history": {
+                    "order": [
+                        "tab_hist_sessions",
+                        "tab_hist_sales",
+                        "tab_hist_products"
+                    ],
+                    "advanced": [],
+                    "hidden": []
+                }
+            },
+            "button_zones": {},
+            "hidden_elements": []
+        }
+    },
+    "default_gold_purity": 999.9,
+    "default_silver_purity": 925.0,
+    "auto_backup_enabled": false,
+    "auto_backup_interval": 60.0,
+    "auto_backup_password": "",
+    "duckdns": {
+        "enabled": true,
+        "domain": "rtxa",
+        "token": "7c592332-77e7-4f81-b7a0-ba14f03cf0e5",
+        "interval_minutes": 30.0,
+        "last_ip": "105.110.1.244",
+        "last_status": "ok",
+        "last_message": "DuckDNS updated successfully.",
+        "last_update_at": "2026-06-29T15:28:25"
+    },
+    "print_settings": {
+        "default": {
+            "page_width_pixels": 576,
+            "center_x": 288,
+            "margin": 20,
+            "line_spacing": 10,
+            "bottom_margin": 50,
+            "extra_bottom_feed_pixels": 100,
+            "fonts": {
+                "title": {
+                    "name": "Tahoma",
+                    "height": 36,
+                    "weight": 700
+                },
+                "normal_bold": {
+                    "name": "Tahoma",
+                    "height": 28,
+                    "weight": 700
+                },
+                "normal": {
+                    "name": "Tahoma",
+                    "height": 26,
+                    "weight": 400
+                },
+                "small": {
+                    "name": "Tahoma",
+                    "height": 22,
+                    "weight": 400
+                }
+            }
+        },
+        "compact": {
+            "page_width_pixels": 576,
+            "center_x": 288,
+            "margin": 5,
+            "line_spacing": 5,
+            "bottom_margin": 15,
+            "extra_bottom_feed_pixels": 30,
+            "fonts": {
+                "title": {
+                    "name": "Tahoma",
+                    "height": 30,
+                    "weight": 700
+                },
+                "normal_bold": {
+                    "name": "Tahoma",
+                    "height": 24,
+                    "weight": 700
+                },
+                "normal": {
+                    "name": "Tahoma",
+                    "height": 22,
+                    "weight": 400
+                },
+                "small": {
+                    "name": "Tahoma",
+                    "height": 18,
+                    "weight": 400
+                }
+            }
+        },
+        "xprinter365b": {
+            "page_width_pixels": 566,
+            "center_x": 283,
+            "margin": 0,
+            "line_spacing": 8,
+            "bottom_margin": 40,
+            "extra_bottom_feed_pixels": 70,
+            "fonts": {
+                "title": {
+                    "name": "Tahoma",
+                    "height": 34,
+                    "weight": 700
+                },
+                "normal_bold": {
+                    "name": "Tahoma",
+                    "height": 26,
+                    "weight": 700
+                },
+                "normal": {
+                    "name": "Tahoma",
+                    "height": 24,
+                    "weight": 400
+                },
+                "small": {
+                    "name": "Tahoma",
+                    "height": 20,
+                    "weight": 400
+                }
+            }
+        }
+    },
+    "thermal_config": {
+        "active_theme": "Default",
+        "printer_name": "XP-80C",
+        "print_profile": "default",
+        "paper_width": "80mm",
+        "header_text": "Bienvenue chez GoldShop",
+        "footer_text": "Merci de votre visite !",
+        "cut_paper": true,
+        "open_drawer": false,
+        "themes": {
+            "Default": {
+                "printer_name": "XP-80C",
+                "print_profile": "default",
+                "paper_width": "80mm",
+                "header_text": "Bienvenue chez GoldShop",
+                "footer_text": "Merci de votre visite !",
+                "cut_paper": true,
+                "open_drawer": false,
+                "store_name": "Bijouterie GoldShop",
+                "activity": "Vente_Réparation_Transformation",
+                "address": "CAMP CHEVALIER_JIJEL_ALGERIA",
+                "phone": "0.30.51.49.84",
+                "mobile": "06.74.59.60.48",
+                "logo_path": "",
+                "logo_settings": {
+                    "scale": 100,
+                    "threshold": 127
+                },
+                "qr_link": "",
+                "qr_text": "JEWELRY AMINE LAOUICI",
+                "qr_size": 70,
+                "qr_pos": "Haut (À Gauche)",
+                "show_barcode": true,
+                "barcode_height": 50,
+                "show_item_barcode": true,
+                "show_weight": true,
+                "show_history": true,
+                "page_width": 576,
+                "center_x": 288,
+                "margin": 20,
+                "font_title": 32,
+                "font_normal": 22,
+                "show_versement_rate": false
+            }
+        },
+        "store_name": "Bijouterie GoldShop",
+        "activity": "Vente_Réparation_Transformation",
+        "address": "CAMP CHEVALIER_JIJEL_ALGERIA",
+        "phone": "0.30.51.49.84",
+        "mobile": "06.74.59.60.48",
+        "logo_path": "",
+        "logo_settings": {
+            "scale": 100,
+            "threshold": 127
+        },
+        "qr_link": "",
+        "qr_text": "JEWELRY AMINE LAOUICI",
+        "qr_size": 70,
+        "qr_pos": "Haut (À Gauche)",
+        "show_barcode": true,
+        "barcode_height": 50,
+        "show_item_barcode": true,
+        "show_weight": true,
+        "show_history": true,
+        "page_width": 576,
+        "center_x": 288,
+        "margin": 20,
+        "font_title": 32,
+        "font_normal": 22,
+        "show_versement_rate": false
+    },
+    "label_config": {
+        "server": {
+            "port": 38476
+        },
+        "active_theme": "Default",
+        "printer_name": "Xprinter XP-TT424B",
+        "label": {
+            "width_mm": 80.0,
+            "height_mm": 10.0,
+            "gap_mm": 3.0
+        },
+        "print_area": {
+            "x_pos_mm": 0.0,
+            "y_pos_mm": 0.0
+        },
+        "elements": {
+            "product_name": {
+                "show": true,
+                "center_x_mm": 15.0,
+                "y_pos_mm": 1.0,
+                "font_size": 16,
+                "font_family": "arial.ttf"
+            },
+            "price": {
+                "show": true,
+                "center_x_mm": 15.0,
+                "y_pos_mm": 4.5,
+                "font_size": 20,
+                "font_family": "arial.ttf"
+            },
+            "barcode": {
+                "show": true,
+                "center_x_mm": 36.0,
+                "y_pos_mm": 1.0,
+                "module_width_mm": 0.125,
+                "height_mm": 4.0
+            },
+            "barcode_text": {
+                "show": false,
+                "center_x_mm": 48.0,
+                "y_pos_mm": 9.0,
+                "font_size": 1,
+                "font_family": "arial.ttf"
+            },
+            "category": {
+                "show": true,
+                "center_x_mm": 10.0,
+                "y_pos_mm": 9.0,
+                "font_size": 10,
+                "font_family": "arial.ttf"
+            },
+            "static_text": {
+                "show": true,
+                "text": "Moussi",
+                "center_x_mm": 20.0,
+                "y_pos_mm": 1.0,
+                "font_size": 10,
+                "font_family": "arial.ttf"
+            },
+            "model_name": {
+                "show": true,
+                "center_x_mm": 10.0,
+                "y_pos_mm": 12.0,
+                "font_size": 10,
+                "font_family": "arial.ttf"
+            },
+            "metal_type": {
+                "show": true,
+                "center_x_mm": 30.0,
+                "y_pos_mm": 12.0,
+                "font_size": 10,
+                "font_family": "arial.ttf"
+            },
+            "weight": {
+                "show": true,
+                "center_x_mm": 20.0,
+                "y_pos_mm": 15.0,
+                "font_size": 10,
+                "font_family": "arial.ttf",
+                "prefix": "Poids: ",
+                "suffix": " g",
+                "decimals": 2
+            }
+        },
+        "themes": {
+            "Default": {
+                "printer_name": "Xprinter XP-TT424B",
+                "label": {
+                    "width_mm": 80.0,
+                    "height_mm": 10.0,
+                    "gap_mm": 3.0
+                },
+                "print_area": {
+                    "x_pos_mm": 0.0,
+                    "y_pos_mm": 0.0
+                },
+                "elements": {
+                    "product_name": {
+                        "show": true,
+                        "center_x_mm": 15.0,
+                        "y_pos_mm": 1.0,
+                        "font_size": 16,
+                        "font_family": "arial.ttf"
+                    },
+                    "price": {
+                        "show": true,
+                        "center_x_mm": 15.0,
+                        "y_pos_mm": 4.5,
+                        "font_size": 20,
+                        "font_family": "arial.ttf"
+                    },
+                    "barcode": {
+                        "show": true,
+                        "center_x_mm": 36.0,
+                        "y_pos_mm": 1.0,
+                        "module_width_mm": 0.125,
+                        "height_mm": 4.0
+                    },
+                    "barcode_text": {
+                        "show": false,
+                        "center_x_mm": 48.0,
+                        "y_pos_mm": 9.0,
+                        "font_size": 1,
+                        "font_family": "arial.ttf"
+                    },
+                    "category": {
+                        "show": true,
+                        "center_x_mm": 10.0,
+                        "y_pos_mm": 9.0,
+                        "font_size": 10,
+                        "font_family": "arial.ttf"
+                    },
+                    "static_text": {
+                        "show": true,
+                        "text": "Moussi",
+                        "center_x_mm": 20.0,
+                        "y_pos_mm": 1.0,
+                        "font_size": 10,
+                        "font_family": "arial.ttf"
+                    },
+                    "model_name": {
+                        "show": true,
+                        "center_x_mm": 10.0,
+                        "y_pos_mm": 12.0,
+                        "font_size": 10,
+                        "font_family": "arial.ttf"
+                    },
+                    "metal_type": {
+                        "show": true,
+                        "center_x_mm": 30.0,
+                        "y_pos_mm": 12.0,
+                        "font_size": 10,
+                        "font_family": "arial.ttf"
+                    },
+                    "weight": {
+                        "show": true,
+                        "center_x_mm": 20.0,
+                        "y_pos_mm": 15.0,
+                        "font_size": 10,
+                        "font_family": "arial.ttf",
+                        "prefix": "Poids: ",
+                        "suffix": " g",
+                        "decimals": 2
+                    }
+                }
+            }
+        }
+    },
+    "languages": {},
+    "web_access": {
+        "password_hash": "pbkdf2:sha256:600000$7A65haBazCLWTchc$0f51cc3302c5a5a18e962191f79e6b77d1c9c41a4d878ed13759d9883475f1de"
+    },
+    "pdf_config": {
+        "printer_name": "AnyDesk Printer",
+        "page_size": "A5",
+        "margin_mm": 3,
+        "fonts": {
+            "shop_name": 22,
+            "doc_title": 18,
+            "normal": 12,
+            "table_header": 12,
+            "qr_text": 10
+        },
+        "colors": {
+            "text_primary": "#333333",
+            "table_header_bg": "#f5f5f5",
+            "paid_green": "#27ae60",
+            "debt_red": "#c0392b",
+            "header_text": "#333333",
+            "header_bg": "#ffffff"
+        },
+        "logo": {
+            "path": "D:/git/GoldShop/ui/logo.png",
+            "width": 91,
+            "use_bw_filter": false,
+            "threshold": 4,
+            "align": "À gauche du nom"
+        },
+        "codes": {
+            "qr_link": "",
+            "qr_text": "Notre Page",
+            "qr_size": 60,
+            "show_qr": true,
+            "invoice_barcode_mode": "Code-Barres + Texte"
+        },
+        "display": {
+            "show_rc_nif": true,
+            "show_history": true,
+            "show_weight_balance": true,
+            "show_item_note": true,
+            "show_item_code_column": false,
+            "item_code_format": "Code-Barres",
+            "reste_in_weight": true,
+            "item_barcode_w": 70,
+            "item_barcode_h": 20,
+            "show_versement_items_section": false,
+            "show_versement_payment_rate": false
+        },
+        "texts": {
+            "title_facture": "FACTURE",
+            "title_versement": "BON DE VERSEMENT",
+            "title_versement_libre": "BON DE VERSEMENT LIBRE",
+            "title_versement_produit": "BON DE VERSEMENT SUR PRODUIT",
+            "title_credit_client": "DOCUMENT CREDIT CLIENT",
+            "text_arrete": "Arrêté la présente somme de :",
+            "policy_paid": "Le produit vendu n'est ni repris ni échangé.",
+            "policy_debt": "Les versements ne sont ni remboursés ni échangés.",
+            "arabic_paid": "الوزن المدفوع",
+            "arabic_debt": "هذه الوثيقة تثبت الدفعات المسبقة الخاصة بالزبون، ومن الضروري إحضارها.",
+            "versement_items_section_title": "Détail des produits réservés",
+            "versement_payments_section_title": "Versements sur produit",
+            "versement_label_article": "Article",
+            "versement_label_code": "Code Produit",
+            "versement_label_total_weight": "Poids total",
+            "versement_label_total_amount": "Montant total",
+            "versement_label_paid_amount": "Montant payé",
+            "versement_label_paid_weight": "Poids payé",
+            "versement_label_remaining_amount": "Reste montant",
+            "versement_label_remaining_weight": "Reste poids",
+            "versement_label_payment_date": "Date",
+            "versement_label_payment_amount": "Montant Versé",
+            "versement_label_payment_weight": "Poids (غرام)",
+            "versement_label_payment_rate": "Prix/g paiement",
+            "versement_summary_invoice_amount": "Montant facture",
+            "versement_summary_total_weight": "Poids Total d'article",
+            "versement_summary_total_paid": "Total Payé",
+            "versement_summary_paid_weight": "Poids Acquis",
+            "versement_summary_remaining_weight": "Reste en Poids (الغرام المتبقي)"
+        },
+        "active_theme": "Default",
+        "themes": {
+            "Default": {
+                "printer_name": "AnyDesk Printer",
+                "page_size": "A5",
+                "margin_mm": 3,
+                "fonts": {
+                    "shop_name": 22,
+                    "doc_title": 18,
+                    "normal": 12,
+                    "table_header": 12,
+                    "qr_text": 10
+                },
+                "colors": {
+                    "text_primary": "#333333",
+                    "table_header_bg": "#f5f5f5",
+                    "paid_green": "#27ae60",
+                    "debt_red": "#c0392b",
+                    "header_text": "#333333",
+                    "header_bg": "#ffffff"
+                },
+                "logo": {
+                    "path": "D:/git/GoldShop/ui/logo.png",
+                    "width": 91,
+                    "use_bw_filter": false,
+                    "threshold": 4,
+                    "align": "À gauche du nom"
+                },
+                "codes": {
+                    "qr_link": "",
+                    "qr_text": "Notre Page",
+                    "qr_size": 60,
+                    "show_qr": true,
+                    "invoice_barcode_mode": "Code-Barres + Texte"
+                },
+                "display": {
+                    "show_rc_nif": true,
+                    "show_history": true,
+                    "show_weight_balance": true,
+                    "show_item_note": true,
+                    "show_item_code_column": false,
+                    "item_code_format": "Code-Barres",
+                    "reste_in_weight": true,
+                    "item_barcode_w": 70,
+                    "item_barcode_h": 20,
+                    "show_versement_items_section": false,
+                    "show_versement_payment_rate": false
+                },
+                "texts": {
+                    "title_facture": "FACTURE",
+                    "title_versement": "BON DE VERSEMENT",
+                    "title_versement_libre": "BON DE VERSEMENT LIBRE",
+                    "title_versement_produit": "BON DE VERSEMENT SUR PRODUIT",
+                    "title_credit_client": "DOCUMENT CREDIT CLIENT",
+                    "text_arrete": "Arrêté la présente somme de :",
+                    "policy_paid": "Le produit vendu n'est ni repris ni échangé.",
+                    "policy_debt": "Les versements ne sont ni remboursés ni échangés.",
+                    "arabic_paid": "الوزن المدفوع",
+                    "arabic_debt": "هذه الوثيقة تثبت الدفعات المسبقة الخاصة بالزبون، ومن الضروري إحضارها.",
+                    "versement_items_section_title": "Détail des produits réservés",
+                    "versement_payments_section_title": "Versements sur produit",
+                    "versement_label_article": "Article",
+                    "versement_label_code": "Code Produit",
+                    "versement_label_total_weight": "Poids total",
+                    "versement_label_total_amount": "Montant total",
+                    "versement_label_paid_amount": "Montant payé",
+                    "versement_label_paid_weight": "Poids payé",
+                    "versement_label_remaining_amount": "Reste montant",
+                    "versement_label_remaining_weight": "Reste poids",
+                    "versement_label_payment_date": "Date",
+                    "versement_label_payment_amount": "Montant Versé",
+                    "versement_label_payment_weight": "Poids (غرام)",
+                    "versement_label_payment_rate": "Prix/g paiement",
+                    "versement_summary_invoice_amount": "Montant facture",
+                    "versement_summary_total_weight": "Poids Total d'article",
+                    "versement_summary_total_paid": "Total Payé",
+                    "versement_summary_paid_weight": "Poids Acquis",
+                    "versement_summary_remaining_weight": "Reste en Poids (الغرام المتبقي)"
+                }
+            }
+        }
+    }
+}

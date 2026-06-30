@@ -1,0 +1,16 @@
+Flask
+PySide6
+mysql-connector-python
+python-dotenv
+SQLAlchemy
+pandas
+xlrd
+openpyxl
+qtawesome
+pyautogui
+requests
+bs4
+pywin32
+python-barcode
+Pillow
+matplotlib
