@@ -26,13 +26,16 @@ class AddPaymentDialog(QDialog):
         self.v_data = None
         self.item_prices = {}
         self.item_weights = {}
+        self._poids_deduit_manual = False
+        self._updating_poids_deduit = False
+        self._last_suggested_poids_deduit = 0.0
         
         self.setWindowTitle("Ajouter un nouveau versement (Paiement)")
         self.setMinimumWidth(880) 
         
         self._load_versement_data()
         self.init_ui()
-        self.update_dynamic_summary()
+        self.auto_calculate_poids_deduit()
 
     def _load_versement_data(self):
         try:
@@ -109,7 +112,7 @@ class AddPaymentDialog(QDialog):
         self.combo_target.setStyleSheet("padding: 6px; font-size: 14px; font-weight: bold; border: 1px solid #bdc3c7; border-radius: 4px;")
         self.combo_target.addItem("📦 Dossier Global (Aucun article spécifique)", None)
         self._populate_target_combo()
-        self.combo_target.currentIndexChanged.connect(self.update_dynamic_summary)
+        self.combo_target.currentIndexChanged.connect(lambda _: self.auto_calculate_poids_deduit())
         
         btn_details = QPushButton("ℹ️ Détails Produit")
         btn_details.setStyleSheet("background-color: #2980b9; color: white; font-weight: bold; font-size: 14px; padding: 6px 12px; border-radius: 4px;")
@@ -232,7 +235,19 @@ class AddPaymentDialog(QDialog):
         self.inp_poids_deduit.setSuffix(" g")
         self.inp_poids_deduit.setDecimals(3)
         self.inp_poids_deduit.setStyleSheet("padding: 5px; font-size: 14px; font-weight: bold; color: white; background-color: #2c3e50;")
-        self.inp_poids_deduit.valueChanged.connect(lambda _: self.update_dynamic_summary())
+        self.inp_poids_deduit.valueChanged.connect(self._on_poids_deduit_changed)
+
+        self.lbl_poids_suggestion = QLabel("Suggestion: 0.000 g")
+        self.lbl_poids_suggestion.setStyleSheet("font-size: 12px; font-weight: bold; color: #075f58;")
+        self.btn_apply_poids_suggestion = QPushButton("Appliquer")
+        self.btn_apply_poids_suggestion.setCursor(Qt.PointingHandCursor)
+        self.btn_apply_poids_suggestion.setStyleSheet("background-color: #0f8f83; color: white; padding: 4px 8px; font-weight: bold; border-radius: 4px; font-size: 12px;")
+        self.btn_apply_poids_suggestion.clicked.connect(self.apply_poids_suggestion)
+        poids_suggestion_layout = QHBoxLayout()
+        poids_suggestion_layout.setContentsMargins(0, 0, 0, 0)
+        poids_suggestion_layout.setSpacing(6)
+        poids_suggestion_layout.addWidget(self.lbl_poids_suggestion, stretch=1)
+        poids_suggestion_layout.addWidget(self.btn_apply_poids_suggestion)
 
         self.inp_notes = QLineEdit()
         self.inp_notes.setPlaceholderText("Notes ou observations...")
@@ -240,6 +255,7 @@ class AddPaymentDialog(QDialog):
 
         form2.addRow("Remise accordée (DA) :", self._wrap_with_numpad(self.inp_remise_da))
         form2.addRow("Poids à DÉDUIRE (g) :", self._wrap_with_numpad(self.inp_poids_deduit))
+        form2.addRow("", poids_suggestion_layout)
         form2.addRow("Notes :", self._wrap_with_keyboard(self.inp_notes))
         col2_layout.addWidget(col2_box)
 
@@ -361,23 +377,46 @@ class AddPaymentDialog(QDialog):
                 else:
                     QMessageBox.warning(self, "Erreur", f"Le reste cible doit être entre 0 et {base_amount:,.2f} DA.")
 
-    def auto_calculate_poids_deduit(self):
-        """مساعد في الحساب: يكتب تلقائياً الوزن المقتنى بالجرام ويسمح للمستخدم بالتعديل اليدوي كأداة مساعدة"""
+    def _calculate_poids_suggestion(self):
         base_amount = self._get_active_base_amount()
         base_weight = self._get_active_base_weight()
-        
+        if base_amount <= 0 or base_weight <= 0:
+            return 0.0
+
         current_pay = self.inp_montant_da.value()
         remise = self.inp_remise_da.value()
-        
-        if base_amount > 0 and base_weight > 0:
-            prix_g_moyen = base_amount / base_weight
-            poids_auto = (current_pay + remise) / prix_g_moyen
-            if poids_auto > base_weight: poids_auto = base_weight
-            
-            self.inp_poids_deduit.blockSignals(True)
-            self.inp_poids_deduit.setValue(poids_auto)
-            self.inp_poids_deduit.blockSignals(False)
-            
+        prix_g_moyen = base_amount / base_weight
+        poids_suggested = (current_pay + remise) / prix_g_moyen
+        if poids_suggested > base_weight:
+            return base_weight
+        return poids_suggested
+
+    def _set_poids_deduit_value(self, value):
+        self._updating_poids_deduit = True
+        self.inp_poids_deduit.blockSignals(True)
+        self.inp_poids_deduit.setValue(value)
+        self.inp_poids_deduit.blockSignals(False)
+        self._updating_poids_deduit = False
+
+    def _on_poids_deduit_changed(self, _value):
+        if not self._updating_poids_deduit:
+            self._poids_deduit_manual = True
+        self.update_dynamic_summary()
+
+    def apply_poids_suggestion(self):
+        self._poids_deduit_manual = False
+        self._set_poids_deduit_value(self._last_suggested_poids_deduit)
+        self.btn_apply_poids_suggestion.setEnabled(False)
+        self.update_dynamic_summary()
+
+    def auto_calculate_poids_deduit(self):
+        """مساعد في الحساب: يكتب تلقائياً الوزن المقتنى بالجرام ويسمح للمستخدم بالتعديل اليدوي كأداة مساعدة"""
+        suggested = self._calculate_poids_suggestion()
+        self._last_suggested_poids_deduit = suggested
+        self.lbl_poids_suggestion.setText(f"Suggestion: {suggested:,.3f} g")
+        self.btn_apply_poids_suggestion.setEnabled(abs(suggested - self.inp_poids_deduit.value()) > 0.0005)
+        if not self._poids_deduit_manual:
+            self._set_poids_deduit_value(suggested)
         self.update_dynamic_summary()
 
     def update_dynamic_summary(self):
