@@ -45,8 +45,10 @@ class AddPaymentDialog(QDialog):
                 if self.v_data.get('type_versement') == 'A_VIDE':
                     self.is_versement_libre = True
                 for item in self.v_data.get('items', []):
-                    self.item_prices[item['item_id']] = float(item.get('selling_price') or 0)
-                    self.item_weights[item['item_id']] = float(item.get('weight') or 0)
+                    versement_item_id = item.get('item_id') or item.get('id')
+                    if versement_item_id:
+                        self.item_prices[versement_item_id] = float(item.get('selling_price') or 0)
+                        self.item_weights[versement_item_id] = float(item.get('weight') or 0)
         except Exception:
             pass
 
@@ -441,7 +443,7 @@ class AddPaymentDialog(QDialog):
             with self.manager.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
                 cursor.execute("""
-                    SELECT vi.id, vi.inventory_id, vi.designation, i.weight, cat.name as category_name, sup.name as supplier_name
+                    SELECT vi.id, vi.inventory_id, vi.designation, i.weight, i.selling_price, cat.name as category_name, sup.name as supplier_name
                     FROM Versement_Items vi
                     LEFT JOIN Inventory i ON vi.inventory_id = i.id
                     LEFT JOIN Categories cat ON i.category_id = cat.id
@@ -453,6 +455,8 @@ class AddPaymentDialog(QDialog):
                 for item in items:
                     self.target_to_inventory[item['id']] = item['inventory_id']
                     w = float(item['weight'] or 0)
+                    self.item_weights[item['id']] = w
+                    self.item_prices[item['id']] = float(item.get('selling_price') or 0)
                     desig = item['designation']
                     display_name = f"{desig} ({w:.2f}g)" if (w > 0 and f"({w:.2f}g)" not in desig and not desig.strip().endswith("g)")) else desig
                     if item.get('category_name'):
