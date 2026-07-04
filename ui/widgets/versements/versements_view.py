@@ -1341,6 +1341,41 @@ class VersementsView(QWidget):
         if text_color: item.setForeground(QBrush(QColor(text_color)))
         self.table.setItem(row, col, item)
 
+    def _payment_amount_da(self, payment):
+        montant_da = float(payment.get('montant_da') or 0)
+        if montant_da == 0:
+            montant_da += float(payment.get('montant_euro') or 0) * float(payment.get('taux_change_euro') or 0)
+            montant_da += float(payment.get('montant_dollar') or 0) * float(payment.get('taux_change_dollar') or 0)
+            montant_da += float(payment.get('or_casse_g') or 0) * float(payment.get('prix_gramme_jour_da') or 0)
+        return montant_da + float(payment.get('remise_da') or 0)
+
+    def _calculate_item_balance(self, item, payments, total_active_price, total_active_weight):
+        item_id = item.get('item_id') or item.get('id')
+        item_price = float(item.get('selling_price') or 0)
+        item_weight = float(item.get('weight') or 0)
+
+        direct_payments = [p for p in payments if p.get('versement_item_id') == item_id]
+        global_payments = [p for p in payments if p.get('versement_item_id') is None]
+
+        direct_paid_da = sum(self._payment_amount_da(p) for p in direct_payments)
+        global_paid_da = sum(self._payment_amount_da(p) for p in global_payments)
+        shared_paid_da = global_paid_da * (item_price / total_active_price) if total_active_price > 0 else 0.0
+
+        direct_deducted_g = sum(float(p.get('poids_deduit_g') or 0) for p in direct_payments)
+        global_deducted_g = sum(float(p.get('poids_deduit_g') or 0) for p in global_payments)
+        shared_deducted_g = global_deducted_g * (item_weight / total_active_weight) if total_active_weight > 0 else 0.0
+
+        paid_da = direct_paid_da + shared_paid_da
+        deducted_g = direct_deducted_g + shared_deducted_g
+        return {
+            "price_da": item_price,
+            "paid_da": paid_da,
+            "remaining_da": max(0.0, item_price - paid_da),
+            "deducted_g": deducted_g,
+            "remaining_g": max(0.0, item_weight - deducted_g),
+            "has_shared": bool(global_payments),
+        }
+
     def load_data(self):
         self.table.setRowCount(0)
         status_map = {"En Cours": "EN_COURS", "Clôturé": "CLOTURE", "Annulé": "ANNULE", "Tous": None}
@@ -1365,21 +1400,38 @@ class VersementsView(QWidget):
                 header_details = f"Poids Total Actif: {v.get('total_weight_g', 0):.2f} g "
                 self.add_group_header_row(header_data, header_title, 4, header_details, 4, bg_color="#0f8f83", text_color="white")
 
+                payments = v.get('payments', [])
                 items = v.get('items', [])
+                active_items = [it for it in items if it.get('item_status') != 'ANNULE']
+                total_active_price = sum(float(it.get('selling_price') or 0) for it in active_items)
+                total_active_weight = sum(float(it.get('weight') or 0) for it in active_items)
                 if items:
                     for item in items:
                         row = self.table.rowCount()
                         self.table.insertRow(row)
                         i_statut = item.get('item_status', 'EN_COURS')
                         weight = float(item.get('weight') or 0)
+                        balance = self._calculate_item_balance(item, payments, total_active_price, total_active_weight)
                         i_data = {
                             "type": "ITEM", "v_id": v_id, "statut": statut, "item_id": item['item_id'], 
                             "item_status": i_statut, "inventory_id": item.get('inventory_id'), 
                             "designation": item.get('designation', 'Inconnu'),
-                            "weight": weight
+                            "weight": weight,
+                            "price_da": balance["price_da"],
+                            "paid_da": balance["paid_da"],
+                            "remaining_da": balance["remaining_da"],
+                            "deducted_g": balance["deducted_g"],
+                            "remaining_g": balance["remaining_g"]
                         }
                         designation = f"   💍 Article: {item.get('designation', 'Inconnu')}"
                         weight_str = f"Poids: {weight:.2f} g"
+                        price_str = f"Prix: {balance['price_da']:,.0f} DA" if balance["price_da"] else "-"
+                        paid_str = f"Payé: {balance['paid_da']:,.0f} DA" if balance["paid_da"] else "-"
+                        remain_da_str = f"Reste: {balance['remaining_da']:,.0f} DA" if balance["price_da"] else "-"
+                        remain_g_str = f"Reste: {balance['remaining_g']:.3f} g"
+                        obs_str = f"Reste produit: {balance['remaining_da']:,.0f} DA / {balance['remaining_g']:.3f} g"
+                        if balance["has_shared"]:
+                            obs_str += " (avec part des paiements globaux)"
                         
                         bg_c = None; fg_c = None
                         if i_statut == 'ANNULE': bg_c = "#fff5f3"; fg_c = "#be3528"
@@ -1387,14 +1439,15 @@ class VersementsView(QWidget):
                         else: bg_c = "#eef7f5"; fg_c = "#075f58"
                         
                         self.create_and_set_item(row, 0, designation, i_data, bold=True, align_center=False, bg_color=bg_c, text_color=fg_c)
-                        for col in range(1, 4): self.create_and_set_item(row, col, "-", i_data, bg_color=bg_c)
+                        self.create_and_set_item(row, 1, price_str, i_data, bold=True, bg_color=bg_c, text_color=fg_c)
+                        self.create_and_set_item(row, 2, paid_str, i_data, bg_color=bg_c, text_color=fg_c)
+                        self.create_and_set_item(row, 3, remain_da_str, i_data, bold=True, color_red=(balance["remaining_da"] > 0), bg_color=bg_c)
                         self.create_and_set_item(row, 4, weight_str, i_data, bold=True, bg_color=bg_c, text_color=fg_c)
-                        self.create_and_set_item(row, 5, "-", i_data, bg_color=bg_c)
+                        self.create_and_set_item(row, 5, remain_g_str, i_data, bold=True, color_red=(balance["remaining_g"] > 0), bg_color=bg_c)
                         self.create_and_set_item(row, 6, i_statut, i_data, bold=True, bg_color=bg_c, text_color=fg_c)
-                        self.create_and_set_item(row, 7, "-", i_data, bg_color=bg_c)
-                        self.table.setRowHeight(row, 28)
+                        self.create_and_set_item(row, 7, obs_str, i_data, align_center=False, bg_color=bg_c, text_color=fg_c)
+                        self.table.setRowHeight(row, 38)
 
-                payments = v.get('payments', [])
                 if is_annule and not payments:
                     row = self.table.rowCount()
                     self.table.insertRow(row)
