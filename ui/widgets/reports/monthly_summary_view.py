@@ -51,9 +51,9 @@ class MonthlySummaryView(QWidget):
         layout.addWidget(self.lbl_main_title)
 
         # --- إعداد الجدول ---
-        self.table = QTableWidget(0, 10) # 10 أعمدة
+        self.table = QTableWidget(0, 11) # 11 أعمدة
         self.table.setHorizontalHeaderLabels([
-            "Jours", "Dates", "P.S", "Recettes DA", "O.c", "TPE", "Euro", "Vendeur", "Impos", "Bénéfice (Faaida)"
+            "Jours", "Dates", "P.S", "Recettes DA", "O.c", "TPE", "Euro", "Dollar", "Vendeur", "Impos", "Bénéfice (Faaida)"
         ])
         
         # تنسيق الجدول ليشبه الصورة (اللون البنفسجي)
@@ -73,8 +73,8 @@ class MonthlySummaryView(QWidget):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         
         header = self.table.horizontalHeader()
-        for i in range(10):
-            header.setSectionResizeMode(i, QHeaderView.Stretch if i in [3, 9] else QHeaderView.ResizeToContents)
+        for i in range(11):
+            header.setSectionResizeMode(i, QHeaderView.Stretch if i in [3, 10] else QHeaderView.ResizeToContents)
             
         layout.addWidget(self.table)
 
@@ -141,8 +141,9 @@ class MonthlySummaryView(QWidget):
                 cursor.execute("""
                     SELECT 
                         DATE(vp.payment_date) as pay_date,
-                        SUM(CASE WHEN vp.montant_da > 0 AND COALESCE(vp.montant_euro, 0) = 0 AND COALESCE(vp.or_casse_g, 0) = 0 THEN vp.montant_da ELSE 0 END) as total_vp_recette,
+                        SUM(CASE WHEN vp.montant_da > 0 AND COALESCE(vp.montant_euro, 0) = 0 AND COALESCE(vp.montant_dollar, 0) = 0 AND COALESCE(vp.or_casse_g, 0) = 0 THEN vp.montant_da ELSE 0 END) as total_vp_recette,
                         SUM(vp.montant_euro) as total_vp_euro,
+                        SUM(vp.montant_dollar) as total_vp_dollar,
                         SUM(vp.or_casse_g) as total_vp_oc
                     FROM Versement_Payments vp
                     WHERE YEAR(vp.payment_date) = %s AND MONTH(vp.payment_date) = %s
@@ -154,7 +155,7 @@ class MonthlySummaryView(QWidget):
                 
                 num_days = calendar.monthrange(year, month)[1]
                 
-                sum_ps = sum_recettes = sum_oc = sum_tpe = sum_euro = sum_impos = sum_benefice = 0.0
+                sum_ps = sum_recettes = sum_oc = sum_tpe = sum_euro = sum_dollar = sum_impos = sum_benefice = 0.0
 
                 for day in range(1, num_days + 1):
                     current_date = date(year, month, day)
@@ -181,6 +182,7 @@ class MonthlySummaryView(QWidget):
                         oc = float(s_data.get('total_oc') or 0) + float(vp_data.get('total_vp_oc') or 0)
                         tpe = float(s_data.get('total_tpe') or 0)
                         euro = float(vp_data.get('total_vp_euro') or 0)
+                        dollar = float(vp_data.get('total_vp_dollar') or 0)
                         impos = float(s_data.get('total_impos') or 0)
                         benefice = float(s_data.get('total_benefice') or 0)
                         
@@ -190,6 +192,7 @@ class MonthlySummaryView(QWidget):
                         sum_oc += oc
                         sum_tpe += tpe
                         sum_euro += euro
+                        sum_dollar += dollar
                         sum_impos += impos
                         sum_benefice += benefice
 
@@ -199,6 +202,7 @@ class MonthlySummaryView(QWidget):
                             f"{oc:.2f}" if oc else "0",
                             f"{tpe:,.0f}" if tpe else "0",
                             f"{euro:,.0f}" if euro else "0",
+                            f"{dollar:,.0f}" if dollar else "0",
                             "Multi",
                             f"{impos:.2f}" if impos else "0",
                             f"{benefice:,.2f}" # الفائدة (Bénéfice)
@@ -207,14 +211,14 @@ class MonthlySummaryView(QWidget):
                         for col_idx, val in enumerate(cols, start=2):
                             item = QTableWidgetItem(val)
                             item.setTextAlignment(Qt.AlignCenter)
-                            if col_idx == 9: # تلوين الفائدة بالأخضر
+                            if col_idx == 10: # تلوين الفائدة بالأخضر
                                 item.setForeground(QBrush(QColor("#27ae60")))
                             self.table.setItem(row_idx, col_idx, item)
 
                     else:
                         # حالة عدم وجود مبيعات في هذا اليوم (Repot)
-                        for col_idx in range(2, 10):
-                            item = QTableWidgetItem("Repot" if col_idx != 9 else "-")
+                        for col_idx in range(2, 11):
+                            item = QTableWidgetItem("Repot" if col_idx != 10 else "-")
                             item.setTextAlignment(Qt.AlignCenter)
                             item.setForeground(QBrush(QColor("red")))
                             self.table.setItem(row_idx, col_idx, item)
@@ -226,7 +230,7 @@ class MonthlySummaryView(QWidget):
                 totals = [
                     "", "", 
                     f"{sum_ps:.2f}", f"{sum_recettes:,.0f}", f"{sum_oc:.2f}", 
-                    f"{sum_tpe:,.0f}", f"{sum_euro:,.0f}", "", 
+                    f"{sum_tpe:,.0f}", f"{sum_euro:,.0f}", f"{sum_dollar:,.0f}", "", 
                     f"{sum_impos:.2f}", f"{sum_benefice:,.2f}"
                 ]
                 
