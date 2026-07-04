@@ -948,8 +948,9 @@ class VersementsView(QWidget):
         
         act_print_pdf = act_print_direct = act_print_thermal = None
         act_pay_global = act_close = act_cancel = act_add_item = act_show_details = None
+        act_reopen_versement = None
         act_pay_item = act_retirer_item = act_cancel_item = act_delete_item = None
-        act_undo_retire = act_undo_cancel = None
+        act_change_item_status = None
         act_edit_pay = act_delete_pay = None
 
         if row_type == "HEADER":
@@ -980,6 +981,9 @@ class VersementsView(QWidget):
                 act_close = menu.addAction("✅ Clôturer tout le dossier")
                 menu.addSeparator()
                 act_cancel = menu.addAction("❌ Annuler tout le dossier")
+            elif v_statut in ('CLOTURE', 'ANNULE'):
+                menu.addSeparator()
+                act_reopen_versement = menu.addAction("🔄 Changer état : remettre le dossier En Cours")
             
         elif row_type == "ITEM":
             act_show_details = menu.addAction("ℹ️ Afficher les spécifications détaillées du produit")
@@ -992,9 +996,9 @@ class VersementsView(QWidget):
                 act_cancel_item = menu.addAction("❌ Annuler l'article (Retour vitrine)")
                 act_delete_item = menu.addAction("🗑️ Supprimer du dossier (Erreur d'ajout)")
             elif item_status == 'RETIRE':
-                act_undo_retire = menu.addAction("↩️ Annuler la livraison (Remettre En Cours)")
+                act_change_item_status = menu.addAction("🔄 Changer état : remettre l'article En Cours")
             elif item_status == 'ANNULE':
-                act_undo_cancel = menu.addAction("↩️ Restaurer cet article (Remettre En Cours)")
+                act_change_item_status = menu.addAction("🔄 Changer état : remettre l'article En Cours")
             else:
                 menu.addAction("ℹ️ Le dossier est " + v_statut.lower())
 
@@ -1026,12 +1030,14 @@ class VersementsView(QWidget):
             self._handle_cancel_item(data)
         elif action == act_delete_item:
             self._handle_delete_item(data)
-        elif action == act_undo_retire or action == act_undo_cancel:
-            self._handle_revert_item(data)
+        elif action == act_change_item_status:
+            self._handle_change_item_status(data)
         elif action == act_close:
             self._handle_close_versement(v_id)
         elif action == act_cancel:
             self._handle_cancel_versement(v_id)
+        elif action == act_reopen_versement:
+            self._handle_change_versement_status(v_id, 'EN_COURS')
         elif action == act_delete_pay:
             self._handle_delete_payment(data)
         elif action == act_edit_pay:
@@ -1097,8 +1103,8 @@ class VersementsView(QWidget):
             if success: self.load_data()
             else: QMessageBox.warning(self, "Erreur", msg)
 
-    def _handle_revert_item(self, data):
-        if QMessageBox.question(self, "Confirmer", "Restaurer ou modifier le statut de cet article dans le dossier ?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+    def _handle_change_item_status(self, data):
+        if QMessageBox.question(self, "Changer état", "Remettre cet article en cours dans le dossier ?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
             success, msg = self.manager.versements.revert_versement_item_status(data.get("item_id"))
             if success: self.load_data()
             else: QMessageBox.warning(self, "Erreur", msg)
@@ -1107,11 +1113,29 @@ class VersementsView(QWidget):
         if QMessageBox.question(self, "Clôturer", "Confirmer la clôture de ce versement ?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
             journee = self.manager.cash_box.get_or_create_today_session(user_id=1)
             journee_id = journee['id'] if journee else 1
-            if self.manager.versements.cloture_versement(v_id, journee_id): self.load_data()
+            success, msg = self.manager.versements.change_versement_status(v_id, 'CLOTURE', journee_id)
+            if success: self.load_data()
+            else: QMessageBox.warning(self, "Erreur", msg)
 
     def _handle_cancel_versement(self, v_id):
         if QMessageBox.question(self, "Annuler", "Voulez-vous vraiment annuler tout le dossier ?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
-            if self.manager.versements.cancel_versement(v_id): self.load_data()
+            success, msg = self.manager.versements.change_versement_status(v_id, 'ANNULE')
+            if success: self.load_data()
+            else: QMessageBox.warning(self, "Erreur", msg)
+
+    def _handle_change_versement_status(self, v_id, target_status):
+        labels = {
+            'EN_COURS': 'remettre ce dossier En Cours',
+            'CLOTURE': 'cloturer ce dossier',
+            'ANNULE': 'annuler ce dossier',
+        }
+        message = f"Confirmer: {labels.get(target_status, 'changer le statut de ce dossier')} ?"
+        if QMessageBox.question(self, "Changer état", message, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+            journee = self.manager.cash_box.get_or_create_today_session(user_id=1)
+            journee_id = journee['id'] if journee else 1
+            success, msg = self.manager.versements.change_versement_status(v_id, target_status, journee_id)
+            if success: self.load_data()
+            else: QMessageBox.warning(self, "Erreur", msg)
 
     def _handle_delete_payment(self, data):
         if QMessageBox.question(self, "Supprimer", "Voulez-vous vraiment annuler et supprimer ce paiement ?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
@@ -1167,6 +1191,8 @@ class VersementsView(QWidget):
                 self._add_action_btn("fa5s.money-bill-wave", "Ajouter un paiement (Global)", "#f1c40f", "#f39c12", lambda: self.open_add_payment_dialog(v_id))
                 self._add_action_btn("fa5s.check-circle", "Clôturer tout le dossier", "#2ecc71", "#27ae60", lambda: self._handle_close_versement(v_id))
                 self._add_action_btn("fa5s.times-circle", "Annuler tout le dossier", "#c0392b", "#962d2d", lambda: self._handle_cancel_versement(v_id))
+            elif v_statut in ('CLOTURE', 'ANNULE'):
+                self._add_action_btn("fa5s.exchange-alt", "Changer état: remettre le dossier En Cours", "#e67e22", "#d35400", lambda: self._handle_change_versement_status(v_id, 'EN_COURS'))
 
         elif row_type == "ITEM":
             self._add_action_btn("fa5s.info-circle", "Spécifications détaillées du produit", "#3498db", "#2980b9", lambda: self.show_product_specs(data))
@@ -1177,7 +1203,7 @@ class VersementsView(QWidget):
                 self._add_action_btn("fa5s.store-slash", "Annuler l'article (Retour vitrine)", "#e74c3c", "#c0392b", lambda: self._handle_cancel_item(data))
                 self._add_action_btn("fa5s.trash-alt", "Supprimer du dossier", "#7f8c8d", "#95a5a6", lambda: self._handle_delete_item(data))
             elif item_status == 'RETIRE' or item_status == 'ANNULE':
-                self._add_action_btn("fa5s.undo", "Restaurer ou annuler la livraison", "#e67e22", "#d35400", lambda: self._handle_revert_item(data))
+                self._add_action_btn("fa5s.exchange-alt", "Changer état: remettre l'article En Cours", "#e67e22", "#d35400", lambda: self._handle_change_item_status(data))
 
         elif row_type == "PAYMENT" and v_statut == 'EN_COURS':
             self._add_action_btn("fa5s.edit", "Modifier ce paiement", "#3498db", "#2980b9", lambda: self._handle_edit_payment(data))

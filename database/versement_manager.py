@@ -221,6 +221,121 @@ class VersementManager:
             if cursor: cursor.close()
             if conn: conn.close()
 
+    def change_versement_status(self, versement_id: int, target_status: str, journee_id: int = 1) -> tuple[bool, str]:
+        """Change l'etat du dossier en gardant les pieces et la facture de cloture coherentes."""
+        if target_status not in {'EN_COURS', 'CLOTURE', 'ANNULE'}:
+            return False, "Statut cible invalide."
+
+        conn = None
+        cursor = None
+        try:
+            conn = self.db.get_raw_connection()
+            cursor = conn.cursor(dictionary=True)
+            conn.autocommit = False
+
+            cursor.execute("SELECT status FROM Versements WHERE id = %s", (versement_id,))
+            versement = cursor.fetchone()
+            if not versement:
+                return False, "Dossier introuvable."
+
+            current_status = versement.get('status')
+            if current_status == target_status:
+                return False, "Le dossier est deja dans ce statut."
+
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            conn = cursor = None
+
+            if current_status == 'EN_COURS' and target_status == 'CLOTURE':
+                return (True, "Succes") if self.cloture_versement(versement_id, journee_id) else (False, "Impossible de cloturer le dossier.")
+            if current_status == 'EN_COURS' and target_status == 'ANNULE':
+                return (True, "Succes") if self.cancel_versement(versement_id) else (False, "Impossible d'annuler le dossier.")
+            if target_status == 'EN_COURS':
+                return self._reopen_versement(versement_id, current_status)
+
+            return False, "Transition de statut non autorisee."
+        except Exception as e:
+            if conn: conn.rollback()
+            logging.error(f"Erreur change_versement_status: {e}")
+            return False, str(e)
+        finally:
+            if cursor: cursor.close()
+            if conn: conn.close()
+
+    def _reopen_versement(self, versement_id: int, current_status: str) -> tuple[bool, str]:
+        conn = None
+        cursor = None
+        try:
+            conn = self.db.get_raw_connection()
+            cursor = conn.cursor(dictionary=True)
+            conn.autocommit = False
+
+            receipt_number = f"VRS-{versement_id:05d}"
+            closure_inventory_ids = []
+
+            if current_status == 'CLOTURE':
+                cursor.execute("SELECT id FROM Sales WHERE receipt_number = %s", (receipt_number,))
+                sale = cursor.fetchone()
+                if sale:
+                    cursor.execute("SELECT inventory_id FROM SaleItems WHERE sale_id = %s AND inventory_id IS NOT NULL", (sale['id'],))
+                    closure_inventory_ids = [row['inventory_id'] for row in cursor.fetchall()]
+                    cursor.execute("DELETE FROM Sales WHERE id = %s", (sale['id'],))
+
+                if closure_inventory_ids:
+                    placeholders = ", ".join(["%s"] * len(closure_inventory_ids))
+                    cursor.execute(f"""
+                        UPDATE Versement_Items
+                        SET item_status = 'EN_COURS'
+                        WHERE versement_id = %s AND inventory_id IN ({placeholders}) AND item_status = 'RETIRE'
+                    """, tuple([versement_id] + closure_inventory_ids))
+                    cursor.execute(f"""
+                        UPDATE Inventory
+                        SET status = 'Reserved', remaining_weight = weight, remaining_quantity = quantity
+                        WHERE id IN ({placeholders})
+                    """, tuple(closure_inventory_ids))
+
+            elif current_status == 'ANNULE':
+                cursor.execute("""
+                    SELECT vi.id, vi.inventory_id, i.status as inventory_status
+                    FROM Versement_Items vi
+                    LEFT JOIN Inventory i ON vi.inventory_id = i.id
+                    WHERE vi.versement_id = %s AND vi.item_status = 'ANNULE'
+                """, (versement_id,))
+                items = cursor.fetchall()
+                blocked = [
+                    str(row['inventory_id']) for row in items
+                    if row.get('inventory_id') and row.get('inventory_status') not in (None, 'Available')
+                ]
+                if blocked:
+                    conn.rollback()
+                    return False, "Impossible de remettre en cours: des articles ne sont plus disponibles."
+
+                cursor.execute("""
+                    UPDATE Inventory
+                    SET status = 'Reserved'
+                    WHERE id IN (
+                        SELECT inventory_id FROM Versement_Items
+                        WHERE versement_id = %s AND item_status = 'ANNULE' AND inventory_id IS NOT NULL
+                    )
+                """, (versement_id,))
+                cursor.execute("UPDATE Versement_Items SET item_status = 'EN_COURS' WHERE versement_id = %s AND item_status = 'ANNULE'", (versement_id,))
+
+            else:
+                conn.rollback()
+                return False, "Seuls les dossiers clotures ou annules peuvent etre remis en cours."
+
+            cursor.execute("UPDATE Versements SET status = 'EN_COURS' WHERE id = %s", (versement_id,))
+            conn.commit()
+            return True, "Succes"
+        except Exception as e:
+            if conn: conn.rollback()
+            logging.error(f"Erreur reopen_versement: {e}")
+            return False, str(e)
+        finally:
+            if cursor: cursor.close()
+            if conn: conn.close()
+
     # ============================================================
     # 5. جلب البيانات بحسابات دقيقة
     # ============================================================
@@ -369,10 +484,11 @@ class VersementManager:
             cursor = conn.cursor(dictionary=True)
             conn.autocommit = False
 
-            cursor.execute("SELECT inventory_id, item_status FROM Versement_Items WHERE id = %s", (item_id,))
+            cursor.execute("SELECT versement_id, inventory_id, item_status FROM Versement_Items WHERE id = %s", (item_id,))
             item = cursor.fetchone()
             if not item: return False, "Article introuvable."
                 
+            versement_id = item['versement_id']
             inv_id = item['inventory_id']
             current_status = item['item_status']
             
@@ -396,6 +512,14 @@ class VersementManager:
                         SET status = 'Reserved', remaining_weight = %s, remaining_quantity = %s
                         WHERE id = %s
                     """, (inv['weight'], inv['quantity'], inv_id))
+                cursor.execute("""
+                    UPDATE Sales s
+                    JOIN SaleItems si ON si.sale_id = s.id
+                    SET s.status = 'CANCELLED'
+                    WHERE si.inventory_id = %s
+                      AND s.status = 'COMPLETED'
+                      AND s.notes LIKE %s
+                """, (inv_id, f"%VRS-{versement_id:05d}%"))
 
             cursor.execute("UPDATE Versement_Items SET item_status = 'EN_COURS' WHERE id = %s", (item_id,))
             
