@@ -386,13 +386,13 @@ class EditPaymentDialog(QDialog):
         sum_layout.setSpacing(6)
         
         self.lbl_summary_reste = QLabel("0.00 g (0.00 DA)")
-        self.lbl_summary_reste.setStyleSheet("font-size: 13px; font-weight: bold; color: #7f8c8d;")
+        self.lbl_summary_reste.setStyleSheet("font-size: 13px; font-weight: bold; color: #c0392b;")
         
         self.lbl_summary_current = QLabel("0.00 DA")
         self.lbl_summary_current.setStyleSheet("font-size: 13px; font-weight: bold; color: #27ae60;")
         
         self.lbl_summary_nouveau = QLabel("0.00 g")
-        self.lbl_summary_nouveau.setStyleSheet("font-size: 16px; font-weight: bold; color: #2980b9;")
+        self.lbl_summary_nouveau.setStyleSheet("font-size: 16px; font-weight: bold; color: #c0392b;")
         
         sum_layout.addRow(QLabel("Reste Initial (Sans ce paiement) :"), self.lbl_summary_reste)
         sum_layout.addRow(QLabel("Paiement + Remise Modifiés :"), self.lbl_summary_current)
@@ -1453,7 +1453,7 @@ class VersementsView(QWidget):
     # ──────────────────────────────────────────────────────────────
     # باقي الدوال
     # ──────────────────────────────────────────────────────────────
-    def add_group_header_row(self, data_dict, text1, span1, text2=None, span2=None, bg_color="#C00080", text_color="white"):
+    def add_group_header_row(self, data_dict, text1, span1, text2=None, span2=None, bg_color="#C00080", text_color="white", text_color2=None):
         row = self.table.rowCount()
         self.table.insertRow(row)
         item1 = QTableWidgetItem(text1)
@@ -1470,7 +1470,7 @@ class VersementsView(QWidget):
             item2.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             item2.setFont(QFont("", 11, QFont.Bold))
             item2.setBackground(QBrush(QColor(bg_color)))
-            item2.setForeground(QBrush(QColor(text_color)))
+            item2.setForeground(QBrush(QColor(text_color2 or text_color)))
             item2.setData(Qt.UserRole, data_dict)
             self.table.setItem(row, span1, item2)
             self.table.setSpan(row, span1, 1, span2)
@@ -1562,7 +1562,7 @@ class VersementsView(QWidget):
                         self.create_and_set_item(row, 0, designation, i_data, bold=True, align_center=False, bg_color=bg_c, text_color=fg_c)
                         for col in range(1, 5): self.create_and_set_item(row, col, "-", i_data, bg_color=bg_c)
                         self.create_and_set_item(row, 5, weight_str, i_data, bold=True, bg_color=bg_c, text_color=fg_c)
-                        self.create_and_set_item(row, 6, remain_g_str, i_data, bold=True, color_red=(balance["remaining_g"] > 0), bg_color=bg_c)
+                        self.create_and_set_item(row, 6, remain_g_str, i_data, bold=True, color_red=(balance["remaining_g"] > 0), bg_color=bg_c, text_color="#c0392b" if balance["remaining_g"] > 0 else "#27ae60")
                         self.create_and_set_item(row, 7, i_statut, i_data, bold=True, bg_color=bg_c, text_color=fg_c)
                         self.create_and_set_item(row, 8, obs_str, i_data, align_center=False, bg_color=bg_c, text_color=fg_c)
                         self.table.setRowHeight(row, 38)
@@ -1604,24 +1604,24 @@ class VersementsView(QWidget):
                             "or_casse_g": o_c, "poids_deduit_g": deduit, "notes": p_notes
                         }
                         self.create_and_set_item(row, 0, op_label, p_data, bold=True, align_center=False, bg_color="#fff8e8", text_color="#7a4d08")
-                        self.create_and_set_item(row, 1, f"{m_da:,.0f} DA" if m_da != 0 else "-", p_data, color_red=(m_da < 0), bg_color="#fff8e8", text_color="#7a4d08" if m_da >= 0 else None)
-                        self.create_and_set_item(row, 2, f"{m_tpe:,.0f} DA" if m_tpe != 0 else "-", p_data, color_red=(m_tpe < 0), bg_color="#fff8e8", text_color="#7a4d08" if m_tpe >= 0 else None)
+                        self.create_and_set_item(row, 1, f"{m_da:,.0f} DA" if m_da != 0 else "-", p_data, color_red=(m_da < 0), bg_color="#fff8e8", text_color="#27ae60" if m_da >= 0 else None)
+                        self.create_and_set_item(row, 2, f"{m_tpe:,.0f} DA" if m_tpe != 0 else "-", p_data, color_red=(m_tpe < 0), bg_color="#fff8e8", text_color="#27ae60" if m_tpe >= 0 else None)
                         devise_str = []
                         if m_eu != 0: devise_str.append(f"{m_eu:,.0f} €")
                         if m_dl != 0: devise_str.append(f"{m_dl:,.0f} $")
-                        self.create_and_set_item(row, 3, " | ".join(devise_str) if devise_str else "-", p_data, color_red=(m_eu < 0 or m_dl < 0), bg_color="#fff8e8", text_color="#7a4d08" if (m_eu >= 0 and m_dl >= 0) else None)
+                        self.create_and_set_item(row, 3, " | ".join(devise_str) if devise_str else "-", p_data, color_red=(m_eu < 0 or m_dl < 0), bg_color="#fff8e8", text_color="#27ae60" if (m_eu >= 0 and m_dl >= 0) else None)
                         
                         taux_str = []
                         if taux != 0: taux_str.append(f"{taux:,.2f} €")
                         if taux_dl != 0: taux_str.append(f"{taux_dl:,.2f} $")
-                        self.create_and_set_item(row, 4, " | ".join(taux_str) if taux_str else "-", p_data, color_red=(taux < 0 or taux_dl < 0), bg_color="#fff8e8", text_color="#7a4d08" if (taux >= 0 and taux_dl >= 0) else None)
+                        self.create_and_set_item(row, 4, " | ".join(taux_str) if taux_str else "-", p_data, color_red=(taux < 0 or taux_dl < 0), bg_color="#fff8e8", text_color="#27ae60" if (taux >= 0 and taux_dl >= 0) else None)
                         
-                        self.create_and_set_item(row, 5, f"{o_c:.2f} g" if o_c != 0 else "-", p_data, color_red=(o_c < 0), bg_color="#fff8e8", text_color="#7a4d08" if o_c >= 0 else None)
+                        self.create_and_set_item(row, 5, f"{o_c:.2f} g" if o_c != 0 else "-", p_data, color_red=(o_c < 0), bg_color="#fff8e8", text_color="#27ae60" if o_c >= 0 else None)
                         
                         deduit_str = f"{deduit:.2f} g" if deduit != 0 else "-"
                         self.create_and_set_item(row, 6, deduit_str, p_data, bold=(deduit!=0), color_red=(deduit>0), bg_color="#fff8e8", text_color="#7a4d08" if deduit <= 0 else None)
                         
-                        self.create_and_set_item(row, 7, "Paiement", p_data, bg_color="#fff8e8", text_color="#7a4d08")
+                        self.create_and_set_item(row, 7, "Paiement", p_data, bg_color="#fff8e8", text_color="#27ae60")
                         
                         obs_str = ""
                         if remise > 0: obs_str += f"[Remise: {remise:,.0f} DA] "
@@ -1646,8 +1646,8 @@ class VersementsView(QWidget):
                     sum_text_2 = f"STATUT: {statut}  |  ⚖️ RESTE: {reste_poids:.3f} g"
                     is_complete = (reste_poids <= 0) or (statut == 'CLOTURE')
                     bg_summary = "#dff5f1" if is_complete else "#ffedea"
-                    fg_summary = "#075f58" if is_complete else "#be3528"
-                    self.add_group_header_row({"type": "SUMMARY"}, sum_text_1, 4, sum_text_2, 5, bg_color=bg_summary, text_color=fg_summary)
+                    payment_summary_color = "#27ae60" if total_paid_da >= 0 else "#c0392b"
+                    self.add_group_header_row({"type": "SUMMARY"}, sum_text_1, 4, sum_text_2, 5, bg_color=bg_summary, text_color=payment_summary_color, text_color2="#c0392b")
                     
                     row_space = self.table.rowCount()
                     self.table.insertRow(row_space)

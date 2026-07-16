@@ -281,13 +281,13 @@ class AddPaymentDialog(QDialog):
         sum_layout.setSpacing(6)
         
         self.lbl_summary_reste = QLabel("0.00 g (0.00 DA)")
-        self.lbl_summary_reste.setStyleSheet("font-size: 13px; font-weight: bold; color: #7f8c8d;")
+        self.lbl_summary_reste.setStyleSheet("font-size: 13px; font-weight: bold; color: #c0392b;")
         
         self.lbl_summary_current = QLabel("0.00 DA")
         self.lbl_summary_current.setStyleSheet("font-size: 13px; font-weight: bold; color: #27ae60;")
         
         self.lbl_summary_nouveau = QLabel("0.00 g")
-        self.lbl_summary_nouveau.setStyleSheet("font-size: 16px; font-weight: bold; color: #2980b9;")
+        self.lbl_summary_nouveau.setStyleSheet("font-size: 16px; font-weight: bold; color: #c0392b;")
         
         sum_layout.addRow(QLabel("Reste Actuel (Avant) :"), self.lbl_summary_reste)
         sum_layout.addRow(QLabel("Paiement + Remise :"), self.lbl_summary_current)

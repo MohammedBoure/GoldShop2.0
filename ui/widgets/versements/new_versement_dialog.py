@@ -319,12 +319,12 @@ class NewVersementDialog(QDialog):
         self.lbl_summary_paye.setStyleSheet("font-size: 13px; font-weight: bold; color: #27ae60;")
         
         self.lbl_summary_reste = QLabel("0.00 g (0.00 DA)")
-        self.lbl_summary_reste.setStyleSheet("font-size: 16px; font-weight: bold; color: #2980b9;")
+        self.lbl_summary_reste.setStyleSheet("font-size: 16px; font-weight: bold; color: #c0392b;")
         
         sum_layout.addRow(self._styled_lbl("Total Brut Initial :"), self.lbl_summary_brut)
         sum_layout.addRow(self._styled_lbl("Remise Appliquée :"), self.lbl_summary_remise)
         sum_layout.addRow(self._styled_lbl("Acompte Versé :", color="#27ae60"), self.lbl_summary_paye)
-        sum_layout.addRow(self._styled_lbl("Reste Final :", color="#2980b9"), self.lbl_summary_reste)
+        sum_layout.addRow(self._styled_lbl("Reste Final :", color="#c0392b"), self.lbl_summary_reste)
         
         inner_col1.addWidget(self.summary_box)
         inner_col1.addStretch()
