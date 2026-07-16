@@ -36,11 +36,12 @@ class VersementManager:
                 for item in items_list:
                     inv_id = item.get('inventory_id')
                     designation = item.get('designation', 'Article inconnu')
+                    item_notes = str(item.get('notes') or item.get('custom_note') or '').strip()
                     
                     cursor.execute("""
-                        INSERT INTO Versement_Items (versement_id, inventory_id, designation, item_status)
-                        VALUES (%s, %s, %s, 'EN_COURS')
-                    """, (versement_id, inv_id, designation))
+                        INSERT INTO Versement_Items (versement_id, inventory_id, designation, notes, item_status)
+                        VALUES (%s, %s, %s, %s, 'EN_COURS')
+                    """, (versement_id, inv_id, designation, item_notes))
                     
                     if inv_id:
                         cursor.execute("UPDATE Inventory SET status = 'Reserved' WHERE id = %s", (inv_id,))
@@ -95,6 +96,17 @@ class VersementManager:
                 return True
         except Exception as e:
             logging.error(f"Erreur delete_payment: {e}")
+            return False
+
+    def update_payment_notes(self, payment_id: int, notes: str) -> bool:
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE Versement_Payments SET notes = %s WHERE id = %s", (str(notes or '').strip(), payment_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Erreur update_payment_notes: {e}")
             return False
 
     # ============================================================
@@ -154,7 +166,7 @@ class VersementManager:
             client_id = v_data['client_id'] if v_data else 1
 
             cursor.execute("""
-                SELECT vi.inventory_id, vi.designation, i.weight, i.barcode 
+                SELECT vi.inventory_id, vi.designation, vi.notes, i.weight, i.barcode
                 FROM Versement_Items vi 
                 LEFT JOIN Inventory i ON vi.inventory_id = i.id 
                 WHERE vi.versement_id = %s AND vi.item_status = 'EN_COURS'
@@ -180,10 +192,11 @@ class VersementManager:
                     w = float(it['weight'] or 0)
                     barcode = str(it['barcode'] or '')
                     desig = str(it['designation'] or 'Article Versement')
+                    item_note = str(it.get('notes') or '').strip()
                     cursor.execute("""
                         INSERT INTO SaleItems (sale_id, inventory_id, barcode, name, item_type, sold_weight_g, sold_quantity, unit_price_da, total_price_da, custom_note)
                         VALUES (%s, %s, %s, %s, 'WEIGHT', %s, 1, 0, 0, %s)
-                    """, (sale_id, it['inventory_id'], barcode, desig, w, f"Clôture Versement N° VRS-{versement_id:05d}"))
+                    """, (sale_id, it['inventory_id'], barcode, desig, w, item_note))
 
             conn.commit()
             return True
@@ -368,7 +381,7 @@ class VersementManager:
                     
                     # جلب القطع مع حالتها وسعرها التقديري
                     cursor.execute("""
-                        SELECT vi.id as item_id, vi.inventory_id, vi.designation, vi.item_status, i.weight, i.barcode, i.selling_price 
+                        SELECT vi.id as item_id, vi.inventory_id, vi.designation, vi.notes, vi.item_status, i.weight, i.barcode, i.selling_price
                         FROM Versement_Items vi
                         LEFT JOIN Inventory i ON vi.inventory_id = i.id
                         WHERE vi.versement_id = %s
@@ -449,7 +462,18 @@ class VersementManager:
             logging.error(f"Erreur update_payment: {e}")
             return False
 
-    def add_item_to_versement(self, versement_id: int, inventory_id: int, designation: str) -> bool:
+    def update_versement_item_notes(self, item_id: int, notes: str) -> bool:
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE Versement_Items SET notes = %s WHERE id = %s", (str(notes or '').strip(), item_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Erreur update_versement_item_notes: {e}")
+            return False
+
+    def add_item_to_versement(self, versement_id: int, inventory_id: int, designation: str, notes: str = '') -> bool:
         """إضافة قطعة جديدة من المخزون إلى ملف عربون مفتوح مسبقاً"""
         conn = None
         cursor = None
@@ -460,9 +484,9 @@ class VersementManager:
 
             # 1. إضافة القطعة لجدول منتجات العربون
             cursor.execute("""
-                INSERT INTO Versement_Items (versement_id, inventory_id, designation, item_status)
-                VALUES (%s, %s, %s, 'EN_COURS')
-            """, (versement_id, inventory_id, designation))
+                INSERT INTO Versement_Items (versement_id, inventory_id, designation, notes, item_status)
+                VALUES (%s, %s, %s, %s, 'EN_COURS')
+            """, (versement_id, inventory_id, designation, str(notes or '').strip()))
             
             # 2. تغيير حالة القطعة في المخزون إلى "محجوزة"
             if inventory_id:

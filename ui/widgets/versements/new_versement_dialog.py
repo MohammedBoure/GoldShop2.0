@@ -141,8 +141,8 @@ class NewVersementDialog(QDialog):
         barcode_layout.addWidget(btn_clear_cart)
         left_layout.addLayout(barcode_layout)
 
-        self.cart_table = QTableWidget(0, 5)
-        self.cart_table.setHorizontalHeaderLabels(["Code", "Désignation", "Poids (g)", "Prix Estimé", "Action"])
+        self.cart_table = QTableWidget(0, 6)
+        self.cart_table.setHorizontalHeaderLabels(["Code", "Désignation", "Poids (g)", "Prix Estimé", "Note produit", "Action"])
         self.cart_table.setStyleSheet("""
             QTableWidget { background-color: white; font-size: 14px; gridline-color: #eef2f6; }
             QHeaderView::section { background-color: #0f8f83; color: white; font-weight: bold; padding: 6px; font-size: 13px; border: none; }
@@ -157,7 +157,8 @@ class NewVersementDialog(QDialog):
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.Stretch)
+        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
         
         left_layout.addWidget(self.cart_table)
 
@@ -714,6 +715,8 @@ class NewVersementDialog(QDialog):
         if any(i['id'] == item['id'] for i in self.cart_items):
             self.force_clear_barcode()
             return
+        item = dict(item)
+        item.setdefault("versement_note", str(item.get("custom_note") or ""))
         self.cart_items.append(item)
         self.refresh_cart()
         self.force_clear_barcode()
@@ -741,14 +744,24 @@ class NewVersementDialog(QDialog):
             self.cart_table.setItem(i, 1, it_name)
             self.cart_table.setItem(i, 2, it_weight)
             self.cart_table.setItem(i, 3, it_price)
-            
-            btn_del = QPushButton("🗑 Suppr.")
+
+            note_edit = QLineEdit(str(item.get("versement_note") or ""))
+            note_edit.setPlaceholderText("Note produit...")
+            note_edit.setStyleSheet("padding: 5px; font-size: 13px;")
+            note_edit.textChanged.connect(lambda value, idx=i: self._set_item_note(idx, value))
+            self.cart_table.setCellWidget(i, 4, note_edit)
+
+            btn_del = QPushButton("Suppr.")
             btn_del.setStyleSheet("background-color: #e74c3c; color: white; border-radius: 4px;")
             btn_del.clicked.connect(lambda _, idx=i: self.remove_from_cart(idx))
-            self.cart_table.setCellWidget(i, 4, btn_del)
+            self.cart_table.setCellWidget(i, 5, btn_del)
             self.cart_table.setRowHeight(i, 42)
         
         self.auto_calculate_poids_deduit()
+
+    def _set_item_note(self, index, value):
+        if 0 <= index < len(self.cart_items):
+            self.cart_items[index]["versement_note"] = value
 
     def remove_from_cart(self, index):
         if 0 <= index < len(self.cart_items):
@@ -906,7 +919,7 @@ class NewVersementDialog(QDialog):
                     self.inp_poids_deduit.setFocus()
                     return
 
-            items_list = [{"inventory_id": item['id'], "designation": item['name']} for item in self.cart_items]
+            items_list = [{"inventory_id": item['id'], "designation": item['name'], "notes": str(item.get("versement_note") or "").strip()} for item in self.cart_items]
 
             journee = self.manager.cash_box.get_or_create_today_session(user_id=self.current_user.get('id', 1))
             if not journee:

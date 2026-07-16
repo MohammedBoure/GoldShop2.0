@@ -882,6 +882,8 @@ class ReceiptGenerator:
         if items:
             for item in items:
                 item_name = escape(str(item.get('item_name') or item.get('name') or item.get('description') or 'Article').strip())
+                item_note = escape(str(item.get('custom_note') or item.get('note') or '').strip())
+                item_name_html = f"{item_name}<br><span style='font-size:{int(f_norm*0.85)}px; color:#8e44ad; font-weight:bold;'>{item_note}</span>" if item_note else item_name
                 item_barcode = str(item.get('barcode') or item.get('inventory_barcode') or item.get('item_barcode') or '').strip()
                 rem_item_w = _safe_float(item.get('remaining_weight', item.get('weight', 0)))
 
@@ -899,7 +901,7 @@ class ReceiptGenerator:
 
                 items_detail_html += f"""
                 <tr>
-                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#2c3e50; font-weight:bold;">{item_name}</td>
+                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#2c3e50; font-weight:bold;">{item_name_html}</td>
                     {code_td_item}
                     <td style="padding:6px 5px; border-bottom:1px solid #eee; text-align:center; color:#c0392b; font-weight:bold;">{rem_item_w:.3f} g</td>
                 </tr>

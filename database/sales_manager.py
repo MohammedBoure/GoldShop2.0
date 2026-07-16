@@ -166,7 +166,7 @@ class SalesManager:
                         0 as Dollar,
                         u.username as Vendeur_Sofiane,
                         s.user_id as vendeur_id,
-                        COALESCE(NULLIF(s.notes, ''), CONCAT('Fac: ', s.receipt_number, ' - ', COALESCE(c.name, ''))) as Observation,
+                        COALESCE(NULLIF(si.custom_note, ''), NULLIF(s.notes, ''), CONCAT('Fac: ', s.receipt_number, ' - ', COALESCE(c.name, ''))) as Observation,
                         s.created_at as timestamp
                     FROM SaleItems si
                     JOIN Sales s ON si.sale_id = s.id
@@ -307,6 +307,17 @@ class SalesManager:
         except Exception as e:
             logging.error(f"Erreur update_sale_seller: {e}")
             return False
+    def update_sale_item_notes(self, sale_item_id: int, notes: str) -> bool:
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE SaleItems SET custom_note = %s WHERE id = %s", (str(notes or '').strip(), sale_item_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Erreur update_sale_item_notes: {e}")
+            return False
+
     def get_sale_details(self, sale_id: int) -> dict:
         try:
             with self.db.get_db_connection() as conn:

@@ -766,7 +766,7 @@ class FacturationVersementDialog(QDialog):
         self.manager = manager
         self.data = data
         self.setWindowTitle("Facturation d'un article livré")
-        self.setFixedSize(450, 400)
+        self.setFixedSize(500, 470)
         self.v_data = None
         self.client_id = None
         self._load_v_data()
@@ -802,6 +802,10 @@ class FacturationVersementDialog(QDialog):
         self.inp_cash.setFocusPolicy(Qt.ClickFocus)
         self.inp_cash.mousePressEvent = lambda e: _open_numpad(self.inp_cash, allow_decimal=True, parent=self)
         form.addRow("Cash Payé Aujourd'hui (DA):", self.inp_cash)
+        self.inp_note = QLineEdit(str(self.data.get("item_note") or ""))
+        self.inp_note.setPlaceholderText("Note du produit pour la facture...")
+        self.inp_note.setStyleSheet("font-size: 15px; padding: 5px;")
+        form.addRow("Note produit :", self.inp_note)
         
         self.combo_vendeur = QComboBox()
         self.combo_vendeur.setStyleSheet("font-size: 16px; padding: 5px;")
@@ -824,6 +828,9 @@ class FacturationVersementDialog(QDialog):
             
         layout.addLayout(btn_layout)
         
+    def get_product_note(self):
+        return self.inp_note.text().strip()
+
     def _load_sellers(self):
         try:
             with self.manager.db.get_db_connection() as conn:
@@ -988,6 +995,7 @@ class VersementsView(QWidget):
                     "total_weight": w,
                     "remaining_weight": item_remaining_w,
                     "total_amount": 0.0,
+                    "custom_note": str(item.get("notes") or "").strip(),
                 })
 
         for p in v_data.get('payments', []):
@@ -1170,9 +1178,12 @@ class VersementsView(QWidget):
             try: cash = float(dlg.inp_cash.text() or 0)
             except: cash = 0.0
             vendeur_id = dlg.combo_vendeur.currentData() or 1
+            product_note = dlg.get_product_note()
             
             success = self.manager.versements.retirer_versement_item(data.get("item_id"))
             if success:
+                if hasattr(self.manager.versements, "update_versement_item_notes"):
+                    self.manager.versements.update_versement_item_notes(data.get("item_id"), product_note)
                 journee = self.manager.cash_box.get_or_create_today_session(user_id=1)
                 if cash > 0 and journee:
                     self.manager.versements.add_payment(
@@ -1194,7 +1205,7 @@ class VersementsView(QWidget):
                         'cart_sold_qty': 1,
                         'cart_unit_price': price,
                         'cart_line_total': price,
-                        'custom_note': f"Vendu via Versement N°VRS-{data.get('v_id'):05d}"
+                        'custom_note': product_note
                     }]
                     self.manager.sales.create_sale(
                         journee_id=journee['id'],
@@ -1543,6 +1554,7 @@ class VersementsView(QWidget):
                             "type": "ITEM", "v_id": v_id, "statut": statut, "item_id": item['item_id'],
                             "item_status": i_statut, "inventory_id": item.get('inventory_id'),
                             "designation": item.get('designation', 'Inconnu'),
+                            "item_note": str(item.get('notes') or '').strip(),
                             "weight": weight,
                             "deducted_g": balance["deducted_g"],
                             "remaining_g": balance["remaining_g"]

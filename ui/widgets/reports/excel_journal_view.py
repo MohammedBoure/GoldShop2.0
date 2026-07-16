@@ -529,6 +529,7 @@ class ExcelJournalView(QWidget):
         if not sale_id: return 
         
         is_versement = isinstance(sale_id, str) and sale_id.startswith("VRS_")
+        item_id = item.data(Qt.UserRole + 1)
         
         cash = item.data(Qt.UserRole + 2)
         tpe = item.data(Qt.UserRole + 3)
@@ -552,10 +553,10 @@ class ExcelJournalView(QWidget):
         """)
 
         if is_versement:
-            # Pour les versements, on ne permet pas la modification/suppression depuis le journal Excel
-            act_info = menu.addAction("ℹ️ Il s'agit d'un versement. Allez dans 'Versements' pour modifier.")
-            act_info.setEnabled(False)
+            act_edit_obs = menu.addAction("Modifier l'observation")
             action = menu.exec_(self.table.viewport().mapToGlobal(pos))
+            if action == act_edit_obs:
+                self.edit_versement_observation(item_id, current_obs)
             return
 
         # ── خيار 1: تحميل PDF ──
@@ -602,7 +603,7 @@ class ExcelJournalView(QWidget):
         elif action == act_edit_seller:
             self.edit_seller(sale_id, seller_id)
         elif action == act_edit_obs:
-            self.edit_observation(sale_id, current_obs)
+            self.edit_observation(sale_id, item_id, current_obs)
         elif action == act_del:
             self.delete_sale(sale_id)
 
@@ -638,9 +639,11 @@ class ExcelJournalView(QWidget):
         if not sale_id: return 
         
         is_versement = isinstance(sale_id, str) and sale_id.startswith("VRS_")
+        item_id = item.data(Qt.UserRole + 1)
         
         if is_versement:
-            self._add_action_btn("fa5s.info-circle", "Il s'agit d'un versement. Allez dans 'Versements' pour modifier.", "#95a5a6", "#95a5a6", lambda: None, enabled=False)
+            current_vrs_obs = self.table.item(row, 8).text() if self.table.item(row, 8) else ""
+            self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_versement_observation(item_id, current_vrs_obs))
             return
 
         cash = item.data(Qt.UserRole + 2)
@@ -661,7 +664,7 @@ class ExcelJournalView(QWidget):
         self._add_action_btn("fa5s.receipt", f"Imprimer sur thermique → {thermal_printer}" if thermal_printer else "Imprimer sur thermique (non configurée)", "#e67e22", "#d35400", lambda: self.print_invoice_thermal(sale_id), enabled=bool(thermal_printer))
         self._add_action_btn("fa5s.edit", "Modifier les montants de cette vente", "#27ae60", "#2ecc71", lambda: self.edit_sale(sale_id, cash, tpe, oc, impos))
         self._add_action_btn("fa5s.user-edit", "Modifier le vendeur", "#16a085", "#1abc9c", lambda: self.edit_seller(sale_id, seller_id))
-        self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, current_obs))
+        self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, item_id, current_obs))
         self._add_action_btn("fa5s.trash-alt", "Supprimer (Annuler) cette vente", "#c0392b", "#962d2d", lambda: self.delete_sale(sale_id))
 
     # ──────────────────────────────────────────────────────────────
@@ -875,11 +878,27 @@ class ExcelJournalView(QWidget):
                 self.load_data()
             else:
                 QMessageBox.warning(self, "Erreur", "Erreur lors de la mise Ã  jour du vendeur.")
-    def edit_observation(self, sale_id, current_obs):
+    def edit_observation(self, sale_id, sale_item_id, current_obs):
         dlg = EditObservationDialog(current_obs, self)
         if dlg.exec() == QDialog.Accepted:
             n_obs = dlg.get_value()
-            if hasattr(self.manager.sales, 'update_sale_notes') and self.manager.sales.update_sale_notes(sale_id, n_obs):
+            updated = False
+            if sale_item_id and hasattr(self.manager.sales, "update_sale_item_notes"):
+                updated = self.manager.sales.update_sale_item_notes(sale_item_id, n_obs)
+            elif hasattr(self.manager.sales, "update_sale_notes"):
+                updated = self.manager.sales.update_sale_notes(sale_id, n_obs)
+            if updated:
+                self.load_data()
+            else:
+                QMessageBox.warning(self, "Erreur", "Erreur lors de la mise à jour de l'observation.")
+
+    def edit_versement_observation(self, payment_id, current_obs):
+        if not payment_id or not hasattr(self.manager.versements, "update_payment_notes"):
+            QMessageBox.warning(self, "Erreur", "La modification de la note du versement est indisponible.")
+            return
+        dlg = EditObservationDialog(current_obs, self)
+        if dlg.exec() == QDialog.Accepted:
+            if self.manager.versements.update_payment_notes(payment_id, dlg.get_value()):
                 self.load_data()
             else:
                 QMessageBox.warning(self, "Erreur", "Erreur lors de la mise à jour de l'observation.")
@@ -1050,6 +1069,7 @@ class ExcelJournalView(QWidget):
                             
                             if col_idx == 0:
                                 item.setData(Qt.UserRole, r.get('sale_id'))
+                                item.setData(Qt.UserRole + 1, r.get('item_id'))
                                 item.setData(Qt.UserRole + 2, float(r.get('Recette') or 0))
                                 item.setData(Qt.UserRole + 3, float(r.get('TPE') or 0))
                                 item.setData(Qt.UserRole + 4, float(r.get('OC') or 0))

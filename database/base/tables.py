@@ -532,7 +532,8 @@ PAYMENT_TABLE_QUERIES = [
         id BIGINT PRIMARY KEY AUTO_INCREMENT,
         versement_id INT NOT NULL,
         inventory_id INT NULL,
-        designation VARCHAR(200), 
+        designation VARCHAR(200),
+        notes TEXT NULL,
         
         -- الحقل الجديد لمعرفة حالة القطعة داخل العربون
         item_status ENUM('EN_COURS', 'RETIRE', 'ANNULE') DEFAULT 'EN_COURS',
@@ -567,7 +568,8 @@ PAYMENT_TABLE_QUERIES = [
     "ALTER TABLE Versement_Payments ADD COLUMN tpe_da DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Versement_Payments ADD COLUMN montant_dollar DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Versement_Payments ADD COLUMN taux_change_dollar DECIMAL(15, 2) DEFAULT 0;",
-    "ALTER TABLE Versement_Payments ADD COLUMN remise_da DECIMAL(15, 2) DEFAULT 0;"
+    "ALTER TABLE Versement_Payments ADD COLUMN remise_da DECIMAL(15, 2) DEFAULT 0;",
+    "ALTER TABLE Versement_Items ADD COLUMN notes TEXT;"
 ]
 
 ACHAT_OC_TABLE_QUERIES = [
