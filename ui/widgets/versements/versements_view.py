@@ -508,14 +508,83 @@ class EditPaymentDialog(QDialog):
                 else:
                     QMessageBox.warning(self, "Erreur", f"Le reste cible doit être entre 0 et {base_amount:,.2f} DA.")
 
+    def _get_price_per_gram_context(self):
+        selected_item_id = self.combo_target.currentData()
+        if selected_item_id is None:
+            selected_item_id = getattr(self, "preselected_item_id", None)
+        if selected_item_id is None:
+            selected_item_id = getattr(self, "p_data", {}).get("versement_item_id")
+
+        current_payment = getattr(self, "p_data", {})
+        current_payment_id = current_payment.get("payment_id")
+        if selected_item_id in self.item_prices and selected_item_id in self.item_weights:
+            item_amount = float(self.item_prices[selected_item_id] or 0)
+            item_weight = float(self.item_weights[selected_item_id] or 0)
+            if item_amount > 0 and item_weight > 0:
+                deducted_weight = sum(
+                    float(p.get("poids_deduit_g") or 0)
+                    for p in (self.v_data.get("payments", []) if self.v_data else [])
+                    if p.get("versement_item_id") == selected_item_id
+                )
+                if current_payment_id and current_payment.get("versement_item_id") == selected_item_id:
+                    deducted_weight -= float(current_payment.get("poids_deduit_g") or 0)
+                return item_amount / item_weight, max(0.0, item_weight - deducted_weight)
+
+        if self.v_data:
+            total_amount = float(self.v_data.get("total_estimated_price_da") or 0)
+            total_weight = float(self.v_data.get("total_weight_g") or 0)
+            if total_amount > 0 and total_weight > 0:
+                remaining_weight = float(self.v_data.get("reste_poids_g") or 0)
+                if current_payment_id:
+                    remaining_weight += float(current_payment.get("poids_deduit_g") or 0)
+                return total_amount / total_weight, max(0.0, remaining_weight)
+
+        return 0.0, 0.0
+
+    def _get_price_per_gram_context(self):
+        selected_item_id = self.combo_target.currentData()
+        if selected_item_id is None:
+            selected_item_id = getattr(self, "preselected_item_id", None)
+        if selected_item_id is None:
+            selected_item_id = getattr(self, "p_data", {}).get("versement_item_id")
+
+        current_payment = getattr(self, "p_data", {})
+        current_payment_id = current_payment.get("payment_id")
+        if selected_item_id in self.item_prices and selected_item_id in self.item_weights:
+            item_amount = float(self.item_prices[selected_item_id] or 0)
+            item_weight = float(self.item_weights[selected_item_id] or 0)
+            if item_amount > 0 and item_weight > 0:
+                deducted_weight = sum(
+                    float(p.get("poids_deduit_g") or 0)
+                    for p in (self.v_data.get("payments", []) if self.v_data else [])
+                    if p.get("versement_item_id") == selected_item_id
+                )
+                if current_payment_id and current_payment.get("versement_item_id") == selected_item_id:
+                    deducted_weight -= float(current_payment.get("poids_deduit_g") or 0)
+                return item_amount / item_weight, max(0.0, item_weight - deducted_weight)
+
+        if self.v_data:
+            total_amount = float(self.v_data.get("total_estimated_price_da") or 0)
+            total_weight = float(self.v_data.get("total_weight_g") or 0)
+            if total_amount > 0 and total_weight > 0:
+                remaining_weight = float(self.v_data.get("reste_poids_g") or 0)
+                if current_payment_id:
+                    remaining_weight += float(current_payment.get("poids_deduit_g") or 0)
+                return total_amount / total_weight, max(0.0, remaining_weight)
+
+        return 0.0, 0.0
+
     def open_discount_price_per_gram(self):
-        base_amount = self._get_active_base_amount()
-        base_weight = self._get_active_base_weight()
-        if base_amount <= 0 or base_weight <= 0:
-            QMessageBox.warning(self, "Erreur", "Aucune base de prix/poids disponible pour calculer la remise.")
+        current_ppg, available_weight = self._get_price_per_gram_context()
+        if current_ppg <= 0 or available_weight <= 0:
+            QMessageBox.warning(self, "Erreur", "Aucun article actif avec prix et poids restants n'est disponible pour calculer la remise.")
             return
 
-        current_ppg = base_amount / base_weight
+        payment_value_da = max(0.0, self.inp_montant_da.value() + self.inp_tpe.value())
+        if payment_value_da <= 0:
+            QMessageBox.warning(self, "Erreur", "Veuillez saisir d'abord la valeur du versement Ã  calculer.")
+            return
+
         from ui.tools.virtual_numpad import VirtualNumpad
         pad = VirtualNumpad(
             title=f"Saisir le prix/g (actuel: {current_ppg:,.2f} DA/g)",
@@ -528,11 +597,10 @@ class EditPaymentDialog(QDialog):
         if pad.exec() == QDialog.Accepted:
             value = pad.get_value()
             if value:
-                target_ppg = max(0.0, float(value))
-                target_ppg = min(target_ppg, current_ppg)
-                remise_value = max(0.0, (current_ppg - target_ppg) * base_weight)
+                target_ppg = min(max(0.0, float(value)), current_ppg)
+                payment_weight = min(available_weight, payment_value_da / current_ppg)
+                remise_value = max(0.0, (current_ppg - target_ppg) * payment_weight)
                 self.inp_remise.setValue(remise_value)
-
     def auto_calculate_poids_deduit(self):
         """مساعد في الحساب: يكتب تلقائياً الوزن المقتنى بالجرام ويسمح للمستخدم بالتعديل اليدوي كأداة مساعدة"""
         base_amount = self._get_active_base_amount()

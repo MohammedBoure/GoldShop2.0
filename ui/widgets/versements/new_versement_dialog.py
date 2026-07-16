@@ -460,6 +460,21 @@ class NewVersementDialog(QDialog):
             return
 
         current_ppg = total_brut / total_weight
+        method_idx = self.combo_method.currentIndex()
+        payment_value_da = 0.0
+        if method_idx == 1:
+            payment_value_da = float(self.inp_cash.text() or 0) + float(self.inp_tpe.text() or 0)
+        elif method_idx == 2:
+            payment_value_da = float(self.inp_euro_da.text() or 0)
+        elif method_idx == 3:
+            payment_value_da = float(self.inp_casse_da.text() or 0)
+        elif method_idx == 4:
+            payment_value_da = float(self.inp_dollar_da.text() or 0)
+        payment_value_da = max(0.0, payment_value_da)
+        if payment_value_da <= 0:
+            QMessageBox.warning(self, "Erreur", "Veuillez saisir d'abord la valeur du versement Ã  calculer.")
+            return
+
         pad = VirtualNumpad(
             title=f"Saisir le prix/g (actuel: {current_ppg:,.2f} DA/g)",
             mode="dialog",
@@ -471,11 +486,10 @@ class NewVersementDialog(QDialog):
         if pad.exec() == QDialog.Accepted:
             value = pad.get_value()
             if value:
-                target_ppg = max(0.0, float(value))
-                target_ppg = min(target_ppg, current_ppg)
-                remise_value = max(0.0, (current_ppg - target_ppg) * total_weight)
+                target_ppg = min(max(0.0, float(value)), current_ppg)
+                payment_weight = min(total_weight, payment_value_da / current_ppg)
+                remise_value = max(0.0, (current_ppg - target_ppg) * payment_weight)
                 self.inp_remise_da.setText(f"{remise_value:.2f}")
-
     def auto_calculate_poids_deduit(self):
         """مساعد في الحساب: يكتب تلقائياً الوزن المقتنى بالجرام ويسمح للمستخدم بالتعديل اليدوي كأداة مساعدة"""
         total_brut = sum(float(item.get('selling_price') or 0) for item in self.cart_items)
