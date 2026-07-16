@@ -336,9 +336,14 @@ class EditPaymentDialog(QDialog):
         btn_arrondi.setStyleSheet("background-color: #8e44ad; color: white; padding: 5px; font-weight: bold; border-radius: 4px; font-size: 12px;")
         btn_arrondi.setCursor(Qt.PointingHandCursor)
         btn_arrondi.clicked.connect(self.open_discount_arrondi)
+        btn_ppg = QPushButton("Prix/g Target")
+        btn_ppg.setStyleSheet("background-color: #8e44ad; color: white; padding: 5px; font-weight: bold; border-radius: 4px; font-size: 12px;")
+        btn_ppg.setCursor(Qt.PointingHandCursor)
+        btn_ppg.clicked.connect(self.open_discount_price_per_gram)
         
         remise_buttons_layout.addWidget(btn_pct)
         remise_buttons_layout.addWidget(btn_arrondi)
+        remise_buttons_layout.addWidget(btn_ppg)
         form2.addRow(lbl_remise_tools, remise_buttons_layout)
 
         self.inp_oc = QDoubleSpinBox()
@@ -431,7 +436,16 @@ class EditPaymentDialog(QDialog):
     def _get_active_base_amount(self):
         selected_item_id = self.combo_target.currentData()
         if selected_item_id and selected_item_id in self.item_prices:
-            return self.item_prices[selected_item_id]
+            item_amount = float(self.item_prices[selected_item_id] or 0)
+            current_payment_id = self.p_data.get('payment_id')
+            item_paid = sum(
+                float(p.get('montant_da') or 0) +
+                float(p.get('tpe_da') or 0) +
+                float(p.get('remise_da') or 0)
+                for p in (self.v_data.get('payments', []) if self.v_data else [])
+                if p.get('versement_item_id') == selected_item_id and p.get('id') != current_payment_id
+            )
+            return max(0.0, item_amount - item_paid)
         elif self.v_data:
             total_est = self.v_data.get('total_estimated_price_da', 0)
             total_paid = self.v_data.get('total_paid_money_da', 0) + self.v_data.get('total_remise_da', 0)
@@ -493,6 +507,31 @@ class EditPaymentDialog(QDialog):
                         QMessageBox.warning(self, "Erreur", "Le paiement actuel dépasse déjà le montant cible.")
                 else:
                     QMessageBox.warning(self, "Erreur", f"Le reste cible doit être entre 0 et {base_amount:,.2f} DA.")
+
+    def open_discount_price_per_gram(self):
+        base_amount = self._get_active_base_amount()
+        base_weight = self._get_active_base_weight()
+        if base_amount <= 0 or base_weight <= 0:
+            QMessageBox.warning(self, "Erreur", "Aucune base de prix/poids disponible pour calculer la remise.")
+            return
+
+        current_ppg = base_amount / base_weight
+        from ui.tools.virtual_numpad import VirtualNumpad
+        pad = VirtualNumpad(
+            title=f"Saisir le prix/g (actuel: {current_ppg:,.2f} DA/g)",
+            mode="dialog",
+            allow_decimal=True,
+            allow_negative=False,
+            initial_value=current_ppg,
+            parent=self
+        )
+        if pad.exec() == QDialog.Accepted:
+            value = pad.get_value()
+            if value:
+                target_ppg = max(0.0, float(value))
+                target_ppg = min(target_ppg, current_ppg)
+                remise_value = max(0.0, (current_ppg - target_ppg) * base_weight)
+                self.inp_remise.setValue(remise_value)
 
     def auto_calculate_poids_deduit(self):
         """مساعد في الحساب: يكتب تلقائياً الوزن المقتنى بالجرام ويسمح للمستخدم بالتعديل اليدوي كأداة مساعدة"""

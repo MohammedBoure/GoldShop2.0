@@ -454,25 +454,27 @@ class NewVersementDialog(QDialog):
 
     def open_discount_price_per_gram(self):
         total_weight = sum(float(item.get('remaining_weight') or item.get('weight') or 0.0) for item in self.cart_items)
-        if total_weight <= 0:
-            QMessageBox.warning(self, "Erreur", "Aucun article avec poids dans le panier.")
+        total_brut = sum(float(item.get('selling_price') or 0) for item in self.cart_items)
+        if total_brut <= 0 or total_weight <= 0:
+            QMessageBox.warning(self, "Erreur", "Aucun prix/poids disponible dans le panier.")
             return
 
-        total_brut = sum(float(item.get('selling_price') or 0) for item in self.cart_items)
-        current_avg = total_brut / total_weight if total_weight > 0 else 0
-
-        pad = VirtualNumpad(title="Saisir le Nouveau Prix par Gramme", mode="dialog", allow_decimal=True, allow_negative=False, initial_value=current_avg, parent=self)
+        current_ppg = total_brut / total_weight
+        pad = VirtualNumpad(
+            title=f"Saisir le prix/g (actuel: {current_ppg:,.2f} DA/g)",
+            mode="dialog",
+            allow_decimal=True,
+            allow_negative=False,
+            initial_value=current_ppg,
+            parent=self
+        )
         if pad.exec() == QDialog.Accepted:
-            val = pad.get_value()
-            if val:
-                new_ppg = float(val)
-                if new_ppg >= 0:
-                    expected_final = new_ppg * total_weight
-                    if expected_final > total_brut: expected_final = total_brut
-                    remise_val = total_brut - expected_final
-                    self.inp_remise_da.setText(f"{remise_val:.2f}")
-                else:
-                    QMessageBox.warning(self, "Erreur", "Le prix par gramme doit être positif.")
+            value = pad.get_value()
+            if value:
+                target_ppg = max(0.0, float(value))
+                target_ppg = min(target_ppg, current_ppg)
+                remise_value = max(0.0, (current_ppg - target_ppg) * total_weight)
+                self.inp_remise_da.setText(f"{remise_value:.2f}")
 
     def auto_calculate_poids_deduit(self):
         """مساعد في الحساب: يكتب تلقائياً الوزن المقتنى بالجرام ويسمح للمستخدم بالتعديل اليدوي كأداة مساعدة"""
