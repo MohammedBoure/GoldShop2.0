@@ -898,8 +898,8 @@ class VersementsView(QWidget):
         self.table.setStyleSheet("""
             QTableWidget { background-color: #ffffff; font-size: 14px; gridline-color: #dcdde1; border: 1px solid #cbd5df; }
             QHeaderView::section { background-color: #0f8f83; color: white; font-weight: bold; font-size: 14px; padding: 6px; border: 1px solid #0b776d; }
-            QTableWidget::item { padding: 6px 10px; background-color: transparent; color: unset; }
-            QTableWidget::item:selected { background-color: #d1d8e0; color: black; }
+            QTableWidget::item { padding: 6px 10px; }
+            QTableWidget::item:selected { background-color: #d1d8e0; }
         """)
         
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
