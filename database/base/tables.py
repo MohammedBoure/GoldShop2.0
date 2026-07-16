@@ -546,7 +546,8 @@ PAYMENT_TABLE_QUERIES = [
         versement_id INT NOT NULL,
         versement_item_id BIGINT NULL, 
         journee_id INT NOT NULL,
-        montant_da DECIMAL(15, 2) DEFAULT 0,         
+        montant_da DECIMAL(15, 2) DEFAULT 0,
+        tpe_da DECIMAL(15, 2) DEFAULT 0,
         montant_euro DECIMAL(15, 2) DEFAULT 0,       
         taux_change_euro DECIMAL(15, 2) DEFAULT 0,   
         montant_dollar DECIMAL(15, 2) DEFAULT 0,     
@@ -563,6 +564,7 @@ PAYMENT_TABLE_QUERIES = [
         FOREIGN KEY (journee_id) REFERENCES DailySessions(id)
     );""",
 
+    "ALTER TABLE Versement_Payments ADD COLUMN tpe_da DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Versement_Payments ADD COLUMN montant_dollar DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Versement_Payments ADD COLUMN taux_change_dollar DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Versement_Payments ADD COLUMN remise_da DECIMAL(15, 2) DEFAULT 0;"

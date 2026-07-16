@@ -90,7 +90,7 @@ class InventoryQueryMixin:
                         
                         -- 🟢 جلب تفاصيل العربون إذا كانت القطعة محجوزة
                         vi.versement_id as linked_versement_id,
-                        (SELECT COALESCE(SUM(vp.montant_da + (vp.montant_euro * vp.taux_change_euro)), 0) 
+                        (SELECT COALESCE(SUM(vp.montant_da + vp.tpe_da + (vp.montant_euro * vp.taux_change_euro)), 0)
                          FROM Versement_Payments vp 
                          WHERE vp.versement_item_id = vi.id) as total_versement_item
                          
@@ -231,12 +231,12 @@ class InventoryQueryMixin:
                         vi.versement_id as linked_versement_id,
                         
                         -- 🟢 3. حساب إجمالي الدفعات الخاصة بهذه القطعة تحديداً (بالدينار والأورو)
-                        (SELECT COALESCE(SUM(vp.montant_da + (vp.montant_euro * vp.taux_change_euro)), 0) 
+                        (SELECT COALESCE(SUM(vp.montant_da + vp.tpe_da + (vp.montant_euro * vp.taux_change_euro)), 0)
                          FROM Versement_Payments vp 
                          WHERE vp.versement_item_id = vi.id) as total_versement_item,
                          
                         -- 🟢 4. حساب إجمالي الدفعات للملف بالكامل (خيار إضافي)
-                        (SELECT COALESCE(SUM(vp.montant_da + (vp.montant_euro * vp.taux_change_euro)), 0) 
+                        (SELECT COALESCE(SUM(vp.montant_da + vp.tpe_da + (vp.montant_euro * vp.taux_change_euro)), 0)
                          FROM Versement_Payments vp 
                          WHERE vp.versement_id = vi.versement_id) as total_versement_global
                          

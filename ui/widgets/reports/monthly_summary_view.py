@@ -142,6 +142,7 @@ class MonthlySummaryView(QWidget):
                     SELECT 
                         DATE(vp.payment_date) as pay_date,
                         SUM(CASE WHEN vp.montant_da > 0 AND COALESCE(vp.montant_euro, 0) = 0 AND COALESCE(vp.montant_dollar, 0) = 0 AND COALESCE(vp.or_casse_g, 0) = 0 THEN vp.montant_da ELSE 0 END) as total_vp_recette,
+                        SUM(vp.tpe_da) as total_vp_tpe,
                         SUM(vp.montant_euro) as total_vp_euro,
                         SUM(vp.montant_dollar) as total_vp_dollar,
                         SUM(vp.or_casse_g) as total_vp_oc
@@ -180,7 +181,7 @@ class MonthlySummaryView(QWidget):
                         ps = float(s_data.get('total_ps') or 0)
                         recette = float(s_data.get('total_recette') or 0) + float(vp_data.get('total_vp_recette') or 0)
                         oc = float(s_data.get('total_oc') or 0) + float(vp_data.get('total_vp_oc') or 0)
-                        tpe = float(s_data.get('total_tpe') or 0)
+                        tpe = float(s_data.get('total_tpe') or 0) + float(vp_data.get('total_vp_tpe') or 0)
                         euro = float(vp_data.get('total_vp_euro') or 0)
                         dollar = float(vp_data.get('total_vp_dollar') or 0)
                         impos = float(s_data.get('total_impos') or 0)

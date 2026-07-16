@@ -3,9 +3,9 @@
 import os
 import json
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget, 
-    QTableWidgetItem, QHeaderView, QLabel, QLineEdit, QComboBox, 
-    QMenu, QMessageBox, QDialog, QAbstractScrollArea, QFormLayout, 
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget,
+    QTableWidgetItem, QHeaderView, QLabel, QLineEdit, QComboBox,
+    QMenu, QMessageBox, QDialog, QAbstractScrollArea, QFormLayout,
     QDoubleSpinBox, QApplication, QGroupBox
 )
 from PySide6.QtCore import Qt, QUrl, QSize
@@ -268,6 +268,13 @@ class EditPaymentDialog(QDialog):
         self.inp_da.setValue(self.p_data.get("montant_da", 0))
         self.inp_da.valueChanged.connect(lambda _: self.auto_calculate_poids_deduit())
 
+        self.inp_tpe = QDoubleSpinBox()
+        self.inp_tpe.setRange(-99999999, 99999999)
+        self.inp_tpe.setSuffix(" TPE (DA)")
+        self.inp_tpe.setStyleSheet("padding: 5px; font-size: 14px; font-weight: bold; color: #2980b9;")
+        self.inp_tpe.setValue(self.p_data.get("tpe_da", 0))
+        self.inp_tpe.valueChanged.connect(lambda _: self.auto_calculate_poids_deduit())
+
         self.inp_euro = QDoubleSpinBox()
         self.inp_euro.setRange(-999999, 999999)
         self.inp_euro.setSuffix(" €")
@@ -297,6 +304,7 @@ class EditPaymentDialog(QDialog):
         self.inp_taux_dollar.valueChanged.connect(lambda _: self.calc_da_eq())
 
         form1.addRow("Montant (DA):", _wrap_with_numpad(self.inp_da, parent=self))
+        form1.addRow("TPE (DA):", _wrap_with_numpad(self.inp_tpe, parent=self))
         form1.addRow("Montant (€):", _wrap_with_numpad(self.inp_euro, parent=self))
         form1.addRow("Taux de change (€):", _wrap_with_numpad(self.inp_taux, parent=self))
         form1.addRow("Montant ($):", _wrap_with_numpad(self.inp_dollar, parent=self))
@@ -428,7 +436,7 @@ class EditPaymentDialog(QDialog):
             total_est = self.v_data.get('total_estimated_price_da', 0)
             total_paid = self.v_data.get('total_paid_money_da', 0) + self.v_data.get('total_remise_da', 0)
             # إرجاع المبلغ المدفوع القديم للحصول على الأساس الحقيقي قبل هذه الدفعة
-            old_pay = float(self.p_data.get('montant_da', 0)) + float(self.p_data.get('remise_da', 0))
+            old_pay = float(self.p_data.get('montant_da', 0)) + float(self.p_data.get('tpe_da', 0)) + float(self.p_data.get('remise_da', 0))
             return max(0.0, (total_est - total_paid) + old_pay)
         return 0.0
 
@@ -468,7 +476,7 @@ class EditPaymentDialog(QDialog):
             QMessageBox.warning(self, "Erreur", "Aucun reste estimé disponible à solder ou arrondir.")
             return
         
-        current_pay = self.inp_da.value()
+        current_pay = self.inp_da.value() + self.inp_tpe.value()
         reste_actuel = max(0.0, base_amount - current_pay)
         
         from ui.tools.virtual_numpad import VirtualNumpad
@@ -491,7 +499,7 @@ class EditPaymentDialog(QDialog):
         base_amount = self._get_active_base_amount()
         base_weight = self._get_active_base_weight()
         
-        current_pay = self.inp_da.value()
+        current_pay = self.inp_da.value() + self.inp_tpe.value()
         remise = self.inp_remise.value()
         
         if base_amount > 0 and base_weight > 0:
@@ -509,7 +517,7 @@ class EditPaymentDialog(QDialog):
         base_amount = self._get_active_base_amount()
         base_weight = self._get_active_base_weight()
         
-        current_pay = self.inp_da.value()
+        current_pay = self.inp_da.value() + self.inp_tpe.value()
         remise = self.inp_remise.value()
         poids_deduit = self.inp_deduit.value()
         
@@ -614,6 +622,7 @@ class EditPaymentDialog(QDialog):
             success = self.manager.versements.update_payment(
                 payment_id=self.p_data['payment_id'],
                 montant_da=self.inp_da.value(),
+                tpe_da=self.inp_tpe.value(),
                 montant_euro=self.inp_euro.value(),
                 taux_change_euro=self.inp_taux.value(),
                 or_casse_g=self.inp_oc.value(),
@@ -628,6 +637,7 @@ class EditPaymentDialog(QDialog):
             success = self.manager.versements.update_payment(
                 payment_id=self.p_data['payment_id'],
                 montant_da=self.inp_da.value(),
+                tpe_da=self.inp_tpe.value(),
                 montant_euro=self.inp_euro.value(),
                 taux_change_euro=self.inp_taux.value(),
                 or_casse_g=self.inp_oc.value(),
@@ -735,7 +745,7 @@ class VersementsView(QWidget):
         lbl_main_title = QLabel("SUIVI DES VERSEMENTS & ACOMPTES CLIENTS")
         lbl_main_title.setAlignment(Qt.AlignCenter)
         lbl_main_title.setStyleSheet("""
-            font-size: 20px; font-weight: 900; color: white; 
+            font-size: 20px; font-weight: 900; color: white;
             background-color: #0f8f83; padding: 10px; border-radius: 4px; letter-spacing: 1px;
         """)
         layout.addWidget(lbl_main_title)
@@ -772,9 +782,9 @@ class VersementsView(QWidget):
 
         layout.addLayout(tools_layout)
 
-        self.table = QTableWidget(0, 8)
+        self.table = QTableWidget(0, 9)
         self.table.setHorizontalHeaderLabels([
-            "Date / Opération", "Cash (DA)", "Montant (€/$)", "Taux (DA/€/$)", "Or Cassé (g)", "Poids Déduit", "Statut", "Observation"
+            "Date / Opération", "Cash (DA)", "TPE (DA)", "Montant (€/$)", "Taux (DA/€/$)", "Or Cassé (g)", "Poids Déduit", "Statut", "Observation"
         ])
         
         self.table.setAlternatingRowColors(False)
@@ -794,9 +804,9 @@ class VersementsView(QWidget):
         self.table.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
 
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch) 
-        for i in range(1, 7): header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(7, QHeaderView.Stretch) 
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        for i in range(1, 8): header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(8, QHeaderView.Stretch)
 
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_context_menu)
@@ -870,11 +880,12 @@ class VersementsView(QWidget):
                     "weight": w,
                     "total_weight": w,
                     "remaining_weight": item_remaining_w,
-                    "total_amount": 0.0, 
+                    "total_amount": 0.0,
                 })
 
         for p in v_data.get('payments', []):
             montant_da = float(p.get('montant_da') or 0)
+            montant_tpe = float(p.get('tpe_da') or 0)
             montant_euro = float(p.get('montant_euro') or 0)
             taux = float(p.get('taux_change_euro') or 0)
             montant_dollar = float(p.get('montant_dollar') or 0)
@@ -884,7 +895,7 @@ class VersementsView(QWidget):
             poids_casse = float(p.get('or_casse_g') or 0)
             poids_deduit = float(p.get('poids_deduit_g') or 0)
             
-            total_money = montant_da
+            total_money = montant_da + montant_tpe
             total_weight_pay = poids_casse + poids_deduit
 
             item_desig = p.get('item_designation', '')
@@ -892,7 +903,7 @@ class VersementsView(QWidget):
                 for it in v_data.get('items', []):
                     if it.get('designation') == item_desig:
                         w = float(it.get('weight') or 0)
-                        if w > 0 and f"({w:.2f}g)" not in item_desig and not item_desig.strip().endswith("g)"): 
+                        if w > 0 and f"({w:.2f}g)" not in item_desig and not item_desig.strip().endswith("g)"):
                             item_desig = f"{item_desig} ({w:.2f}g)"
                         break
 
@@ -900,6 +911,7 @@ class VersementsView(QWidget):
                 "id": p.get('id', ''),
                 "payment_date": p.get('payment_date'),
                 "amount": total_money,
+                "tpe_da": montant_tpe,
                 "montant_euro": montant_euro,
                 "taux_change_euro": taux,
                 "montant_dollar": montant_dollar,
@@ -908,7 +920,7 @@ class VersementsView(QWidget):
                 "weight": total_weight_pay,
                 "product_name": item_desig,
                 "item_name": item_desig,
-                "operation_number": v_num 
+                "operation_number": v_num
             })
 
         pdf_data['total_weight'] = float(v_data.get('total_weight_g', 0))
@@ -940,8 +952,8 @@ class VersementsView(QWidget):
 
         menu = QMenu(self)
         menu.setStyleSheet("""
-            QMenu { font-size: 15px; background-color: white; border: 1px solid #ccc; } 
-            QMenu::item { padding: 10px 30px; } 
+            QMenu { font-size: 15px; background-color: white; border: 1px solid #ccc; }
+            QMenu::item { padding: 10px 30px; }
             QMenu::item:selected { background-color: #3498db; color: white; }
             QMenu::separator { height: 1px; background: #ddd; margin: 4px 10px; }
         """)
@@ -975,7 +987,7 @@ class VersementsView(QWidget):
 
             if v_statut == 'EN_COURS':
                 menu.addSeparator()
-                act_add_item = menu.addAction("➕ Ajouter un nouvel article à ce dossier") 
+                act_add_item = menu.addAction("➕ Ajouter un nouvel article à ce dossier")
                 menu.addSeparator()
                 act_pay_global = menu.addAction("💵 Ajouter un paiement (Dossier Global)")
                 act_close = menu.addAction("✅ Clôturer tout le dossier")
@@ -1085,7 +1097,7 @@ class VersementsView(QWidget):
                         total_amount=price,
                         discount=0,
                         net_to_pay=price,
-                        cash_paid=0, 
+                        cash_paid=0,
                         tpe_paid=0, old_gold_weight=0, impos_weight=0,
                         notes=f"Facturé depuis Versement N°VRS-{data.get('v_id'):05d} (Cash payé: {cash} DA)"
                     )
@@ -1407,7 +1419,7 @@ class VersementsView(QWidget):
                 header_data = {"type": "HEADER", "v_id": v_id, "statut": statut}
                 header_title = f" 📦 VRS-{v_id} | Client: {client_name} {f'(Tel: {client_phone})' if client_phone else ''}"
                 header_details = f"Poids Total Actif: {v.get('total_weight_g', 0):.2f} g "
-                self.add_group_header_row(header_data, header_title, 4, header_details, 4, bg_color="#0f8f83", text_color="white")
+                self.add_group_header_row(header_data, header_title, 4, header_details, 5, bg_color="#0f8f83", text_color="white")
 
                 payments = v.get('payments', [])
                 items = v.get('items', [])
@@ -1421,8 +1433,8 @@ class VersementsView(QWidget):
                         weight = float(item.get('weight') or 0)
                         balance = self._calculate_item_weight_balance(item, payments, total_active_weight)
                         i_data = {
-                            "type": "ITEM", "v_id": v_id, "statut": statut, "item_id": item['item_id'], 
-                            "item_status": i_statut, "inventory_id": item.get('inventory_id'), 
+                            "type": "ITEM", "v_id": v_id, "statut": statut, "item_id": item['item_id'],
+                            "item_status": i_statut, "inventory_id": item.get('inventory_id'),
                             "designation": item.get('designation', 'Inconnu'),
                             "weight": weight,
                             "deducted_g": balance["deducted_g"],
@@ -1441,11 +1453,11 @@ class VersementsView(QWidget):
                         else: bg_c = "#eef7f5"; fg_c = "#075f58"
                         
                         self.create_and_set_item(row, 0, designation, i_data, bold=True, align_center=False, bg_color=bg_c, text_color=fg_c)
-                        for col in range(1, 4): self.create_and_set_item(row, col, "-", i_data, bg_color=bg_c)
-                        self.create_and_set_item(row, 4, weight_str, i_data, bold=True, bg_color=bg_c, text_color=fg_c)
-                        self.create_and_set_item(row, 5, remain_g_str, i_data, bold=True, color_red=(balance["remaining_g"] > 0), bg_color=bg_c)
-                        self.create_and_set_item(row, 6, i_statut, i_data, bold=True, bg_color=bg_c, text_color=fg_c)
-                        self.create_and_set_item(row, 7, obs_str, i_data, align_center=False, bg_color=bg_c, text_color=fg_c)
+                        for col in range(1, 5): self.create_and_set_item(row, col, "-", i_data, bg_color=bg_c)
+                        self.create_and_set_item(row, 5, weight_str, i_data, bold=True, bg_color=bg_c, text_color=fg_c)
+                        self.create_and_set_item(row, 6, remain_g_str, i_data, bold=True, color_red=(balance["remaining_g"] > 0), bg_color=bg_c)
+                        self.create_and_set_item(row, 7, i_statut, i_data, bold=True, bg_color=bg_c, text_color=fg_c)
+                        self.create_and_set_item(row, 8, obs_str, i_data, align_center=False, bg_color=bg_c, text_color=fg_c)
                         self.table.setRowHeight(row, 38)
 
                 if is_annule and not payments:
@@ -1453,14 +1465,14 @@ class VersementsView(QWidget):
                     self.table.insertRow(row)
                     dummy_data = {"type": "INFO"}
                     self.create_and_set_item(row, 0, "Dossier Annulé", dummy_data, bold=True, align_center=False, bg_color="#fff5f3", text_color="#be3528")
-                    for col in range(1, 8): self.create_and_set_item(row, col, "-", dummy_data, bg_color="#fff5f3")
+                    for col in range(1, 9): self.create_and_set_item(row, col, "-", dummy_data, bg_color="#fff5f3")
                 elif not payments and not is_annule:
                     row = self.table.rowCount()
                     self.table.insertRow(row)
                     dummy_data = {"type": "INFO"}
                     date_init = v['created_at'].strftime("%d/%m/%Y") if hasattr(v['created_at'], 'strftime') else str(v['created_at'])
                     self.create_and_set_item(row, 0, f"   ↳ {date_init} - Création à vide", dummy_data, align_center=False, bg_color="#edf2f6", text_color="#526170")
-                    for col in range(1, 8): self.create_and_set_item(row, col, "-", dummy_data, bg_color="#edf2f6")
+                    for col in range(1, 9): self.create_and_set_item(row, col, "-", dummy_data, bg_color="#edf2f6")
                 else:
                     for idx, p in enumerate(payments):
                         row = self.table.rowCount()
@@ -1468,7 +1480,7 @@ class VersementsView(QWidget):
                         d = p.get('payment_date', v['created_at'])
                         date_str = d.strftime("%d/%m/%Y") if hasattr(d, 'strftime') else str(d)
                         
-                        m_da = float(p.get('montant_da') or 0); m_eu = float(p.get('montant_euro') or 0)
+                        m_da = float(p.get('montant_da') or 0); m_tpe = float(p.get('tpe_da') or 0); m_eu = float(p.get('montant_euro') or 0)
                         taux = float(p.get('taux_change_euro') or 0); o_c = float(p.get('or_casse_g') or 0)
                         deduit = float(p.get('poids_deduit_g') or 0); p_notes = p.get('notes') or ""
                         m_dl = float(p.get('montant_dollar') or 0); taux_dl = float(p.get('taux_change_dollar') or 0)
@@ -1480,44 +1492,46 @@ class VersementsView(QWidget):
                         p_data = {
                             "type": "PAYMENT", "v_id": v_id, "statut": statut, "payment_id": p.get('id'),
                             "versement_item_id": p.get('versement_item_id'),
-                            "montant_da": m_da, "montant_euro": m_eu, "taux_change_euro": taux,
+                            "montant_da": m_da, "tpe_da": m_tpe, "montant_euro": m_eu, "taux_change_euro": taux,
                             "montant_dollar": m_dl, "taux_change_dollar": taux_dl, "remise_da": remise,
                             "or_casse_g": o_c, "poids_deduit_g": deduit, "notes": p_notes
                         }
                         self.create_and_set_item(row, 0, op_label, p_data, bold=True, align_center=False, bg_color="#fff8e8", text_color="#7a4d08")
                         self.create_and_set_item(row, 1, f"{m_da:,.0f} DA" if m_da != 0 else "-", p_data, color_red=(m_da < 0), bg_color="#fff8e8", text_color="#7a4d08" if m_da >= 0 else None)
-                        
+                        self.create_and_set_item(row, 2, f"{m_tpe:,.0f} DA" if m_tpe != 0 else "-", p_data, color_red=(m_tpe < 0), bg_color="#fff8e8", text_color="#7a4d08" if m_tpe >= 0 else None)
                         devise_str = []
                         if m_eu != 0: devise_str.append(f"{m_eu:,.0f} €")
                         if m_dl != 0: devise_str.append(f"{m_dl:,.0f} $")
-                        self.create_and_set_item(row, 2, " | ".join(devise_str) if devise_str else "-", p_data, color_red=(m_eu < 0 or m_dl < 0), bg_color="#fff8e8", text_color="#7a4d08" if (m_eu >= 0 and m_dl >= 0) else None)
+                        self.create_and_set_item(row, 3, " | ".join(devise_str) if devise_str else "-", p_data, color_red=(m_eu < 0 or m_dl < 0), bg_color="#fff8e8", text_color="#7a4d08" if (m_eu >= 0 and m_dl >= 0) else None)
                         
                         taux_str = []
                         if taux != 0: taux_str.append(f"{taux:,.2f} €")
                         if taux_dl != 0: taux_str.append(f"{taux_dl:,.2f} $")
-                        self.create_and_set_item(row, 3, " | ".join(taux_str) if taux_str else "-", p_data, color_red=(taux < 0 or taux_dl < 0), bg_color="#fff8e8", text_color="#7a4d08" if (taux >= 0 and taux_dl >= 0) else None)
+                        self.create_and_set_item(row, 4, " | ".join(taux_str) if taux_str else "-", p_data, color_red=(taux < 0 or taux_dl < 0), bg_color="#fff8e8", text_color="#7a4d08" if (taux >= 0 and taux_dl >= 0) else None)
                         
-                        self.create_and_set_item(row, 4, f"{o_c:.2f} g" if o_c != 0 else "-", p_data, color_red=(o_c < 0), bg_color="#fff8e8", text_color="#7a4d08" if o_c >= 0 else None)
+                        self.create_and_set_item(row, 5, f"{o_c:.2f} g" if o_c != 0 else "-", p_data, color_red=(o_c < 0), bg_color="#fff8e8", text_color="#7a4d08" if o_c >= 0 else None)
                         
                         deduit_str = f"{deduit:.2f} g" if deduit != 0 else "-"
-                        self.create_and_set_item(row, 5, deduit_str, p_data, bold=(deduit!=0), color_red=(deduit>0), bg_color="#fff8e8", text_color="#7a4d08" if deduit <= 0 else None)
+                        self.create_and_set_item(row, 6, deduit_str, p_data, bold=(deduit!=0), color_red=(deduit>0), bg_color="#fff8e8", text_color="#7a4d08" if deduit <= 0 else None)
                         
-                        self.create_and_set_item(row, 6, "Paiement", p_data, bg_color="#fff8e8", text_color="#7a4d08")
+                        self.create_and_set_item(row, 7, "Paiement", p_data, bg_color="#fff8e8", text_color="#7a4d08")
                         
                         obs_str = ""
                         if remise > 0: obs_str += f"[Remise: {remise:,.0f} DA] "
                         obs_str += p_notes
-                        self.create_and_set_item(row, 7, obs_str if obs_str.strip() else "-", p_data, align_center=False, bg_color="#fff8e8", text_color="#7a4d08")
+                        self.create_and_set_item(row, 8, obs_str if obs_str.strip() else "-", p_data, align_center=False, bg_color="#fff8e8", text_color="#7a4d08")
                         self.table.setRowHeight(row, 28)
 
                 if not is_annule:
                     total_paid_da = v.get('total_paid_money_da', 0)
+                    total_tpe = v.get('total_tpe_da', 0)
                     total_dollar = v.get('total_dollar', 0)
                     total_remise = v.get('total_remise_da', 0)
                     total_deducted = v.get('total_paid_weight_g', 0)
                     reste_poids = v.get('reste_poids_g', 0)
                     
                     sum_text_1 = f"💰 Payé: {total_paid_da:,.0f} DA"
+                    if total_tpe != 0: sum_text_1 += f"  |  TPE: {total_tpe:,.0f} DA"
                     if total_dollar > 0: sum_text_1 += f"  |  💵 {total_dollar:,.0f} $"
                     if total_remise > 0: sum_text_1 += f"  |  🎁 Remise: {total_remise:,.0f} DA"
                     sum_text_1 += f"  |  ⚖️ Déduit: - {total_deducted:.2f} g"
@@ -1525,13 +1539,13 @@ class VersementsView(QWidget):
                     sum_text_2 = f"STATUT: {statut}  |  ⚖️ RESTE: {reste_poids:.3f} g"
                     is_complete = (reste_poids <= 0) or (statut == 'CLOTURE')
                     bg_summary = "#dff5f1" if is_complete else "#ffedea"
-                    fg_summary = "#075f58" if is_complete else "#be3528" 
-                    self.add_group_header_row({"type": "SUMMARY"}, sum_text_1, 4, sum_text_2, 4, bg_color=bg_summary, text_color=fg_summary)
+                    fg_summary = "#075f58" if is_complete else "#be3528"
+                    self.add_group_header_row({"type": "SUMMARY"}, sum_text_1, 4, sum_text_2, 5, bg_color=bg_summary, text_color=fg_summary)
                     
                     row_space = self.table.rowCount()
                     self.table.insertRow(row_space)
                     self.table.setRowHeight(row_space, 8)
-                    for col in range(8):
+                    for col in range(9):
                         empty_item = QTableWidgetItem("")
                         empty_item.setFlags(Qt.NoItemFlags)
                         self.table.setItem(row_space, col, empty_item)

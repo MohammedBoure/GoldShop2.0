@@ -329,6 +329,56 @@ class EditObservationDialog(QDialog):
         return self.inp_obs.text().strip()
 
 
+class EditSellerDialog(QDialog):
+    def __init__(self, manager, current_seller_id, parent=None):
+        super().__init__(parent)
+        self.manager = manager
+        self.current_seller_id = current_seller_id
+        self.setWindowTitle("Modifier le vendeur")
+        self.setMinimumWidth(420)
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.combo_seller = QComboBox()
+        self.combo_seller.setStyleSheet("font-size: 16px; padding: 6px;")
+        self._load_sellers()
+        form.addRow("Vendeur :", self.combo_seller)
+        layout.addLayout(form)
+
+        buttons = QHBoxLayout()
+        btn_cancel = QPushButton("Annuler")
+        btn_save = QPushButton("Enregistrer")
+        btn_save.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; padding: 8px 18px;")
+        btn_cancel.clicked.connect(self.reject)
+        btn_save.clicked.connect(self.accept)
+        buttons.addWidget(btn_cancel)
+        buttons.addWidget(btn_save)
+        layout.addLayout(buttons)
+
+    def _load_sellers(self):
+        try:
+            with self.manager.db.get_db_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute(
+                    "SELECT id, username FROM Users WHERE is_active = 1 OR id = %s ORDER BY username",
+                    (self.current_seller_id,)
+                )
+                sellers = cursor.fetchall()
+                while cursor.nextset():
+                    pass
+
+            for seller in sellers:
+                self.combo_seller.addItem(seller['username'], seller['id'])
+            if self.current_seller_id is not None:
+                index = self.combo_seller.findData(self.current_seller_id)
+                if index >= 0:
+                    self.combo_seller.setCurrentIndex(index)
+        except Exception as e:
+            QMessageBox.warning(self, "Erreur", f"Impossible de charger les vendeurs : {e}")
+
+    def get_seller_id(self):
+        return self.combo_seller.currentData()
+
 class ExcelJournalView(QWidget):
     def __init__(self, manager):
         super().__init__()
@@ -484,8 +534,9 @@ class ExcelJournalView(QWidget):
         tpe = item.data(Qt.UserRole + 3)
         oc = item.data(Qt.UserRole + 4)
         impos = item.data(Qt.UserRole + 5)
+        seller_id = item.data(Qt.UserRole + 6)
 
-        item_obs = self.table.item(row, 7)
+        item_obs = self.table.item(row, 8)
         current_obs = item_obs.text() if item_obs else ""
 
         # قراءة أسماء الطابعات
@@ -530,6 +581,7 @@ class ExcelJournalView(QWidget):
         act_details = menu.addAction("ℹ️ Détails complets et Bénéfice (Faaida)")
         menu.addSeparator()
         act_edit = menu.addAction("✏️ Modifier les montants de cette vente")
+        act_edit_seller = menu.addAction("Modifier le vendeur")
         act_edit_obs = menu.addAction("📝 Modifier l'observation")
         menu.addSeparator()
         act_del = menu.addAction("🗑️ Supprimer (Annuler) cette vente")
@@ -547,6 +599,8 @@ class ExcelJournalView(QWidget):
             self.show_sale_details(sale_id)
         elif action == act_edit:
             self.edit_sale(sale_id, cash, tpe, oc, impos)
+        elif action == act_edit_seller:
+            self.edit_seller(sale_id, seller_id)
         elif action == act_edit_obs:
             self.edit_observation(sale_id, current_obs)
         elif action == act_del:
@@ -593,8 +647,9 @@ class ExcelJournalView(QWidget):
         tpe = item.data(Qt.UserRole + 3)
         oc = item.data(Qt.UserRole + 4)
         impos = item.data(Qt.UserRole + 5)
+        seller_id = item.data(Qt.UserRole + 6)
 
-        item_obs = self.table.item(row, 7)
+        item_obs = self.table.item(row, 8)
         current_obs = item_obs.text() if item_obs else ""
 
         pdf_printer = self._get_pdf_printer_name()
@@ -605,6 +660,7 @@ class ExcelJournalView(QWidget):
         self._add_action_btn("fa5s.print", f"Imprimer directement → {pdf_printer}" if pdf_printer else "Imprimer directement (non configurée)", "#9b59b6", "#8e44ad", lambda: self.print_invoice_pdf(sale_id, open_pdf=False, direct=True), enabled=bool(pdf_printer))
         self._add_action_btn("fa5s.receipt", f"Imprimer sur thermique → {thermal_printer}" if thermal_printer else "Imprimer sur thermique (non configurée)", "#e67e22", "#d35400", lambda: self.print_invoice_thermal(sale_id), enabled=bool(thermal_printer))
         self._add_action_btn("fa5s.edit", "Modifier les montants de cette vente", "#27ae60", "#2ecc71", lambda: self.edit_sale(sale_id, cash, tpe, oc, impos))
+        self._add_action_btn("fa5s.user-edit", "Modifier le vendeur", "#16a085", "#1abc9c", lambda: self.edit_seller(sale_id, seller_id))
         self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, current_obs))
         self._add_action_btn("fa5s.trash-alt", "Supprimer (Annuler) cette vente", "#c0392b", "#962d2d", lambda: self.delete_sale(sale_id))
 
@@ -808,6 +864,17 @@ class ExcelJournalView(QWidget):
             else:
                 QMessageBox.warning(self, "Erreur", "Erreur lors de la mise à jour.")
 
+    def edit_seller(self, sale_id, current_seller_id):
+        dlg = EditSellerDialog(self.manager, current_seller_id, self)
+        if dlg.exec() == QDialog.Accepted:
+            seller_id = dlg.get_seller_id()
+            if seller_id is None:
+                QMessageBox.warning(self, "Erreur", "Veuillez sÃ©lectionner un vendeur.")
+                return
+            if self.manager.sales.update_sale_seller(sale_id, seller_id):
+                self.load_data()
+            else:
+                QMessageBox.warning(self, "Erreur", "Erreur lors de la mise Ã  jour du vendeur.")
     def edit_observation(self, sale_id, current_obs):
         dlg = EditObservationDialog(current_obs, self)
         if dlg.exec() == QDialog.Accepted:
@@ -987,6 +1054,7 @@ class ExcelJournalView(QWidget):
                                 item.setData(Qt.UserRole + 3, float(r.get('TPE') or 0))
                                 item.setData(Qt.UserRole + 4, float(r.get('OC') or 0))
                                 item.setData(Qt.UserRole + 5, float(r.get('Impos') or 0))
+                                item.setData(Qt.UserRole + 6, r.get('vendeur_id'))
                                 
                             self.table.setItem(row, col_idx, item)
                             

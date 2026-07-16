@@ -855,6 +855,7 @@ class NewVersementDialog(QDialog):
                 remise_da = float(self.inp_remise_da.text() or 0)
 
             notes = self.inp_notes.toPlainText().strip()
+            montant_da_for_storage = cash if method_idx == 1 else montant_total_da
 
             if any(value < 0 for value in (cash, tpe, euro, dollar, oc, poids_deduit, montant_total_da)):
                 if not notes:
@@ -902,7 +903,8 @@ class NewVersementDialog(QDialog):
                     journee_id=journee['id'],
                     type_versement=type_v,
                     items_list=items_list,
-                    montant_da=montant_total_da,
+                    montant_da=montant_da_for_storage,
+                    tpe_da=tpe,
                     montant_euro=euro,
                     taux_change_euro=taux,
                     montant_dollar=dollar,

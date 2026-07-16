@@ -165,6 +165,7 @@ class SalesManager:
                         0 as Euro,
                         0 as Dollar,
                         u.username as Vendeur_Sofiane,
+                        s.user_id as vendeur_id,
                         COALESCE(NULLIF(s.notes, ''), CONCAT('Fac: ', s.receipt_number, ' - ', COALESCE(c.name, ''))) as Observation,
                         s.created_at as timestamp
                     FROM SaleItems si
@@ -187,11 +188,12 @@ class SalesManager:
                         0.0 as P_S,
                         IF(COALESCE(vp.montant_euro, 0) > 0 OR COALESCE(vp.montant_dollar, 0) > 0 OR COALESCE(vp.or_casse_g, 0) > 0, 0.0, vp.montant_da) as Recette,
                         vp.or_casse_g as OC,
-                        0.0 as TPE,
+                        vp.tpe_da as TPE,
                         0.0 as Impos,
                         vp.montant_euro as Euro,
                         vp.montant_dollar as Dollar,
                         '' as Vendeur_Sofiane,
+                        NULL as vendeur_id,
                         COALESCE(NULLIF(vp.notes, ''), CONCAT('Versement N° VRS-', vp.versement_id)) as Observation,
                         vp.payment_date as timestamp
                     FROM Versement_Payments vp
@@ -238,6 +240,7 @@ class SalesManager:
                 cursor.execute("""
                     SELECT 
                         SUM(CASE WHEN montant_da > 0 AND COALESCE(montant_euro, 0) = 0 AND COALESCE(montant_dollar, 0) = 0 AND COALESCE(or_casse_g, 0) = 0 THEN montant_da ELSE 0 END) as total_recette,
+                        SUM(tpe_da) as total_tpe,
                         SUM(or_casse_g) as total_oc,
                         SUM(montant_euro) as total_euro,
                         SUM(montant_dollar) as total_dollar,
@@ -249,7 +252,7 @@ class SalesManager:
 
                 return {
                     'total_recette': float((sales_totals['total_recette'] or 0) + (vp_totals['total_recette'] or 0)),
-                    'total_tpe': float(sales_totals['total_tpe'] or 0),
+                    'total_tpe': float((sales_totals['total_tpe'] or 0) + (vp_totals['total_tpe'] or 0)),
                     'total_oc': float((sales_totals['total_oc'] or 0) + (vp_totals['total_oc'] or 0)),
                     'total_euro': float(vp_totals['total_euro'] or 0),
                     'total_dollar': float(vp_totals['total_dollar'] or 0),
@@ -294,6 +297,16 @@ class SalesManager:
     # ============================================================
     # 6. جلب تفاصيل فاتورة محددة (للطباعة والتفاصيل)
     # ============================================================
+    def update_sale_seller(self, sale_id: int, seller_id: int) -> bool:
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE Sales SET user_id = %s WHERE id = %s", (seller_id, sale_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Erreur update_sale_seller: {e}")
+            return False
     def get_sale_details(self, sale_id: int) -> dict:
         try:
             with self.db.get_db_connection() as conn:

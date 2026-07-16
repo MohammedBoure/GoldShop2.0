@@ -142,6 +142,12 @@ class AddPaymentDialog(QDialog):
         self.inp_montant_da.setGroupSeparatorShown(True)
         self.inp_montant_da.valueChanged.connect(lambda _: self.auto_calculate_poids_deduit())
         
+        self.inp_tpe = QDoubleSpinBox()
+        self.inp_tpe.setRange(-99999999, 99999999)
+        self.inp_tpe.setSuffix(" TPE (DA)")
+        self.inp_tpe.setGroupSeparatorShown(True)
+        self.inp_tpe.setStyleSheet("padding: 5px; font-size: 14px; font-weight: bold; color: #2980b9;")
+        self.inp_tpe.valueChanged.connect(lambda _: self.auto_calculate_poids_deduit())
         self.inp_montant_euro = QDoubleSpinBox()
         self.inp_montant_euro.setRange(-999999, 999999)
         self.inp_montant_euro.setSuffix(" €")
@@ -187,6 +193,7 @@ class AddPaymentDialog(QDialog):
         self.inp_prix_gramme.valueChanged.connect(lambda _: self.calc_montant_da_eq())
 
         form1.addRow("Montant payé (DA) :", self._wrap_with_numpad(self.inp_montant_da))
+        form1.addRow("TPE (DA) :", self._wrap_with_numpad(self.inp_tpe))
         form1.addRow("Montant payé (€) :", self._wrap_with_numpad(self.inp_montant_euro))
         form1.addRow("Taux de change (€) :", self._wrap_with_numpad(self.inp_taux_change))
         form1.addRow("Montant payé ($) :", self._wrap_with_numpad(self.inp_montant_dollar))
@@ -362,7 +369,7 @@ class AddPaymentDialog(QDialog):
             QMessageBox.warning(self, "Erreur", "Aucun reste estimé disponible à solder ou arrondir.")
             return
         
-        current_pay = self.inp_montant_da.value()
+        current_pay = self.inp_montant_da.value() + self.inp_tpe.value()
         reste_actuel = max(0.0, base_amount - current_pay)
         
         pad = VirtualNumpad(title="Saisir le Nouveau Reste Cible (DA)", mode="dialog", allow_decimal=True, allow_negative=False, initial_value=reste_actuel, parent=self)
@@ -385,7 +392,7 @@ class AddPaymentDialog(QDialog):
         if base_amount <= 0 or base_weight <= 0:
             return 0.0
 
-        current_pay = self.inp_montant_da.value()
+        current_pay = self.inp_montant_da.value() + self.inp_tpe.value()
         remise = self.inp_remise_da.value()
         prix_g_moyen = base_amount / base_weight
         poids_suggested = (current_pay + remise) / prix_g_moyen
@@ -425,7 +432,7 @@ class AddPaymentDialog(QDialog):
         base_amount = self._get_active_base_amount()
         base_weight = self._get_active_base_weight()
         
-        current_pay = self.inp_montant_da.value()
+        current_pay = self.inp_montant_da.value() + self.inp_tpe.value()
         remise = self.inp_remise_da.value()
         poids_deduit = self.inp_poids_deduit.value()
         
@@ -527,6 +534,7 @@ class AddPaymentDialog(QDialog):
     def save_payment(self):
         try:
             montant_da = self.inp_montant_da.value()
+            tpe_da = self.inp_tpe.value()
             montant_euro = self.inp_montant_euro.value()
             taux_change = self.inp_taux_change.value()
             montant_dollar = self.inp_montant_dollar.value()
@@ -539,7 +547,7 @@ class AddPaymentDialog(QDialog):
             
             selected_item_id = self.combo_target.currentData()
 
-            if montant_da < 0 or montant_euro < 0 or montant_dollar < 0 or or_casse < 0 or poids_deduit < 0:
+            if montant_da < 0 or tpe_da < 0 or montant_euro < 0 or montant_dollar < 0 or or_casse < 0 or poids_deduit < 0:
                 if not notes:
                     QMessageBox.warning(
                         self, "Note Obligatoire", 
@@ -553,7 +561,7 @@ class AddPaymentDialog(QDialog):
                     self.inp_notes.setFocus()
                     return
 
-            if montant_da == 0 and montant_euro == 0 and montant_dollar == 0 and or_casse == 0 and remise_da == 0:
+            if montant_da == 0 and tpe_da == 0 and montant_euro == 0 and montant_dollar == 0 and or_casse == 0 and remise_da == 0:
                 QMessageBox.warning(self, "Erreur", "Veuillez entrer au moins un montant (DA/Euro/Dollar), de l'or cassé ou une remise.")
                 return
 
@@ -569,6 +577,7 @@ class AddPaymentDialog(QDialog):
                     versement_id=self.versement_id,
                     journee_id=self.journee_id,
                     montant_da=montant_da,
+                    tpe_da=tpe_da,
                     montant_euro=montant_euro,
                     taux_change_euro=taux_change,
                     or_casse_g=or_casse,
