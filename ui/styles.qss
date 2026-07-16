@@ -729,10 +729,3 @@ QToolButton#_q_qlineeditclearaction {
     background-color: #f8fffd;
     border: 2px solid #0f8f83;
 }
-
-/* ─── إصلاح: السماح للألوان البرمجية بالعمل في جداول البيانات ─── */
-QTableWidget::item,
-QTableView::item {
-    color: unset;
-    background-color: transparent;
-}
