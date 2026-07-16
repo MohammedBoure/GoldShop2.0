@@ -17,6 +17,12 @@ try:
 except ImportError:
     ReceiptGenerator = None
 
+from ui.widgets.versements.invoice_note_selector import (
+    create_invoice_note_combo,
+    normalize_custom_note,
+    selected_custom_note,
+)
+
 
 
 def _open_numpad(widget, allow_decimal=True, parent=None):
@@ -759,6 +765,44 @@ class EditPaymentDialog(QDialog):
             QMessageBox.critical(self, "Erreur", "Échec de la modification.")
 
 
+class VersementItemNoteDialog(QDialog):
+    def __init__(self, manager, data, parent=None):
+        super().__init__(parent)
+        self.manager = manager
+        self.data = data
+        self.setWindowTitle("Modifier À Vendre")
+        self.setMinimumWidth(520)
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+
+        title = QLabel(f"<b>Article :</b> {self.data.get('designation', '')}")
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        self.combo_note = create_invoice_note_combo(
+            self.manager, self.data.get("custom_note"), self
+        )
+        layout.addWidget(QLabel("À Vendre :"))
+        layout.addWidget(self.combo_note)
+
+        buttons = QHBoxLayout()
+        btn_cancel = QPushButton("Annuler")
+        btn_cancel.clicked.connect(self.reject)
+        btn_save = QPushButton("Enregistrer")
+        btn_save.setStyleSheet("background-color: #0f8f83; color: white; font-weight: bold;")
+        btn_save.clicked.connect(self.accept)
+        for button in (btn_cancel, btn_save):
+            button.setFixedHeight(42)
+            buttons.addWidget(button)
+        layout.addLayout(buttons)
+
+    def get_product_note(self):
+        return selected_custom_note(self.combo_note)
+
+
 
 class FacturationVersementDialog(QDialog):
     def __init__(self, manager, data, parent=None):
@@ -802,10 +846,10 @@ class FacturationVersementDialog(QDialog):
         self.inp_cash.setFocusPolicy(Qt.ClickFocus)
         self.inp_cash.mousePressEvent = lambda e: _open_numpad(self.inp_cash, allow_decimal=True, parent=self)
         form.addRow("Cash Payé Aujourd'hui (DA):", self.inp_cash)
-        self.inp_note = QLineEdit(str(self.data.get("item_note") or ""))
-        self.inp_note.setPlaceholderText("Note du produit pour la facture...")
-        self.inp_note.setStyleSheet("font-size: 15px; padding: 5px;")
-        form.addRow("Note produit :", self.inp_note)
+        self.combo_note = create_invoice_note_combo(
+            self.manager, self.data.get("custom_note"), self
+        )
+        form.addRow("À Vendre :", self.combo_note)
         
         self.combo_vendeur = QComboBox()
         self.combo_vendeur.setStyleSheet("font-size: 16px; padding: 5px;")
@@ -829,7 +873,7 @@ class FacturationVersementDialog(QDialog):
         layout.addLayout(btn_layout)
         
     def get_product_note(self):
-        return self.inp_note.text().strip()
+        return selected_custom_note(self.combo_note)
 
     def _load_sellers(self):
         try:
@@ -995,7 +1039,7 @@ class VersementsView(QWidget):
                     "total_weight": w,
                     "remaining_weight": item_remaining_w,
                     "total_amount": 0.0,
-                    "custom_note": str(item.get("notes") or "").strip(),
+                    "custom_note": normalize_custom_note(item.get("custom_note")),
                 })
 
         for p in v_data.get('payments', []):
@@ -1076,7 +1120,7 @@ class VersementsView(QWidget):
         act_print_pdf = act_print_direct = act_print_thermal = None
         act_pay_global = act_close = act_cancel = act_add_item = act_show_details = None
         act_reopen_versement = None
-        act_pay_item = act_retirer_item = act_cancel_item = act_delete_item = None
+        act_pay_item = act_retirer_item = act_cancel_item = act_delete_item = act_edit_item_note = None
         act_change_item_status = None
         act_edit_pay = act_delete_pay = None
 
@@ -1117,6 +1161,7 @@ class VersementsView(QWidget):
             menu.addSeparator()
             item_status = data.get("item_status")
             if item_status == 'EN_COURS' and v_statut == 'EN_COURS':
+                act_edit_item_note = menu.addAction("🏷️ Modifier À Vendre")
                 act_pay_item = menu.addAction("💵 Ajouter un paiement pour CET ARTICLE")
                 act_retirer_item = menu.addAction("📦 Marquer cet article comme RETIRÉ (Livré)")
                 menu.addSeparator()
@@ -1151,6 +1196,8 @@ class VersementsView(QWidget):
             self.open_add_payment_dialog(v_id)
         elif action == act_pay_item:
             self.open_add_payment_dialog(v_id, preselected_item_id=data.get("item_id"))
+        elif action == act_edit_item_note:
+            self._handle_edit_item_note(data)
         elif action == act_retirer_item:
             self._handle_retirer_item(data)
         elif action == act_cancel_item:
@@ -1170,58 +1217,98 @@ class VersementsView(QWidget):
         elif action == act_edit_pay:
             self._handle_edit_payment(data)
 
+    def _handle_edit_item_note(self, data):
+        dlg = VersementItemNoteDialog(self.manager, data, self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        product_note = dlg.get_product_note()
+        if self.manager.versements.update_versement_item_notes(data.get("item_id"), product_note):
+            self.load_data()
+        else:
+            QMessageBox.warning(self, "Erreur", "Impossible d'enregistrer À Vendre pour cet article.")
+
     def _handle_retirer_item(self, data):
         dlg = FacturationVersementDialog(self.manager, data, self)
-        if dlg.exec() == QDialog.Accepted:
-            try: price = float(dlg.inp_price.text() or 0)
-            except: price = 0.0
-            try: cash = float(dlg.inp_cash.text() or 0)
-            except: cash = 0.0
-            vendeur_id = dlg.combo_vendeur.currentData() or 1
-            product_note = dlg.get_product_note()
-            
-            success = self.manager.versements.retirer_versement_item(data.get("item_id"))
-            if success:
-                if hasattr(self.manager.versements, "update_versement_item_notes"):
-                    self.manager.versements.update_versement_item_notes(data.get("item_id"), product_note)
-                journee = self.manager.cash_box.get_or_create_today_session(user_id=1)
-                if cash > 0 and journee:
-                    self.manager.versements.add_payment(
-                        versement_id=data.get("v_id"),
-                        journee_id=journee['id'],
-                        montant_da=cash,
-                        or_casse_g=0, prix_gramme_jour_da=0,
-                        notes=f"Cash de livraison {data.get('designation', '')}",
-                        versement_item_id=data.get("item_id")
-                    )
-                
-                if journee:
-                    cart_items = [{
-                        'id': data.get("inventory_id"),
-                        'item_type': 'WEIGHT',
-                        'barcode': '',
-                        'name': data.get("designation", "Article Versement"),
-                        'cart_sold_weight': data.get("weight", 0),
-                        'cart_sold_qty': 1,
-                        'cart_unit_price': price,
-                        'cart_line_total': price,
-                        'custom_note': product_note
-                    }]
-                    self.manager.sales.create_sale(
-                        journee_id=journee['id'],
-                        client_id=dlg.client_id,
-                        user_id=vendeur_id,
-                        cart_items=cart_items,
-                        total_amount=price,
-                        discount=0,
-                        net_to_pay=price,
-                        cash_paid=0,
-                        tpe_paid=0, old_gold_weight=0, impos_weight=0,
-                        notes=f"Facturé depuis Versement N°VRS-{data.get('v_id'):05d} (Cash payé: {cash} DA)"
-                    )
-                self.load_data()
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        try: price = float(dlg.inp_price.text() or 0)
+        except: price = 0.0
+        try: cash = float(dlg.inp_cash.text() or 0)
+        except: cash = 0.0
+        vendeur_id = dlg.combo_vendeur.currentData() or 1
+        product_note = dlg.get_product_note()
+        item_id = data.get("item_id")
+
+        journee = self.manager.cash_box.get_or_create_today_session(user_id=1)
+        if not journee:
+            QMessageBox.critical(self, "Erreur", "La session de caisse est fermée. La livraison n'a pas été enregistrée.")
+            return
+
+        if not self.manager.versements.update_versement_item_notes(item_id, product_note):
+            QMessageBox.warning(self, "Erreur", "Impossible d'enregistrer À Vendre. La livraison a été annulée.")
+            return
+
+        if not self.manager.versements.retirer_versement_item(item_id):
+            QMessageBox.warning(self, "Erreur", "Impossible de livrer l'article.")
+            return
+
+        cart_items = [{
+            'id': data.get("inventory_id"),
+            'item_type': 'WEIGHT',
+            'barcode': '',
+            'name': data.get("designation", "Article Versement"),
+            'cart_sold_weight': data.get("weight", 0),
+            'cart_sold_qty': 1,
+            'cart_unit_price': price,
+            'cart_line_total': price,
+            'custom_note': product_note
+        }]
+        try:
+            sale_result = self.manager.sales.create_sale(
+                journee_id=journee['id'],
+                client_id=dlg.client_id,
+                user_id=vendeur_id,
+                cart_items=cart_items,
+                total_amount=price,
+                discount=0,
+                net_to_pay=price,
+                cash_paid=0,
+                tpe_paid=0, old_gold_weight=0, impos_weight=0,
+                notes=f"Facturé depuis Versement N°VRS-{data.get('v_id'):05d} (Cash payé: {cash} DA)"
+            )
+        except Exception as exc:
+            sale_result = {"success": False, "message": str(exc)}
+
+        if not isinstance(sale_result, dict) or not sale_result.get("success"):
+            reverted, revert_message = self.manager.versements.revert_versement_item_status(item_id)
+            detail = sale_result.get("message", "Résultat invalide") if isinstance(sale_result, dict) else "Résultat invalide"
+            if reverted:
+                QMessageBox.critical(
+                    self, "Facturation échouée",
+                    f"La facture n'a pas été créée ({detail}). L'article a été remis EN_COURS."
+                )
             else:
-                QMessageBox.warning(self, "Erreur", "Impossible de livrer l'article.")
+                QMessageBox.critical(
+                    self, "Erreur critique",
+                    f"La facture n'a pas été créée ({detail}) et le retour EN_COURS a échoué: {revert_message}"
+                )
+            self.load_data()
+            return
+
+        if cash > 0:
+            payment_saved = self.manager.versements.add_payment(
+                versement_id=data.get("v_id"),
+                journee_id=journee['id'],
+                montant_da=cash,
+                or_casse_g=0, prix_gramme_jour_da=0,
+                notes=f"Cash de livraison {data.get('designation', '')}",
+                versement_item_id=item_id
+            )
+            if not payment_saved:
+                QMessageBox.warning(self, "Paiement", "La facture a été créée, mais le paiement Versement n'a pas pu être enregistré.")
+        self.load_data()
 
     def _handle_cancel_item(self, data):
         if QMessageBox.question(self, "Annuler", "Annuler cet article ? (Retour en vitrine)", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
@@ -1328,6 +1415,7 @@ class VersementsView(QWidget):
             self._add_action_btn("fa5s.info-circle", "Spécifications détaillées du produit", "#3498db", "#2980b9", lambda: self.show_product_specs(data))
             item_status = data.get("item_status")
             if item_status == 'EN_COURS' and v_statut == 'EN_COURS':
+                self._add_action_btn("fa5s.tag", "Modifier À Vendre", "#0f8f83", "#08766e", lambda: self._handle_edit_item_note(data))
                 self._add_action_btn("fa5s.hand-holding-usd", "Ajouter un paiement pour CET ARTICLE", "#f1c40f", "#f39c12", lambda: self.open_add_payment_dialog(v_id, preselected_item_id=data.get("item_id")))
                 self._add_action_btn("fa5s.box-open", "Marquer comme RETIRÉ (Livré)", "#27ae60", "#2ecc71", lambda: self._handle_retirer_item(data))
                 self._add_action_btn("fa5s.store-slash", "Annuler l'article (Retour vitrine)", "#e74c3c", "#c0392b", lambda: self._handle_cancel_item(data))
@@ -1550,11 +1638,12 @@ class VersementsView(QWidget):
                         i_statut = item.get('item_status', 'EN_COURS')
                         weight = float(item.get('weight') or 0)
                         balance = self._calculate_item_weight_balance(item, payments, total_active_weight)
+                        custom_note = normalize_custom_note(item.get('custom_note'))
                         i_data = {
                             "type": "ITEM", "v_id": v_id, "statut": statut, "item_id": item['item_id'],
                             "item_status": i_statut, "inventory_id": item.get('inventory_id'),
                             "designation": item.get('designation', 'Inconnu'),
-                            "item_note": str(item.get('notes') or '').strip(),
+                            "custom_note": custom_note,
                             "weight": weight,
                             "deducted_g": balance["deducted_g"],
                             "remaining_g": balance["remaining_g"]
@@ -1565,6 +1654,8 @@ class VersementsView(QWidget):
                         obs_str = f"Reste poids produit: {balance['remaining_g']:.3f} g"
                         if balance["has_shared"]:
                             obs_str += " (avec part poids globale)"
+                        if custom_note:
+                            obs_str += f" | À Vendre: {custom_note}"
                         
                         bg_c = None; fg_c = None
                         if i_statut == 'ANNULE': bg_c = "#fff5f3"; fg_c = "#be3528"

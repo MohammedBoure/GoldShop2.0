@@ -414,6 +414,25 @@ def _thermal_product_item_rows(data, currency):
     return rows
 
 
+def _thermal_versement_item_rows(data):
+    rows = []
+    for item in data.get("items") or []:
+        code = str(
+            _thermal_first_value(item, "barcode", "inventory_barcode", "item_barcode", default="")
+            or ""
+        ).strip()
+        name = str(
+            _thermal_first_value(item, "item_name", "name", "description", default="Article")
+            or "Article"
+        ).strip()
+        remaining_weight = _thermal_safe_float(
+            _thermal_first_value(item, "remaining_weight", "weight", "total_weight", default=0)
+        )
+        custom_note = str(_thermal_first_value(item, "custom_note", "note", default="") or "").strip()
+        rows.append([code, name, f"{remaining_weight:.2f} Gr", custom_note])
+    return rows
+
+
 def _thermal_free_summary_lines(data, currency):
     payments = _thermal_payment_entries(data)
     if payments:
@@ -727,6 +746,14 @@ def _draw_thermal_receipt(painter, width, data, tc, doc_type):
         draw_text_center(str(data.get('amount_in_words', '.............................................')), f_small)
 
     elif doc_type == "Versement":
+        if versement_kind == "VERSEMENT_PRODUIT":
+            product_rows = _thermal_versement_item_rows(data)
+            if product_rows:
+                draw_text_center("Produits réservés", f_norm, bold=True)
+                draw_table(
+                    ["Code", "Article", "Reste"], [0.25, 0.50, 0.25], product_rows
+                )
+
         # 🟢 قراءة الإعداد ديناميكياً من thermal_config
         show_rate = tc.get("show_versement_rate", False)
         

@@ -12,6 +12,11 @@ from PySide6.QtGui import QFont
 
 from ui.tools.virtual_numpad import VirtualNumpad
 from ui.tools.virtual_keyboard import VirtualKeyboardDialog
+from ui.widgets.versements.invoice_note_selector import (
+    create_invoice_note_combo,
+    normalize_custom_note,
+    selected_custom_note,
+)
 
 import qtawesome as qta
 from ui.dialogs.client_selection_dialog import ClientSelectionDialog
@@ -142,7 +147,7 @@ class NewVersementDialog(QDialog):
         left_layout.addLayout(barcode_layout)
 
         self.cart_table = QTableWidget(0, 6)
-        self.cart_table.setHorizontalHeaderLabels(["Code", "Désignation", "Poids (g)", "Prix Estimé", "Note produit", "Action"])
+        self.cart_table.setHorizontalHeaderLabels(["Code", "Désignation", "Poids (g)", "Prix Estimé", "À Vendre", "Action"])
         self.cart_table.setStyleSheet("""
             QTableWidget { background-color: white; font-size: 14px; gridline-color: #eef2f6; }
             QHeaderView::section { background-color: #0f8f83; color: white; font-weight: bold; padding: 6px; font-size: 13px; border: none; }
@@ -716,7 +721,7 @@ class NewVersementDialog(QDialog):
             self.force_clear_barcode()
             return
         item = dict(item)
-        item.setdefault("versement_note", str(item.get("custom_note") or ""))
+        item["custom_note"] = normalize_custom_note(item.get("custom_note"))
         self.cart_items.append(item)
         self.refresh_cart()
         self.force_clear_barcode()
@@ -745,11 +750,14 @@ class NewVersementDialog(QDialog):
             self.cart_table.setItem(i, 2, it_weight)
             self.cart_table.setItem(i, 3, it_price)
 
-            note_edit = QLineEdit(str(item.get("versement_note") or ""))
-            note_edit.setPlaceholderText("Note produit...")
-            note_edit.setStyleSheet("padding: 5px; font-size: 13px;")
-            note_edit.textChanged.connect(lambda value, idx=i: self._set_item_note(idx, value))
-            self.cart_table.setCellWidget(i, 4, note_edit)
+            note_combo = create_invoice_note_combo(
+                self.manager, item.get("custom_note"), self.cart_table
+            )
+            note_combo.currentIndexChanged.connect(
+                lambda _index, cart_item=item, combo=note_combo:
+                    self._set_item_note(cart_item, selected_custom_note(combo))
+            )
+            self.cart_table.setCellWidget(i, 4, note_combo)
 
             btn_del = QPushButton("Suppr.")
             btn_del.setStyleSheet("background-color: #e74c3c; color: white; border-radius: 4px;")
@@ -759,9 +767,8 @@ class NewVersementDialog(QDialog):
         
         self.auto_calculate_poids_deduit()
 
-    def _set_item_note(self, index, value):
-        if 0 <= index < len(self.cart_items):
-            self.cart_items[index]["versement_note"] = value
+    def _set_item_note(self, item, value):
+        item["custom_note"] = normalize_custom_note(value)
 
     def remove_from_cart(self, index):
         if 0 <= index < len(self.cart_items):
@@ -919,7 +926,13 @@ class NewVersementDialog(QDialog):
                     self.inp_poids_deduit.setFocus()
                     return
 
-            items_list = [{"inventory_id": item['id'], "designation": item['name'], "notes": str(item.get("versement_note") or "").strip()} for item in self.cart_items]
+            items_list = [
+                {
+                    "inventory_id": item['id'], "designation": item['name'],
+                    "custom_note": normalize_custom_note(item.get("custom_note")),
+                }
+                for item in self.cart_items
+            ]
 
             journee = self.manager.cash_box.get_or_create_today_session(user_id=self.current_user.get('id', 1))
             if not journee:

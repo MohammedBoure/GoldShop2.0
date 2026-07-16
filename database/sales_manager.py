@@ -52,7 +52,7 @@ class SalesManager:
                 unit_price = float(item.get('cart_unit_price', 0))
                 total_price = float(item.get('cart_line_total', 0))
                 
-                custom_note = item.get('custom_note', '') # 🟢 سحب الملاحظة من السلة
+                custom_note = str(item.get('custom_note') or '').strip()[:255]
 
                 item_query = """
                     INSERT INTO SaleItems (
@@ -311,7 +311,8 @@ class SalesManager:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("UPDATE SaleItems SET custom_note = %s WHERE id = %s", (str(notes or '').strip(), sale_item_id))
+                custom_note = str(notes or '').strip()[:255]
+                cursor.execute("UPDATE SaleItems SET custom_note = %s WHERE id = %s", (custom_note, sale_item_id))
                 conn.commit()
                 return True
         except Exception as e:

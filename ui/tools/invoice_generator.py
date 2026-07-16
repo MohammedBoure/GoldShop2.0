@@ -850,7 +850,10 @@ class ReceiptGenerator:
 
         show_code = pdf_cfg["display"].get("show_item_code_column", True)
         code_format = pdf_cfg["display"].get("item_code_format", "Code-Barres")
-        show_items_section = bool(pdf_cfg["display"].get("show_versement_items_section", True))
+        has_item_notes = any(
+            str(item.get("custom_note") or item.get("note") or "").strip() for item in items
+        )
+        show_items_section = bool(pdf_cfg["display"].get("show_versement_items_section", True)) or has_item_notes
         show_payment_rate = bool(pdf_cfg["display"].get("show_versement_payment_rate", True))
 
         def _label(key, default):

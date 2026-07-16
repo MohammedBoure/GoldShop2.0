@@ -1,6 +1,9 @@
 import logging
 from datetime import datetime
 
+MAX_CUSTOM_NOTE_LENGTH = 255
+
+
 class VersementManager:
     """
     مدير عمليات العربون (Versements):
@@ -36,7 +39,7 @@ class VersementManager:
                 for item in items_list:
                     inv_id = item.get('inventory_id')
                     designation = item.get('designation', 'Article inconnu')
-                    item_notes = str(item.get('notes') or item.get('custom_note') or '').strip()
+                    item_notes = str(item.get('custom_note') or item.get('notes') or '').strip()[:MAX_CUSTOM_NOTE_LENGTH]
                     
                     cursor.execute("""
                         INSERT INTO Versement_Items (versement_id, inventory_id, designation, notes, item_status)
@@ -166,7 +169,7 @@ class VersementManager:
             client_id = v_data['client_id'] if v_data else 1
 
             cursor.execute("""
-                SELECT vi.inventory_id, vi.designation, vi.notes, i.weight, i.barcode
+                SELECT vi.inventory_id, vi.designation, vi.notes AS custom_note, i.weight, i.barcode
                 FROM Versement_Items vi 
                 LEFT JOIN Inventory i ON vi.inventory_id = i.id 
                 WHERE vi.versement_id = %s AND vi.item_status = 'EN_COURS'
@@ -192,7 +195,7 @@ class VersementManager:
                     w = float(it['weight'] or 0)
                     barcode = str(it['barcode'] or '')
                     desig = str(it['designation'] or 'Article Versement')
-                    item_note = str(it.get('notes') or '').strip()
+                    item_note = str(it.get('custom_note') or '').strip()[:MAX_CUSTOM_NOTE_LENGTH]
                     cursor.execute("""
                         INSERT INTO SaleItems (sale_id, inventory_id, barcode, name, item_type, sold_weight_g, sold_quantity, unit_price_da, total_price_da, custom_note)
                         VALUES (%s, %s, %s, %s, 'WEIGHT', %s, 1, 0, 0, %s)
@@ -381,7 +384,7 @@ class VersementManager:
                     
                     # جلب القطع مع حالتها وسعرها التقديري
                     cursor.execute("""
-                        SELECT vi.id as item_id, vi.inventory_id, vi.designation, vi.notes, vi.item_status, i.weight, i.barcode, i.selling_price
+                        SELECT vi.id as item_id, vi.inventory_id, vi.designation, vi.notes AS custom_note, vi.item_status, i.weight, i.barcode, i.selling_price
                         FROM Versement_Items vi
                         LEFT JOIN Inventory i ON vi.inventory_id = i.id
                         WHERE vi.versement_id = %s
@@ -466,7 +469,8 @@ class VersementManager:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("UPDATE Versement_Items SET notes = %s WHERE id = %s", (str(notes or '').strip(), item_id))
+                custom_note = str(notes or '').strip()[:MAX_CUSTOM_NOTE_LENGTH]
+                cursor.execute("UPDATE Versement_Items SET notes = %s WHERE id = %s", (custom_note, item_id))
                 conn.commit()
                 return True
         except Exception as e:
@@ -486,7 +490,7 @@ class VersementManager:
             cursor.execute("""
                 INSERT INTO Versement_Items (versement_id, inventory_id, designation, notes, item_status)
                 VALUES (%s, %s, %s, %s, 'EN_COURS')
-            """, (versement_id, inventory_id, designation, str(notes or '').strip()))
+            """, (versement_id, inventory_id, designation, str(notes or '').strip()[:MAX_CUSTOM_NOTE_LENGTH]))
             
             # 2. تغيير حالة القطعة في المخزون إلى "محجوزة"
             if inventory_id:
