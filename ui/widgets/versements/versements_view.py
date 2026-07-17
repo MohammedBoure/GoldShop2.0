@@ -1625,7 +1625,7 @@ class VersementsView(QWidget):
                 header_data = {"type": "HEADER", "v_id": v_id, "statut": statut}
                 header_title = f" 📦 VRS-{v_id} | Client: {client_name} {f'(Tel: {client_phone})' if client_phone else ''}"
                 header_details = f"Poids Total Actif: {v.get('total_weight_g', 0):.2f} g "
-                self.add_group_header_row(header_data, header_title, 4, header_details, 5, bg_color="#0f8f83", text_color="white")
+                self.add_group_header_row(header_data, header_title, 4, header_details, 5, bg_color="#dbe4ec", text_color="#1f2937", text_color2="#1f2937")
 
                 payments = v.get('payments', [])
                 items = v.get('items', [])
