@@ -950,7 +950,7 @@ class VersementsView(QWidget):
             QTableWidget { background-color: #ffffff; font-size: 14px; gridline-color: #dcdde1; border: 1px solid #cbd5df; }
             QHeaderView::section { background-color: #0f8f83; color: white; font-weight: bold; font-size: 14px; padding: 6px; border: 1px solid #0b776d; }
             QTableWidget::item { padding: 6px 10px; }
-            QTableWidget::item:selected { background-color: #d1d8e0; }
+            QTableWidget::item:selected { background-color: #d1d8e0; color: #1f2937; }
         """)
         
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
