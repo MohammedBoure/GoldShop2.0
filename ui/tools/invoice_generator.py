@@ -96,6 +96,12 @@ def _safe_float(value, default=0.0):
 
 def _payment_rate_reference(payment: dict) -> float:
     rate = _safe_float(
+        payment.get("prix_gramme_apres_remise")
+        or payment.get("price_per_gram_after_discount")
+    )
+    if rate > 0:
+        return rate
+    rate = _safe_float(
         payment.get("metal_rate_reference")
         or payment.get("metal_rate_at_payment")
         or payment.get("current_gold_rate")

@@ -119,6 +119,11 @@ def _thermal_payment_weight(entry):
 
 def _thermal_payment_rate(entry):
     rate = _thermal_safe_float(
+        _thermal_first_value(entry, "prix_gramme_apres_remise", "price_per_gram_after_discount", default=0)
+    )
+    if rate > 0:
+        return rate
+    rate = _thermal_safe_float(
         _thermal_first_value(entry, "metal_rate_reference", "metal_rate_at_payment", "current_gold_rate", default=0)
     )
     if rate > 0:

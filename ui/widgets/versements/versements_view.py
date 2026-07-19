@@ -17,6 +17,12 @@ try:
 except ImportError:
     ReceiptGenerator = None
 
+from database.versement_pricing import (
+    payment_value_da as calculate_payment_value_da,
+    price_after_discount,
+    shop_price_per_gram,
+)
+
 from ui.widgets.versements.invoice_note_selector import (
     create_invoice_note_combo,
     normalize_custom_note,
@@ -1054,7 +1060,14 @@ class VersementsView(QWidget):
             poids_casse = float(p.get('or_casse_g') or 0)
             poids_deduit = float(p.get('poids_deduit_g') or 0)
             
-            total_money = montant_da + montant_tpe
+            payment_value = calculate_payment_value_da(p)
+            shop_ppg = shop_price_per_gram(
+                v_data.get("items", []), p.get("versement_item_id")
+            )
+            after_remise_ppg = price_after_discount(
+                shop_ppg, payment_value, remise_da
+            )
+            total_money = payment_value
             total_weight_pay = poids_casse + poids_deduit
 
             item_desig = p.get('item_designation', '')
@@ -1077,6 +1090,8 @@ class VersementsView(QWidget):
                 "taux_change_dollar": taux_dollar,
                 "remise_da": remise_da,
                 "weight": total_weight_pay,
+                "prix_gramme_magasin": shop_ppg,
+                "prix_gramme_apres_remise": after_remise_ppg,
                 "product_name": item_desig,
                 "item_name": item_desig,
                 "operation_number": v_num

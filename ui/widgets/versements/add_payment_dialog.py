@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
+from database.versement_pricing import discount_for_target_price
 
 try:
     from ui.tools.virtual_numpad import VirtualNumpad
@@ -488,9 +489,17 @@ class AddPaymentDialog(QDialog):
         if pad.exec() == QDialog.Accepted:
             value = pad.get_value()
             if value:
-                target_ppg = min(max(0.0, float(value)), current_ppg)
-                payment_weight = min(available_weight, payment_value_da / current_ppg)
-                remise_value = max(0.0, (current_ppg - target_ppg) * payment_weight)
+                target_ppg = float(value)
+                if target_ppg <= 0:
+                    QMessageBox.warning(self, "Erreur", "Le prix/g cible doit etre superieur a 0.")
+                    return
+                target_ppg = min(target_ppg, current_ppg)
+                remise_value, _payment_weight = discount_for_target_price(
+                    current_ppg,
+                    target_ppg,
+                    payment_value_da,
+                    available_weight=available_weight,
+                )
                 self.inp_remise_da.setValue(remise_value)
     def _calculate_poids_suggestion(self):
         base_amount = self._get_active_base_amount()

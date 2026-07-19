@@ -17,6 +17,7 @@ from ui.widgets.versements.invoice_note_selector import (
     normalize_custom_note,
     selected_custom_note,
 )
+from database.versement_pricing import discount_for_target_price
 
 import qtawesome as qta
 from ui.dialogs.client_selection_dialog import ClientSelectionDialog
@@ -496,9 +497,17 @@ class NewVersementDialog(QDialog):
         if pad.exec() == QDialog.Accepted:
             value = pad.get_value()
             if value:
-                target_ppg = min(max(0.0, float(value)), current_ppg)
-                payment_weight = min(total_weight, payment_value_da / current_ppg)
-                remise_value = max(0.0, (current_ppg - target_ppg) * payment_weight)
+                target_ppg = float(value)
+                if target_ppg <= 0:
+                    QMessageBox.warning(self, "Erreur", "Le prix/g cible doit etre superieur a 0.")
+                    return
+                target_ppg = min(target_ppg, current_ppg)
+                remise_value, _payment_weight = discount_for_target_price(
+                    current_ppg,
+                    target_ppg,
+                    payment_value_da,
+                    available_weight=total_weight,
+                )
                 self.inp_remise_da.setText(f"{remise_value:.2f}")
     def auto_calculate_poids_deduit(self):
         """مساعد في الحساب: يكتب تلقائياً الوزن المقتنى بالجرام ويسمح للمستخدم بالتعديل اليدوي كأداة مساعدة"""
