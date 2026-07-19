@@ -346,7 +346,11 @@ class NewVersementDialog(QDialog):
         lbl_remise_tools.setStyleSheet("font-size: 12px; font-weight: bold; color: #7f8c8d;")
         form_deduction.addRow(lbl_remise_tools)
         
-        remise_buttons_layout = QHBoxLayout()
+        # The deduction column is intentionally narrow. Keeping these buttons
+        # in a row makes their labels collide when the dialog is resized.
+        remise_buttons_layout = QVBoxLayout()
+        remise_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        remise_buttons_layout.setSpacing(6)
         btn_pct = QPushButton("🧮 Remise (%)")
         btn_pct.setStyleSheet("background-color: #34495e; color: white; padding: 5px; font-weight: bold; border-radius: 4px; font-size: 12px;")
         btn_pct.setCursor(Qt.PointingHandCursor)
