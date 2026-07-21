@@ -537,6 +537,7 @@ PAYMENT_TABLE_QUERIES = [
         
         -- الحقل الجديد لمعرفة حالة القطعة داخل العربون
         item_status ENUM('EN_COURS', 'RETIRE', 'ANNULE') DEFAULT 'EN_COURS',
+        reserved_quantity INT NOT NULL DEFAULT 1,
         
         FOREIGN KEY (versement_id) REFERENCES Versements(id) ON DELETE CASCADE,
         FOREIGN KEY (inventory_id) REFERENCES Inventory(id) ON DELETE SET NULL
@@ -569,7 +570,8 @@ PAYMENT_TABLE_QUERIES = [
     "ALTER TABLE Versement_Payments ADD COLUMN montant_dollar DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Versement_Payments ADD COLUMN taux_change_dollar DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Versement_Payments ADD COLUMN remise_da DECIMAL(15, 2) DEFAULT 0;",
-    "ALTER TABLE Versement_Items ADD COLUMN notes TEXT;"
+    "ALTER TABLE Versement_Items ADD COLUMN notes TEXT;",
+    "ALTER TABLE Versement_Items ADD COLUMN reserved_quantity INT NOT NULL DEFAULT 1;"
 ]
 
 ACHAT_OC_TABLE_QUERIES = [

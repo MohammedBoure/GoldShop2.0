@@ -1,5 +1,12 @@
 import logging
 from datetime import datetime
+from database.profit_calculator import (
+    direct_sale_revenues,
+    item_cost_da,
+    number,
+    source_versement_id,
+    versement_revenues_by_inventory,
+)
 
 class SalesManager:
     """
@@ -54,6 +61,54 @@ class SalesManager:
                 
                 custom_note = str(item.get('custom_note') or '').strip()[:255]
 
+                if inv_id:
+                    cursor.execute("""
+                        SELECT item_type, remaining_weight, remaining_quantity,
+                               status, reserved_for_client_id
+                        FROM Inventory WHERE id = %s FOR UPDATE
+                    """, (inv_id,))
+                    inventory = cursor.fetchone()
+                    if not inventory:
+                        raise ValueError("Article d'inventaire introuvable.")
+
+                    reserved_client_id = inventory.get("reserved_for_client_id")
+                    client_reserved_for_sale = False
+                    if reserved_client_id and str(reserved_client_id) != "1":
+                        if client_id is None or int(reserved_client_id) != int(client_id):
+                            raise ValueError("Cet article est réservé à un autre client.")
+                        client_reserved_for_sale = True
+
+                    cursor.execute("""
+                        SELECT COALESCE(SUM(COALESCE(reserved_quantity, 1)), 0) AS reserved_quantity,
+                               COUNT(*) AS reservation_count
+                        FROM Versement_Items
+                        WHERE inventory_id = %s AND item_status = 'EN_COURS'
+                    """, (inv_id,))
+                    reservation = cursor.fetchone() or {}
+                    active_reserved = int(reservation.get("reserved_quantity") or 0)
+                    active_count = int(reservation.get("reservation_count") or 0)
+                    status = inventory.get("status")
+
+                    if item_type == "PIECE":
+                        remaining_quantity = int(inventory.get("remaining_quantity") or 0)
+                        sellable_quantity = max(0, remaining_quantity - active_reserved)
+                        if sold_q <= 0 or sold_q > sellable_quantity:
+                            raise ValueError(
+                                f"Quantité vendue ({sold_q}) supérieure au stock vendable "
+                                f"({sellable_quantity})."
+                            )
+                        legacy_reserved = status == "Reserved" and active_count > 0
+                        if status not in ("Available", "Partially_Sold") and not (legacy_reserved or client_reserved_for_sale):
+                            raise ValueError("Cet article n'est pas disponible pour la vente.")
+                    else:
+                        remaining_weight = float(inventory.get("remaining_weight") or 0.0)
+                        if sold_w <= 0 or sold_w > remaining_weight + 0.0001:
+                            raise ValueError("Le poids vendu dépasse le stock restant.")
+                        if active_count > 0:
+                            raise ValueError("Cet article pondéré est réservé par un versement.")
+                        if status not in ("Available", "Partially_Sold", "Reserved"):
+                            raise ValueError("Cet article n'est pas disponible pour la vente.")
+
                 item_query = """
                     INSERT INTO SaleItems (
                         sale_id, inventory_id, barcode, name, item_type, 
@@ -69,17 +124,18 @@ class SalesManager:
                     if item_type == 'WEIGHT':
                         cursor.execute("""
                             UPDATE Inventory 
-                            SET remaining_weight = GREATEST(0, remaining_weight - %s),
-                                status = IF(remaining_weight - %s <= 0.005, 'Sold', 'Partially_Sold')
+                            SET status = IF(remaining_weight - %s <= 0.005, 'Sold', 'Partially_Sold'),
+                                remaining_weight = GREATEST(0, remaining_weight - %s)
                             WHERE id = %s
                         """, (sold_w, sold_w, inv_id))
                     else:
                         cursor.execute("""
                             UPDATE Inventory 
-                            SET remaining_quantity = GREATEST(0, remaining_quantity - %s),
-                                status = IF(remaining_quantity - %s <= 0, 'Sold', 'Partially_Sold')
+                            SET status = IF(remaining_quantity - %s <= 0, 'Sold',
+                                        IF(remaining_quantity - %s < quantity, 'Partially_Sold', 'Available')),
+                                remaining_quantity = GREATEST(0, remaining_quantity - %s)
                             WHERE id = %s
-                        """, (sold_q, sold_q, inv_id))
+                        """, (sold_q, sold_q, sold_q, inv_id))
 
             conn.commit()
             return {"success": True, "sale_id": sale_id, "receipt_number": receipt_number}
@@ -118,15 +174,17 @@ class SalesManager:
                 if item['item_type'] == 'WEIGHT':
                     cursor.execute("""
                         UPDATE Inventory 
-                        SET remaining_weight = remaining_weight + %s,
-                            status = IF(remaining_weight + %s >= weight, 'Available', 'Partially_Sold')
+                        SET status = IF(reserved_for_client_id IS NOT NULL, 'Reserved',
+                                    IF(remaining_weight + %s >= weight, 'Available', 'Partially_Sold')),
+                            remaining_weight = remaining_weight + %s
                         WHERE id = %s
                     """, (item['sold_weight_g'], item['sold_weight_g'], inv_id))
                 else:
                     cursor.execute("""
                         UPDATE Inventory 
-                        SET remaining_quantity = remaining_quantity + %s,
-                            status = IF(remaining_quantity + %s >= quantity, 'Available', 'Partially_Sold')
+                        SET status = IF(reserved_for_client_id IS NOT NULL, 'Reserved',
+                                    IF(remaining_quantity + %s >= quantity, 'Available', 'Partially_Sold')),
+                            remaining_quantity = remaining_quantity + %s
                         WHERE id = %s
                     """, (item['sold_quantity'], item['sold_quantity'], inv_id))
 
@@ -158,10 +216,10 @@ class SalesManager:
                                IF(sup.name IS NOT NULL AND sup.name != '', CONCAT(' | Fourn: ', sup.name), '')
                         ) as Designation,
                         si.sold_weight_g as P_S,
-                        IF((SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.cash_paid_da, 0) as Recette,
-                        IF((SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.old_gold_weight_g, 0) as OC,
-                        IF((SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.tpe_paid_da, 0) as TPE,
-                        IF((SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.impos_weight_g, 0) as Impos,
+                        IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.cash_paid_da, 0) as Recette,
+                        IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.old_gold_weight_g, 0) as OC,
+                        IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.tpe_paid_da, 0) as TPE,
+                        IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.impos_weight_g, 0) as Impos,
                         0 as Euro,
                         0 as Dollar,
                         u.username as Vendeur_Sofiane,
@@ -219,10 +277,10 @@ class SalesManager:
                 cursor = conn.cursor(dictionary=True)
                 query = """
                     SELECT 
-                        SUM(cash_paid_da) as total_recette,
-                        SUM(tpe_paid_da) as total_tpe,
-                        SUM(old_gold_weight_g) as total_oc,
-                        SUM(impos_weight_g) as total_impos
+                        SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN cash_paid_da ELSE 0 END) as total_recette,
+                        SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN tpe_paid_da ELSE 0 END) as total_tpe,
+                        SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN old_gold_weight_g ELSE 0 END) as total_oc,
+                        SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN impos_weight_g ELSE 0 END) as total_impos
                     FROM Sales 
                     WHERE journee_id = %s AND status = 'COMPLETED'
                 """
@@ -239,7 +297,7 @@ class SalesManager:
                 
                 cursor.execute("""
                     SELECT 
-                        SUM(CASE WHEN montant_da > 0 AND COALESCE(montant_euro, 0) = 0 AND COALESCE(montant_dollar, 0) = 0 AND COALESCE(or_casse_g, 0) = 0 THEN montant_da ELSE 0 END) as total_recette,
+                        SUM(montant_da) as total_recette,
                         SUM(tpe_da) as total_tpe,
                         SUM(or_casse_g) as total_oc,
                         SUM(montant_euro) as total_euro,
@@ -319,29 +377,163 @@ class SalesManager:
             logging.error(f"Erreur update_sale_item_notes: {e}")
             return False
 
+    def _enrich_versement_closure_sale(self, cursor, sale: dict) -> None:
+        """Attach the payment source to final and individual Versement sales."""
+        from database.versement_invoice_summary import build_versement_payment_summary
+
+        versement_id = source_versement_id(sale.get("receipt_number"), sale.get("notes"))
+        if versement_id is None:
+            return
+
+        cursor.execute("""
+            SELECT p.*, vi.designation AS item_designation,
+                   vi.inventory_id AS payment_inventory_id
+            FROM Versement_Payments p
+            LEFT JOIN Versement_Items vi ON vi.id = p.versement_item_id
+            WHERE p.versement_id = %s
+            ORDER BY p.payment_date ASC, p.id ASC
+        """, (versement_id,))
+        payments = cursor.fetchall()
+        is_final_versement_invoice = str(sale.get("receipt_number") or "").upper().startswith("VRS-")
+        if not is_final_versement_invoice:
+            cutoff = sale.get("created_at")
+            cutoff_day = str(cutoff.date() if hasattr(cutoff, "date") else cutoff or "")[:10]
+            if cutoff_day:
+                def paid_on_or_before_delivery(payment):
+                    payment_date = payment.get("payment_date")
+                    payment_day = str(payment_date.date() if hasattr(payment_date, "date") else payment_date or "")[:10]
+                    return not payment_day or payment_day <= cutoff_day
+
+                payments = [payment for payment in payments if paid_on_or_before_delivery(payment)]
+
+        sale["source_versement_id"] = versement_id
+
+        if is_final_versement_invoice:
+            summary = build_versement_payment_summary(payments)
+            sale["total_amount_da"] = summary["total_brut_da"]
+            sale["discount_da"] = summary["total_remise_da"]
+            sale["net_to_pay_da"] = summary["net_to_pay_da"]
+            sale["cash_paid_da"] = summary["cash_paid_da"]
+            sale["tpe_paid_da"] = summary["tpe_paid_da"]
+            sale["old_gold_weight_g"] = summary["old_gold_weight_g"]
+            sale["impos_weight_g"] = summary["deducted_weight_g"]
+            sale["versement_payment_summary"] = summary
+            sale["payments_history"] = summary["payment_history"]
+
+        cursor.execute("""
+            SELECT vi.inventory_id,
+                   COALESCE(i.weight, 0) AS inventory_weight,
+                   COALESCE(i.quantity, 0) AS inventory_quantity
+            FROM Versement_Items vi
+            LEFT JOIN Inventory i ON i.id = vi.inventory_id
+            WHERE vi.versement_id = %s AND vi.item_status != 'ANNULE'
+        """, (versement_id,))
+        source_items = cursor.fetchall()
+        revenue_by_inventory = versement_revenues_by_inventory(source_items, payments)
+        for item in sale.get("items") or []:
+            item["paid_amount_da"] = number(revenue_by_inventory.get(item.get("inventory_id")))
+
+    def _attach_profit_metrics(self, sale: dict) -> None:
+        """Attach net realised revenue, historical cost and profit per item."""
+        items = sale.get("items") or []
+        if not items:
+            sale["total_profit_da"] = 0.0
+            sale["total_realized_revenue_da"] = 0.0
+            sale["total_cost_da"] = 0.0
+            return
+
+        has_versement_source = source_versement_id(sale.get("receipt_number"), sale.get("notes")) is not None
+        revenues = (
+            [number(item.get("paid_amount_da")) for item in items]
+            if has_versement_source
+            else direct_sale_revenues(items, sale.get("discount_da"))
+        )
+        total_profit = total_cost = total_revenue = 0.0
+        for item, revenue in zip(items, revenues):
+            cost = item_cost_da(item)
+            profit = revenue - cost
+            item["realized_revenue_da"] = revenue
+            item["cost_da"] = cost
+            item["profit_da"] = profit
+            total_revenue += revenue
+            total_cost += cost
+            total_profit += profit
+
+        sale["total_realized_revenue_da"] = total_revenue
+        sale["total_cost_da"] = total_cost
+        sale["total_profit_da"] = total_profit
+
     def get_sale_details(self, sale_id: int) -> dict:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
                 query_sale = """
-                    SELECT s.*, c.name as client_name, u.username as user_name 
-                    FROM Sales s 
-                    LEFT JOIN Clients c ON s.client_id = c.id 
-                    LEFT JOIN Users u ON s.user_id = u.id 
+                    SELECT s.*, c.name as client_name, u.username as user_name
+                    FROM Sales s
+                    LEFT JOIN Clients c ON s.client_id = c.id
+                    LEFT JOIN Users u ON s.user_id = u.id
                     WHERE s.id = %s
                 """
                 cursor.execute(query_sale, (sale_id,))
                 sale = cursor.fetchone()
-                while cursor.nextset(): pass
-                
-                if not sale: return None
+                while cursor.nextset():
+                    pass
+                if not sale:
+                    return None
 
-                cursor.execute("SELECT * FROM SaleItems WHERE sale_id = %s", (sale_id,))
-                items = cursor.fetchall()
-                while cursor.nextset(): pass
-                
-                sale['items'] = items
+                cursor.execute("""
+                    SELECT si.*,
+                           COALESCE(i.initial_cost, i.total_cost, 0) AS inventory_initial_cost,
+                           COALESCE(i.weight, 0) AS inventory_weight,
+                           COALESCE(i.quantity, 0) AS inventory_quantity,
+                           COALESCE(i.metal_cost_per_gram, 0) AS metal_cost_per_gram,
+                           COALESCE(i.labor_cost_per_gram, 0) AS labor_cost_per_gram
+                    FROM SaleItems si
+                    LEFT JOIN Inventory i ON i.id = si.inventory_id
+                    WHERE si.sale_id = %s
+                """, (sale_id,))
+                sale["items"] = cursor.fetchall()
+                while cursor.nextset():
+                    pass
+
+                self._enrich_versement_closure_sale(cursor, sale)
+                self._attach_profit_metrics(sale)
                 return sale
         except Exception as e:
             logging.error(f"Erreur get_sale_details: {e}")
             return None
+
+    def get_sale_profit_details(self, sale_id: int) -> dict:
+        """Return a sale with report-safe revenue, cost and profit metrics."""
+        return self.get_sale_details(sale_id)
+
+    def get_monthly_profit_by_day(self, year: int, month: int) -> dict:
+        """Aggregate realised profit by the date on which each sale was delivered."""
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT id, DATE(created_at) AS sale_date
+                    FROM Sales
+                    WHERE YEAR(created_at) = %s AND MONTH(created_at) = %s
+                      AND status = 'COMPLETED'
+                    ORDER BY created_at, id
+                """, (year, month))
+                sales = cursor.fetchall()
+                while cursor.nextset():
+                    pass
+
+            by_day = {}
+            for row in sales:
+                sale = self.get_sale_profit_details(row["id"])
+                if not sale:
+                    continue
+                day = row["sale_date"]
+                entry = by_day.setdefault(day, {"profit_da": 0.0, "revenue_da": 0.0, "cost_da": 0.0})
+                entry["profit_da"] += number(sale.get("total_profit_da"))
+                entry["revenue_da"] += number(sale.get("total_realized_revenue_da"))
+                entry["cost_da"] += number(sale.get("total_cost_da"))
+            return by_day
+        except Exception as e:
+            logging.error(f"Erreur get_monthly_profit_by_day: {e}")
+            return {}

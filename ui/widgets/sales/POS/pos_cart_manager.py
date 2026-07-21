@@ -84,7 +84,9 @@ class POSCartManager:
                 del cart_item['exact_remaining_debt']
                 
         else:  # UNIT
-            rem_q = int(cart_item.get('remaining_quantity') or cart_item.get('quantity') or 1)
+            raw_remaining_q = int(cart_item.get('remaining_quantity') or cart_item.get('quantity') or 1)
+            active_reserved_q = int(cart_item.get('active_reserved_quantity') or 0)
+            rem_q = max(0, raw_remaining_q - active_reserved_q)
             actual_qty = 1 if rem_q > 0 else 0
             
             # استخدام سعر البيع الحالي

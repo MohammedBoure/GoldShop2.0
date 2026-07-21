@@ -221,8 +221,8 @@ class EditPaymentDialog(QDialog):
             self.v_data = next((v for v in versements if v['id'] == self.p_data.get('v_id')), None)
             if self.v_data:
                 for item in self.v_data.get('items', []):
-                    self.item_prices[item['item_id']] = float(item.get('selling_price') or 0)
-                    self.item_weights[item['item_id']] = float(item.get('weight') or 0)
+                    self.item_prices[item['item_id']] = float(item.get('display_price') or item.get('selling_price') or 0)
+                    self.item_weights[item['item_id']] = float(item.get('display_weight') or item.get('weight') or 0)
         except Exception:
             pass
 
@@ -484,17 +484,23 @@ class EditPaymentDialog(QDialog):
             QMessageBox.warning(self, "Erreur", "Aucune base de prix estimé disponible pour calculer la remise.")
             return
         
+        current_pay = self.inp_da.value() + self.inp_tpe.value()
+        if current_pay <= 0:
+            QMessageBox.warning(self, "Erreur", "Veuillez saisir le montant payé d'abord pour calculer la remise sur cette avance.")
+            return
+
         from ui.tools.virtual_numpad import VirtualNumpad
         pad = VirtualNumpad(title="Saisir la Remise (%)", mode="dialog", allow_decimal=True, allow_negative=False, parent=self)
         if pad.exec() == QDialog.Accepted:
             val = pad.get_value()
             if val:
                 pct = float(val)
-                if 0 <= pct <= 100:
-                    remise_val = base_amount * (pct / 100.0)
+                if 0 <= pct < 100:
+                    gross_value = current_pay / (1 - pct / 100.0)
+                    remise_val = gross_value - current_pay
                     self.inp_remise.setValue(remise_val)
                 else:
-                    QMessageBox.warning(self, "Erreur", "Le pourcentage doit être entre 0 et 100.")
+                    QMessageBox.warning(self, "Erreur", "Le pourcentage doit être entre 0 et 99.")
 
     def open_discount_arrondi(self):
         base_amount = self._get_active_base_amount()
@@ -592,9 +598,9 @@ class EditPaymentDialog(QDialog):
             QMessageBox.warning(self, "Erreur", "Aucun article actif avec prix et poids restants n'est disponible pour calculer la remise.")
             return
 
-        payment_value_da = max(0.0, self.inp_montant_da.value() + self.inp_tpe.value())
+        payment_value_da = max(0.0, self.inp_da.value() + self.inp_tpe.value())
         if payment_value_da <= 0:
-            QMessageBox.warning(self, "Erreur", "Veuillez saisir d'abord la valeur du versement Ã  calculer.")
+            QMessageBox.warning(self, "Erreur", "Veuillez saisir d'abord la valeur du versement à calculer.")
             return
 
         from ui.tools.virtual_numpad import VirtualNumpad
@@ -1010,6 +1016,8 @@ class VersementsView(QWidget):
         if not v_data:
             return None, None
 
+        from database.versement_invoice_summary import build_versement_payment_summary
+        payment_summary = build_versement_payment_summary(v_data.get('payments', []))
         v_num = f"VRS-{v_data['id']:05d}"
         
         pdf_data = {
@@ -1023,28 +1031,35 @@ class VersementsView(QWidget):
             "currency": "DA"
         }
 
-        total_active_w = sum(float(i['weight'] or 0) for i in v_data.get('items', []) if i['item_status'] != 'ANNULE')
+        total_active_w = sum(float(i.get('display_weight') or i.get('weight') or 0) for i in v_data.get('items', []) if i['item_status'] != 'ANNULE')
         global_deductions = sum(float(p.get('poids_deduit_g') or 0) for p in v_data.get('payments', []) if p.get('versement_item_id') is None)
 
         for item in v_data.get('items', []):
             if item.get('item_status') != 'ANNULE':
                 desig = item.get('designation', '')
-                w = float(item.get('weight') or 0)
-                full_name = f"{desig} ({w:.2f}g)" if (w > 0 and f"({w:.2f}g)" not in desig and not desig.strip().endswith("g)")) else desig
+                item_type = str(item.get('item_type') or 'WEIGHT').upper()
+                quantity = max(1, int(item.get('reserved_quantity') or 1)) if item_type == 'PIECE' else 1
+                w = float(item.get('display_weight') or item.get('weight') or 0)
+                quantity_suffix = f" x{quantity}" if item_type == 'PIECE' else ''
+                full_name = f"{desig}{quantity_suffix} ({w:.2f}g)" if (w > 0 and f"({w:.2f}g)" not in desig and not desig.strip().endswith("g)")) else desig
                 
                 item_specific_deduction = sum(float(p.get('poids_deduit_g') or 0) for p in v_data.get('payments', []) if p.get('versement_item_id') == item.get('item_id'))
                 item_global_share = global_deductions * (w / total_active_w) if total_active_w > 0 else 0
                 item_remaining_w = max(0.0, w - (item_specific_deduction + item_global_share))
 
+                item_share = (w / total_active_w) if total_active_w > 0 else 0.0
+                item_paid_amount = payment_summary['total_paid_da'] * item_share
                 pdf_data['items'].append({
                     "name": full_name,
                     "item_name": full_name,
                     "description": desig,
                     "barcode": item.get('barcode', ''),
+                    "item_type": item_type,
+                    "reserved_quantity": quantity,
                     "weight": w,
                     "total_weight": w,
                     "remaining_weight": item_remaining_w,
-                    "total_amount": 0.0,
+                    "paid_amount": item_paid_amount,
                     "custom_note": normalize_custom_note(item.get("custom_note")),
                 })
 
@@ -1100,11 +1115,17 @@ class VersementsView(QWidget):
         pdf_data['total_weight'] = float(v_data.get('total_weight_g', 0))
         pdf_data['exact_paid_weight'] = float(v_data.get('total_paid_weight_g', 0))
         pdf_data['remaining_weight'] = float(v_data.get('reste_poids_g', 0))
-        pdf_data['total_paid'] = float(v_data.get('total_paid_money_da', 0))
-        pdf_data['total_remise_da'] = float(v_data.get('total_remise_da', 0))
-        pdf_data['total_dollar'] = float(v_data.get('total_dollar', 0))
+        pdf_data['total_paid'] = payment_summary['total_paid_da']
+        pdf_data['total_remise_da'] = payment_summary['total_remise_da']
+        pdf_data['total_dollar'] = payment_summary['dollar_paid']
+        pdf_data['payment_summary'] = payment_summary
+        pdf_data['cash_paid_da'] = payment_summary['cash_paid_da']
+        pdf_data['tpe_paid_da'] = payment_summary['tpe_paid_da']
+        pdf_data['euro_paid'] = payment_summary['euro_paid']
+        pdf_data['old_gold_weight_g'] = payment_summary['old_gold_weight_g']
+        pdf_data['deducted_weight_g'] = payment_summary['deducted_weight_g']
         pdf_data['total_amount'] = pdf_data['total_paid']
-        pdf_data['total_quantity'] = len(pdf_data['items'])
+        pdf_data['total_quantity'] = sum(int(item.get('reserved_quantity') or 1) for item in pdf_data['items'])
 
         return pdf_data, v_data
 
@@ -1269,14 +1290,20 @@ class VersementsView(QWidget):
             QMessageBox.warning(self, "Erreur", "Impossible de livrer l'article.")
             return
 
+        item_type = str(data.get("item_type") or "WEIGHT").upper()
+        reserved_quantity = (
+            max(1, int(data.get("reserved_quantity") or 1))
+            if item_type == "PIECE" else 1
+        )
+        item_weight = float(data.get("weight") or 0)
         cart_items = [{
             'id': data.get("inventory_id"),
-            'item_type': 'WEIGHT',
-            'barcode': '',
+            'item_type': item_type,
+            'barcode': data.get("barcode", ""),
             'name': data.get("designation", "Article Versement"),
-            'cart_sold_weight': data.get("weight", 0),
-            'cart_sold_qty': 1,
-            'cart_unit_price': price,
+            'cart_sold_weight': item_weight if item_type == "WEIGHT" else 0.0,
+            'cart_sold_qty': reserved_quantity,
+            'cart_unit_price': price / reserved_quantity if item_type == "PIECE" else price,
             'cart_line_total': price,
             'custom_note': product_note
         }]
@@ -1602,7 +1629,7 @@ class VersementsView(QWidget):
 
     def _calculate_item_weight_balance(self, item, payments, total_active_weight):
         item_id = item.get('item_id') or item.get('id')
-        item_weight = float(item.get('weight') or 0)
+        item_weight = float(item.get('display_weight') or item.get('weight') or 0)
 
         direct_payments = [p for p in payments if p.get('versement_item_id') == item_id]
         global_payments = [p for p in payments if p.get('versement_item_id') is None]
@@ -1645,13 +1672,15 @@ class VersementsView(QWidget):
                 payments = v.get('payments', [])
                 items = v.get('items', [])
                 active_items = [it for it in items if it.get('item_status') != 'ANNULE']
-                total_active_weight = sum(float(it.get('weight') or 0) for it in active_items)
+                total_active_weight = sum(float(it.get('display_weight') or it.get('weight') or 0) for it in active_items)
                 if items:
                     for item in items:
                         row = self.table.rowCount()
                         self.table.insertRow(row)
                         i_statut = item.get('item_status', 'EN_COURS')
-                        weight = float(item.get('weight') or 0)
+                        item_type = str(item.get('item_type') or 'WEIGHT').upper()
+                        reserved_quantity = max(1, int(item.get('reserved_quantity') or 1)) if item_type == 'PIECE' else 1
+                        weight = float(item.get('display_weight') or item.get('weight') or 0)
                         balance = self._calculate_item_weight_balance(item, payments, total_active_weight)
                         custom_note = normalize_custom_note(item.get('custom_note'))
                         i_data = {
@@ -1660,11 +1689,19 @@ class VersementsView(QWidget):
                             "designation": item.get('designation', 'Inconnu'),
                             "custom_note": custom_note,
                             "weight": weight,
+                            "item_type": item_type,
+                            "reserved_quantity": reserved_quantity,
+                            "barcode": item.get("barcode", ""),
                             "deducted_g": balance["deducted_g"],
                             "remaining_g": balance["remaining_g"]
                         }
                         designation = f"   💍 Article: {item.get('designation', 'Inconnu')}"
-                        weight_str = f"Poids: {weight:.2f} g"
+                        if item_type == "PIECE":
+                            designation += f" x{reserved_quantity}"
+                        weight_str = (
+                            f"Quantité: {reserved_quantity} pcs | Poids: {weight:.2f} g"
+                            if item_type == "PIECE" else f"Poids: {weight:.2f} g"
+                        )
                         remain_g_str = f"Déduit: {balance['deducted_g']:.3f} g | Reste: {balance['remaining_g']:.3f} g"
                         obs_str = f"Reste poids produit: {balance['remaining_g']:.3f} g"
                         if balance["has_shared"]:

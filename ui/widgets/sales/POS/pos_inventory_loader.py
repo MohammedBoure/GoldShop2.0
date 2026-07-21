@@ -15,14 +15,37 @@ class POSInventoryLoader:
 
     @staticmethod
     def _has_real_stock(item):
-        item_type = item.get('item_type', 'WEIGHT')
+        reserved_client_id = item.get('reserved_for_client_id')
+        if item.get('status') in ('Scrap', 'Repair', 'Lost', 'Sold'):
+            return False
+
+        item_type = str(item.get('item_type') or 'WEIGHT').upper()
+        try:
+            active_count = int(item.get('active_versement_count') or 0)
+        except (TypeError, ValueError):
+            active_count = 0
+
         if item_type == 'PIECE':
             try:
-                return int(item.get('remaining_quantity') or 0) > 0
+                remaining = int(item.get('remaining_quantity') or 0)
+                reserved = int(item.get('active_reserved_quantity') or 0)
+                return remaining - reserved > 0
             except (TypeError, ValueError):
                 return False
+
         try:
-            return float(item.get('remaining_weight') or 0.0) > 0.0
+            return (
+                float(item.get('remaining_weight') or 0.0) > 0.0
+                and active_count == 0
+                and (
+                    item.get('status') in ('Available', 'Partially_Sold')
+                    or (
+                        item.get('status') == 'Reserved'
+                        and bool(item.get('reserved_for_client_id'))
+                        and str(item.get('reserved_for_client_id')) != '1'
+                    )
+                )
+            )
         except (TypeError, ValueError):
             return False
 
@@ -204,20 +227,12 @@ class POSInventoryLoader:
                     if 'remaining_quantity' not in item or item['remaining_quantity'] is None:
                         item['remaining_quantity'] = item.get('quantity', 1)
             
-            # 3. التحقق من توفر المنتج للبيع
-            if item.get('status') not in ['Available', 'Partially_Sold']:
-                QMessageBox.warning(
-                    self, "Attention",
-                    f"L'article '{barcode}' n'est pas disponible pour la vente.\n"
-                    f"Statut actuel : {item.get('status')}"
-                )
-                self.force_clear_barcode()
-                return
-            
+            # 3. يعتمد السماح على المخزون القابل للبيع بعد خصم حجوزات العربون.
             if not self._has_real_stock(item):
                 QMessageBox.warning(
                     self, "Stock indisponible",
-                    f"L'article '{barcode}' n'a plus de stock reel."
+                    f"L'article '{barcode}' n'est pas disponible pour la vente "
+                    f"(stock vendable épuisé ou réservé)."
                 )
                 self.force_clear_barcode()
                 return

@@ -4,6 +4,8 @@ from typing import Dict, List, Optional, Tuple
 
 import mysql.connector
 
+from database.versement_reservation import sellable_stock_condition_sql
+
 
 class InventoryQueryMixin:
     def get_item_by_id(self, item_id: int) -> Optional[Dict]:
@@ -46,7 +48,12 @@ class InventoryQueryMixin:
                     mt.name as metal_type_name,
                     mt.purity_value as metal_purity,
                     cl.name as reserved_client_name,
-                    s.name as supplier_name
+                    s.name as supplier_name,
+                    (SELECT COALESCE(SUM(COALESCE(vi.reserved_quantity, 1)), 0)
+                     FROM Versement_Items vi
+                     WHERE vi.inventory_id = i.id AND vi.item_status = 'EN_COURS') as active_reserved_quantity,
+                    (SELECT COUNT(*) FROM Versement_Items vi
+                     WHERE vi.inventory_id = i.id AND vi.item_status = 'EN_COURS') as active_versement_count
                 FROM Inventory i
                 LEFT JOIN Categories c ON i.category_id = c.id
                 LEFT JOIN MetalTypes mt ON i.metal_type_id = mt.id
@@ -89,24 +96,28 @@ class InventoryQueryMixin:
                         CONCAT(i.name, ' - ', COALESCE(mt.name, ''), ' (', COALESCE(c.name, ''), ')') as display_name,
                         
                         -- 🟢 جلب تفاصيل العربون إذا كانت القطعة محجوزة
-                        vi.versement_id as linked_versement_id,
+                        (SELECT vi2.versement_id FROM Versement_Items vi2
+                         WHERE vi2.inventory_id = i.id AND vi2.item_status = 'EN_COURS'
+                         ORDER BY vi2.id LIMIT 1) as linked_versement_id,
                         (SELECT COALESCE(SUM(vp.montant_da + vp.tpe_da + (vp.montant_euro * vp.taux_change_euro)), 0)
                          FROM Versement_Payments vp 
-                         WHERE vp.versement_item_id = vi.id) as total_versement_item
+                         JOIN Versement_Items vi2 ON vi2.id = vp.versement_item_id
+                         WHERE vi2.inventory_id = i.id AND vi2.item_status = 'EN_COURS') as total_versement_item
+                        ,
+                        (SELECT COALESCE(SUM(COALESCE(vi.reserved_quantity, 1)), 0) FROM Versement_Items vi WHERE vi.inventory_id = i.id AND vi.item_status = 'EN_COURS') as active_reserved_quantity,
+                        (SELECT COUNT(*) FROM Versement_Items vi WHERE vi.inventory_id = i.id AND vi.item_status = 'EN_COURS') as active_versement_count
                          
                     FROM Inventory i
                     LEFT JOIN Categories c ON i.category_id = c.id
                     LEFT JOIN MetalTypes mt ON i.metal_type_id = mt.id
                     LEFT JOIN Suppliers s ON i.supplier_id = s.id
                     LEFT JOIN Clients cl ON i.reserved_for_client_id = cl.id
-                    LEFT JOIN Versement_Items vi ON vi.inventory_id = i.id AND vi.item_status = 'EN_COURS'
                     WHERE 1=1
                 """
                 params = []
 
                 if status == "Available":
-                    query += " AND i.status IN ('Available', 'Partially_Sold')"
-                    query += f" AND {self._real_stock_condition('i')}"
+                    query += f" AND {sellable_stock_condition_sql('i')}"
                 elif status:
                     query += " AND i.status = %s"
                     params.append(status)
@@ -146,7 +157,6 @@ class InventoryQueryMixin:
                     LEFT JOIN Suppliers s ON i.supplier_id = s.id
                     LEFT JOIN StorageLocations l ON i.location_id = l.id
                     LEFT JOIN Clients cl ON i.reserved_for_client_id = cl.id
-                    LEFT JOIN Versement_Items vi ON vi.inventory_id = i.id AND vi.item_status = 'EN_COURS'
                     WHERE 1=1
                 """
                 params = []
@@ -157,7 +167,7 @@ class InventoryQueryMixin:
                     base_query += f" AND {self._real_stock_condition('i')}"
 
                 if normalized_status == 'SELLABLE':
-                    base_query += " AND i.status IN ('Available', 'Partially_Sold')"
+                    base_query += f" AND {sellable_stock_condition_sql('i')}"
                 elif normalized_status == 'IN_STOCK':
                     base_query += " AND i.status IN ('Available', 'Partially_Sold', 'Reserved')"
                 elif normalized_status != 'ALL':
@@ -228,17 +238,24 @@ class InventoryQueryMixin:
                         CONCAT(i.name, ' - ', COALESCE(mt.name, ''), ' (', COALESCE(c.name, ''), ')') as display_name,
                         
                         -- 🟢 2. جلب رقم العربون المربوط بهذه القطعة (إن وجد)
-                        vi.versement_id as linked_versement_id,
+                        (SELECT vi2.versement_id FROM Versement_Items vi2
+                         WHERE vi2.inventory_id = i.id AND vi2.item_status = 'EN_COURS'
+                         ORDER BY vi2.id LIMIT 1) as linked_versement_id,
                         
                         -- 🟢 3. حساب إجمالي الدفعات الخاصة بهذه القطعة تحديداً (بالدينار والأورو)
                         (SELECT COALESCE(SUM(vp.montant_da + vp.tpe_da + (vp.montant_euro * vp.taux_change_euro)), 0)
                          FROM Versement_Payments vp 
-                         WHERE vp.versement_item_id = vi.id) as total_versement_item,
+                         JOIN Versement_Items vi2 ON vi2.id = vp.versement_item_id
+                         WHERE vi2.inventory_id = i.id AND vi2.item_status = 'EN_COURS') as total_versement_item,
                          
                         -- 🟢 4. حساب إجمالي الدفعات للملف بالكامل (خيار إضافي)
                         (SELECT COALESCE(SUM(vp.montant_da + vp.tpe_da + (vp.montant_euro * vp.taux_change_euro)), 0)
-                         FROM Versement_Payments vp 
-                         WHERE vp.versement_id = vi.versement_id) as total_versement_global
+                         FROM Versement_Payments vp
+                         JOIN Versement_Items vi2 ON vi2.versement_id = vp.versement_id
+                         WHERE vi2.inventory_id = i.id AND vi2.item_status = 'EN_COURS') as total_versement_global
+                        ,
+                        (SELECT COALESCE(SUM(COALESCE(vi.reserved_quantity, 1)), 0) FROM Versement_Items vi WHERE vi.inventory_id = i.id AND vi.item_status = 'EN_COURS') as active_reserved_quantity,
+                        (SELECT COUNT(*) FROM Versement_Items vi WHERE vi.inventory_id = i.id AND vi.item_status = 'EN_COURS') as active_versement_count
                          
                 """ + base_query + f" ORDER BY {order_by_clause} {direction} LIMIT %s OFFSET %s"
                 

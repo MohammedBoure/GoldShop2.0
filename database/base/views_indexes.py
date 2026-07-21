@@ -309,6 +309,7 @@ INDEX_QUERIES = [
     "CREATE INDEX idx_inv_category_status ON Inventory(category_id, status, item_type);",
     "CREATE INDEX idx_inv_metal_status ON Inventory(metal_type_id, status, item_type);",
     "CREATE INDEX idx_inv_location_status ON Inventory(location_id, status, item_type);",
+    "CREATE INDEX idx_versement_items_inventory_status ON Versement_Items(inventory_id, item_status);",
     "CREATE INDEX idx_sales_date ON Sales(sale_date);",
     "CREATE INDEX idx_client_versement_payments_versement_date ON ClientVersementPayments(versement_id, payment_date);",
     "CREATE INDEX idx_supplier_trans_date ON SupplierTransactions(transaction_date);",

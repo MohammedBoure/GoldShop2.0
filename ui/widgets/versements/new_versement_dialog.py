@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
     QLabel, QTableWidget, QTableWidgetItem, QHeaderView, QWidget,
     QFormLayout, QMessageBox, QApplication, QFrame, QTextEdit, QGroupBox,
-    QCompleter, QComboBox, QStackedWidget
+    QCompleter, QComboBox, QStackedWidget, QSpinBox
 )
 from PySide6.QtCore import Qt, QStringListModel, QEvent, QTimer
 from PySide6.QtGui import QFont
@@ -147,8 +147,8 @@ class NewVersementDialog(QDialog):
         barcode_layout.addWidget(btn_clear_cart)
         left_layout.addLayout(barcode_layout)
 
-        self.cart_table = QTableWidget(0, 6)
-        self.cart_table.setHorizontalHeaderLabels(["Code", "Désignation", "Poids (g)", "Prix Estimé", "À Vendre", "Action"])
+        self.cart_table = QTableWidget(0, 7)
+        self.cart_table.setHorizontalHeaderLabels(["Code", "Désignation", "Quantité", "Poids (g)", "Prix Estimé", "À Vendre", "Action"])
         self.cart_table.setStyleSheet("""
             QTableWidget { background-color: white; font-size: 14px; gridline-color: #eef2f6; }
             QHeaderView::section { background-color: #0f8f83; color: white; font-weight: bold; padding: 6px; font-size: 13px; border: none; }
@@ -163,8 +163,9 @@ class NewVersementDialog(QDialog):
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.Stretch)
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.Stretch)
+        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
         
         left_layout.addWidget(self.cart_table)
 
@@ -429,8 +430,27 @@ class NewVersementDialog(QDialog):
     # ========================================================
     # أدوات المساعدة في التخفيضات (Discount Assistant Tools)
     # ========================================================
+    def _item_reserved_quantity(self, item):
+        if str(item.get("item_type") or "WEIGHT").upper() != "PIECE":
+            return 1
+        try:
+            return max(1, int(item.get("versement_quantity", item.get("reserved_quantity", 1)) or 1))
+        except (TypeError, ValueError):
+            return 1
+
+    def _item_total_weight(self, item):
+        base_weight = float(item.get("weight") or item.get("remaining_weight") or 0.0)
+        return base_weight * self._item_reserved_quantity(item)
+
+    def _item_total_price(self, item):
+        return float(item.get("selling_price") or 0.0) * self._item_reserved_quantity(item)
+
+    def _set_item_quantity(self, item, value):
+        item["versement_quantity"] = max(1, int(value))
+        self.refresh_cart()
+
     def open_discount_pct(self):
-        total_brut = sum(float(item.get('selling_price') or 0) for item in self.cart_items)
+        total_brut = sum(self._item_total_price(item) for item in self.cart_items)
         if total_brut <= 0:
             QMessageBox.warning(self, "Erreur", "Le panier est vide ou n'a pas de prix estimé initial.")
             return
@@ -447,7 +467,7 @@ class NewVersementDialog(QDialog):
                     QMessageBox.warning(self, "Erreur", "Le pourcentage doit être entre 0 et 100.")
 
     def open_discount_final_price(self):
-        total_brut = sum(float(item.get('selling_price') or 0) for item in self.cart_items)
+        total_brut = sum(self._item_total_price(item) for item in self.cart_items)
         if total_brut <= 0:
             QMessageBox.warning(self, "Erreur", "Le panier est vide ou n'a pas de prix estimé initial.")
             return
@@ -464,8 +484,8 @@ class NewVersementDialog(QDialog):
                     QMessageBox.warning(self, "Erreur", f"Le prix final doit être entre 0 et {total_brut:,.2f} DA.")
 
     def open_discount_price_per_gram(self):
-        total_weight = sum(float(item.get('remaining_weight') or item.get('weight') or 0.0) for item in self.cart_items)
-        total_brut = sum(float(item.get('selling_price') or 0) for item in self.cart_items)
+        total_weight = sum(self._item_total_weight(item) for item in self.cart_items)
+        total_brut = sum(self._item_total_price(item) for item in self.cart_items)
         if total_brut <= 0 or total_weight <= 0:
             QMessageBox.warning(self, "Erreur", "Aucun prix/poids disponible dans le panier.")
             return
@@ -511,8 +531,8 @@ class NewVersementDialog(QDialog):
                 self.inp_remise_da.setText(f"{remise_value:.2f}")
     def auto_calculate_poids_deduit(self):
         """مساعد في الحساب: يكتب تلقائياً الوزن المقتنى بالجرام ويسمح للمستخدم بالتعديل اليدوي كأداة مساعدة"""
-        total_brut = sum(float(item.get('selling_price') or 0) for item in self.cart_items)
-        total_weight = sum(float(item.get('remaining_weight') or item.get('weight') or 0.0) for item in self.cart_items)
+        total_brut = sum(self._item_total_price(item) for item in self.cart_items)
+        total_weight = sum(self._item_total_weight(item) for item in self.cart_items)
         
         try: remise = float(self.inp_remise_da.text() or 0)
         except: remise = 0.0
@@ -547,8 +567,8 @@ class NewVersementDialog(QDialog):
         self.update_dynamic_summary()
 
     def update_dynamic_summary(self):
-        total_brut = sum(float(item.get('selling_price') or 0) for item in self.cart_items)
-        total_weight = sum(float(item.get('remaining_weight') or item.get('weight') or 0.0) for item in self.cart_items)
+        total_brut = sum(self._item_total_price(item) for item in self.cart_items)
+        total_weight = sum(self._item_total_weight(item) for item in self.cart_items)
         try: remise = float(self.inp_remise_da.text() or 0)
         except: remise = 0.0
         try: poids_deduit = float(self.inp_poids_deduit.text() or 0)
@@ -730,10 +750,31 @@ class NewVersementDialog(QDialog):
             QMessageBox.warning(self, "Introuvable", f"L'article avec le code '{barcode}' est introuvable.")
             self.force_clear_barcode()
             return
-        if any(i['id'] == item['id'] for i in self.cart_items):
+
+        item = dict(item)
+        item_type = str(item.get("item_type") or "WEIGHT").upper()
+        if item_type == "PIECE":
+            remaining = int(item.get("remaining_quantity") or item.get("quantity") or 0)
+            reserved = int(item.get("active_reserved_quantity") or 0)
+            available = max(0, remaining - reserved)
+            if available <= 0:
+                QMessageBox.warning(self, "Stock indisponible", "Toutes les unités de cet article sont déjà vendues ou réservées.")
+                self.force_clear_barcode()
+                return
+            item["versement_max_quantity"] = available
+            item["versement_quantity"] = 1
+        else:
+            active_count = int(item.get("active_versement_count") or 0)
+            if float(item.get("remaining_weight") or item.get("weight") or 0.0) <= 0 or active_count > 0:
+                QMessageBox.warning(self, "Stock indisponible", "Cet article pondéré est déjà réservé ou indisponible.")
+                self.force_clear_barcode()
+                return
+            item["versement_quantity"] = 1
+            item["versement_max_quantity"] = 1
+
+        if any(i["id"] == item["id"] for i in self.cart_items):
             self.force_clear_barcode()
             return
-        item = dict(item)
         item["custom_note"] = normalize_custom_note(item.get("custom_note"))
         self.cart_items.append(item)
         self.refresh_cart()
@@ -743,25 +784,45 @@ class NewVersementDialog(QDialog):
         self.cart_table.setRowCount(0)
         for i, item in enumerate(self.cart_items):
             self.cart_table.insertRow(i)
-            it_code = QTableWidgetItem(str(item.get('barcode', '')))
-            
-            name = str(item.get('name', 'Article'))
-            cat = str(item.get('category_name') or '').strip()
-            sup = str(item.get('supplier_name') or '').strip()
-            full_desig = name
-            if cat: full_desig += f" | Cat: {cat}"
-            if sup: full_desig += f" | Fourn: {sup}"
-            
-            it_name = QTableWidgetItem(full_desig)
-            it_weight = QTableWidgetItem(f"{float(item.get('remaining_weight') or item.get('weight') or 0):.2f}")
-            it_price = QTableWidgetItem(f"{float(item.get('selling_price') or 0):,.2f} DA")
+            it_code = QTableWidgetItem(str(item.get("barcode", "")))
 
-            for it in [it_code, it_weight, it_price]: it.setTextAlignment(Qt.AlignCenter)
-            
+            name = str(item.get("name", "Article"))
+            cat = str(item.get("category_name") or "").strip()
+            sup = str(item.get("supplier_name") or "").strip()
+            full_desig = name
+            if cat:
+                full_desig += f" | Cat: {cat}"
+            if sup:
+                full_desig += f" | Fourn: {sup}"
+
+            it_name = QTableWidgetItem(full_desig)
+            item_type = str(item.get("item_type") or "WEIGHT").upper()
+            quantity = self._item_reserved_quantity(item)
+            if item_type == "PIECE":
+                max_quantity = int(item.get("versement_max_quantity") or item.get("remaining_quantity") or 1)
+                quantity_widget = QSpinBox()
+                quantity_widget.setRange(1, max(1, max_quantity))
+                quantity_widget.setValue(min(quantity, max(1, max_quantity)))
+                quantity_widget.setSuffix(" pcs")
+                quantity_widget.setStyleSheet("QSpinBox { font-weight: bold; padding: 4px; }")
+                quantity_widget.valueChanged.connect(
+                    lambda value, cart_item=item: self._set_item_quantity(cart_item, value)
+                )
+                self.cart_table.setCellWidget(i, 2, quantity_widget)
+            else:
+                quantity_item = QTableWidgetItem("1")
+                quantity_item.setTextAlignment(Qt.AlignCenter)
+                self.cart_table.setItem(i, 2, quantity_item)
+
+            it_weight = QTableWidgetItem(f"{self._item_total_weight(item):.2f}")
+            it_price = QTableWidgetItem(f"{self._item_total_price(item):,.2f} DA")
+            for it in [it_code, it_weight, it_price]:
+                it.setTextAlignment(Qt.AlignCenter)
+
             self.cart_table.setItem(i, 0, it_code)
             self.cart_table.setItem(i, 1, it_name)
-            self.cart_table.setItem(i, 2, it_weight)
-            self.cart_table.setItem(i, 3, it_price)
+            self.cart_table.setItem(i, 3, it_weight)
+            self.cart_table.setItem(i, 4, it_price)
 
             note_combo = create_invoice_note_combo(
                 self.manager, item.get("custom_note"), self.cart_table
@@ -770,14 +831,14 @@ class NewVersementDialog(QDialog):
                 lambda _index, cart_item=item, combo=note_combo:
                     self._set_item_note(cart_item, selected_custom_note(combo))
             )
-            self.cart_table.setCellWidget(i, 4, note_combo)
+            self.cart_table.setCellWidget(i, 5, note_combo)
 
             btn_del = QPushButton("Suppr.")
             btn_del.setStyleSheet("background-color: #e74c3c; color: white; border-radius: 4px;")
             btn_del.clicked.connect(lambda _, idx=i: self.remove_from_cart(idx))
-            self.cart_table.setCellWidget(i, 5, btn_del)
+            self.cart_table.setCellWidget(i, 6, btn_del)
             self.cart_table.setRowHeight(i, 42)
-        
+
         self.auto_calculate_poids_deduit()
 
     def _set_item_note(self, item, value):
@@ -942,6 +1003,8 @@ class NewVersementDialog(QDialog):
             items_list = [
                 {
                     "inventory_id": item['id'], "designation": item['name'],
+                    "item_type": item.get("item_type", "WEIGHT"),
+                    "reserved_quantity": self._item_reserved_quantity(item),
                     "custom_note": normalize_custom_note(item.get("custom_note")),
                 }
                 for item in self.cart_items
