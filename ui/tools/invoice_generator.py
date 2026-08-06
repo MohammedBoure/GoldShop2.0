@@ -358,18 +358,23 @@ class PdfHelper:
         if not doc_number:
             return ""
         if doc_number.isdigit():
-            doc_number = f"{int(doc_number):05d}"
-        visible_doc_number = escape(doc_number)
+            doc_number = f"VRS-{int(doc_number):05d}"
+        
+        display_text = doc_number if doc_number.startswith(("N°", "NO", "No", "N° ")) else f"N° {doc_number}"
+        visible_doc_number = escape(display_text)
         mode = pdf_cfg.get("codes", {}).get("invoice_barcode_mode", "Code-Barres + Texte")
         barcode_b64 = PdfHelper.get_base64_barcode(doc_number, height=5)
         if mode == "Code-Barres + Texte" and barcode_b64:
             return (
-                f"<div style='margin-top:8px;'><img src='{barcode_b64}' width='120' height='30'/>"
-                f"<br><span style='font-size:{int(f_norm*0.8)}px; font-weight:bold;'>{visible_doc_number}</span></div>"
+                f"<div style='margin-top:6px;'><img src='{barcode_b64}' width='130' height='32'/>"
+                f"<br><span style='font-size:{int(f_norm*1.2)}px; font-weight:bold; color:#0f8f83;'>{visible_doc_number}</span></div>"
             )
         if mode == "Code-Barres uniquement" and barcode_b64:
-            return f"<div style='margin-top:8px;'><img src='{barcode_b64}' width='120' height='30'/></div>"
-        return f"<div style='margin-top:5px; font-size:{f_norm}px; font-weight:bold;'>N° {visible_doc_number}</div>"
+            return (
+                f"<div style='margin-top:6px;'><img src='{barcode_b64}' width='130' height='32'/>"
+                f"<br><span style='font-size:{int(f_norm*1.2)}px; font-weight:bold; color:#0f8f83;'>{visible_doc_number}</span></div>"
+            )
+        return f"<div style='margin-top:6px; font-size:{int(f_norm*1.25)}px; font-weight:bold; color:#0f8f83;'>{visible_doc_number}</div>"
 
 
 # ==========================================

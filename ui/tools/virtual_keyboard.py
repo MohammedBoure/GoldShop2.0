@@ -426,7 +426,7 @@ class VirtualKeyboardDialog(QDialog):
         target = self.get_target()
         if self.direct_mode and target:
             try:
-                target.setFocus()
+                if not target.hasFocus(): target.setFocus()
                 press = QKeyEvent(QEvent.KeyPress, Qt.Key_Left, Qt.NoModifier)
                 release = QKeyEvent(QEvent.KeyRelease, Qt.Key_Left, Qt.NoModifier)
                 QApplication.postEvent(target, press)
@@ -440,7 +440,7 @@ class VirtualKeyboardDialog(QDialog):
         target = self.get_target()
         if self.direct_mode and target:
             try:
-                target.setFocus()
+                if not target.hasFocus(): target.setFocus()
                 press = QKeyEvent(QEvent.KeyPress, Qt.Key_Right, Qt.NoModifier)
                 release = QKeyEvent(QEvent.KeyRelease, Qt.Key_Right, Qt.NoModifier)
                 QApplication.postEvent(target, press)
@@ -462,7 +462,10 @@ class VirtualKeyboardDialog(QDialog):
         if self.direct_mode:
             if target:
                 try:
-                    target.setFocus()
+                    if not target.hasFocus():
+                        target.setFocus()
+                        if hasattr(target, 'deselect'):
+                            target.deselect()
                     if hasattr(target, 'insert'): target.insert(char_to_add)
                     elif hasattr(target, 'insertPlainText'): target.insertPlainText(char_to_add)
                     else:
@@ -477,7 +480,7 @@ class VirtualKeyboardDialog(QDialog):
         target = self.get_target()
         if self.direct_mode and target:
             try:
-                target.setFocus()
+                if not target.hasFocus(): target.setFocus()
                 if hasattr(target, 'backspace'): target.backspace()
                 elif hasattr(target, 'textCursor') and hasattr(target, 'setTextCursor'):
                     cursor = target.textCursor()
@@ -498,7 +501,7 @@ class VirtualKeyboardDialog(QDialog):
         target = self.get_target()
         if self.direct_mode and target:
             try:
-                target.setFocus()
+                if not target.hasFocus(): target.setFocus()
                 press = QKeyEvent(QEvent.KeyPress, Qt.Key_Return, Qt.NoModifier)
                 release = QKeyEvent(QEvent.KeyRelease, Qt.Key_Return, Qt.NoModifier)
                 QApplication.postEvent(target, press)

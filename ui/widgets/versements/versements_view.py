@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QMenu, QMessageBox, QDialog, QAbstractScrollArea, QFormLayout,
     QDoubleSpinBox, QApplication, QGroupBox, QCompleter
 )
-from PySide6.QtCore import Qt, QUrl, QSize, QStringListModel
+from PySide6.QtCore import Qt, QUrl, QSize, QStringListModel, QTimer
 from PySide6.QtGui import QColor, QFont, QBrush, QDesktopServices
 import qtawesome as qta
 
@@ -913,12 +913,25 @@ class VersementsView(QWidget):
         self.current_page = 1
         self.total_pages = 1
         self.target_rows_per_page = 100
+        
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(200)
+        self._search_timer.timeout.connect(self._do_filter_changed)
+        
         self.init_ui()
         self.load_data()
 
-    def _on_filter_changed(self):
+    def _on_search_text_changed(self):
+        self._search_timer.stop()
+        self._search_timer.start(200)
+
+    def _do_filter_changed(self):
         self.current_page = 1
         self.load_data()
+
+    def _on_filter_changed(self):
+        self._do_filter_changed()
 
     def _go_first_page(self):
         if self.current_page != 1:
@@ -978,13 +991,11 @@ class VersementsView(QWidget):
         self.inp_search.setPlaceholderText("🔍 Rechercher par article, code-barres, client, tél, N° VRS...")
         self.inp_search.setStyleSheet("font-size: 13px; padding: 5px 8px; border: 1px solid #cbd5df; border-radius: 4px; background-color: white;")
         self.inp_search.setClearButtonEnabled(True)
-        self.inp_search.textChanged.connect(self._on_filter_changed)
-
-        self.completer = QCompleter(self)
-        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self.completer.setFilterMode(Qt.MatchContains)
-        self.completer.activated.connect(lambda text: self.inp_search.setText(text))
-        self.inp_search.setCompleter(self.completer)
+        self.search_timer = QTimer(self)
+        self.search_timer.setSingleShot(True)
+        self.search_timer.setInterval(300)
+        self.search_timer.timeout.connect(self._do_filter_changed)
+        self.inp_search.textChanged.connect(self.search_timer.start)
 
         tools_layout.addWidget(_wrap_with_keyboard(self.inp_search, self))
 
@@ -1993,9 +2004,7 @@ class VersementsView(QWidget):
                         empty_item.setFlags(Qt.NoItemFlags)
                         self.table.setItem(row_space, col, empty_item)
 
-            if hasattr(self, 'completer') and self.completer:
-                model = QStringListModel(sorted(list(search_suggestions)), self.completer)
-                self.completer.setModel(model)
+
 
             total_count = len(filtered_versements)
             if hasattr(self, 'lbl_page_info'):
