@@ -108,7 +108,8 @@ PARTNER_TABLE_QUERIES = [
         phone VARCHAR(20),
         address TEXT,
         base_metal_type_id INT NULL,
-        supplier_type ENUM('SUPPLIER', 'ARTISAN', 'BOTH') DEFAULT 'SUPPLIER',
+        supplier_type VARCHAR(50) DEFAULT 'Gold',
+        primary_purity VARCHAR(50) DEFAULT '750',
         specialization VARCHAR(100),
         is_active BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -153,55 +154,27 @@ PARTNER_TABLE_QUERIES = [
         FOREIGN KEY (reference_metal_type_id) REFERENCES MetalTypes(id)
     );""",
 
-    """CREATE TABLE IF NOT EXISTS OfficialSuppliers (
+    """CREATE TABLE IF NOT EXISTS SupplierTransactions (
         id INT PRIMARY KEY AUTO_INCREMENT,
-        supplier_id INT NULL,
-        official_code VARCHAR(50) NULL,
-        name VARCHAR(150) NOT NULL,
-        phone VARCHAR(50) NULL,
-        tax_identifier VARCHAR(80) NULL,
-        register_number VARCHAR(80) NULL,
-        address TEXT NULL,
-        notes TEXT NULL,
-        is_active BOOLEAN DEFAULT TRUE,
-        created_by_user_id INT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uq_official_suppliers_code (official_code),
-        UNIQUE KEY uq_official_suppliers_supplier (supplier_id),
-        KEY idx_official_suppliers_name (name),
-        FOREIGN KEY (supplier_id) REFERENCES Suppliers(id) ON DELETE SET NULL,
-        FOREIGN KEY (created_by_user_id) REFERENCES Users(id) ON DELETE SET NULL
-    );""",
-
-    """CREATE TABLE IF NOT EXISTS OfficialSupplierOperations (
-        id BIGINT PRIMARY KEY AUTO_INCREMENT,
-        official_supplier_id INT NULL,
-        operation_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        operation_type ENUM('INCOMING', 'OUTGOING') NOT NULL,
+        supplier_id INT NOT NULL,
+        supplier_account_id INT NULL,
+        operation_id INT NULL,
+        type VARCHAR(50) NOT NULL DEFAULT 'INCOMING',
+        amount DECIMAL(15, 3) DEFAULT 0,
+        currency_id INT NULL,
         metal_type_id INT NULL,
-        weight_g DECIMAL(15, 3) NOT NULL DEFAULT 0,
-        amount_da DECIMAL(15, 2) NOT NULL DEFAULT 0,
-        unit_price_per_gram DECIMAL(15, 2)
-            GENERATED ALWAYS AS (
-                CASE
-                    WHEN weight_g <> 0 THEN amount_da / weight_g
-                    ELSE 0
-                END
-            ) STORED,
-        document_number VARCHAR(80) NULL,
-        description VARCHAR(255) NULL,
+        input_metal_type_id INT NULL,
+        raw_weight DECIMAL(15, 3) DEFAULT 0,
+        accounted_weight_debit DECIMAL(15, 3) DEFAULT 0,
+        accounted_weight_credit DECIMAL(15, 3) DEFAULT 0,
+        amount_debit DECIMAL(15, 2) DEFAULT 0,
+        amount_credit DECIMAL(15, 2) DEFAULT 0,
+        labor_price_per_gram DECIMAL(15, 2) DEFAULT 0,
+        fixing_price_per_gram DECIMAL(15, 2) DEFAULT 0,
+        description TEXT NULL,
         notes TEXT NULL,
-        source_kind ENUM('MANUAL', 'IMPORT', 'SALE', 'ADJUSTMENT') NOT NULL DEFAULT 'MANUAL',
-        created_by_user_id INT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        KEY idx_official_supplier_ops_supplier_date (official_supplier_id, operation_date),
-        KEY idx_official_supplier_ops_type_date (operation_type, operation_date),
-        KEY idx_official_supplier_ops_month (operation_date, official_supplier_id, operation_type),
-        FOREIGN KEY (official_supplier_id) REFERENCES OfficialSuppliers(id) ON DELETE CASCADE,
-        FOREIGN KEY (metal_type_id) REFERENCES MetalTypes(id) ON DELETE SET NULL,
-        FOREIGN KEY (created_by_user_id) REFERENCES Users(id) ON DELETE SET NULL
+        transaction_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (supplier_id) REFERENCES Suppliers(id) ON DELETE CASCADE
     );""",
 ]
 
@@ -222,6 +195,10 @@ DAILY_JOURNAL_TABLE_QUERIES = [
         old_gold_weight_g DECIMAL(10, 3) DEFAULT 0,      -- الذهب المكسر المستلم
 
         impos_weight_g DECIMAL(10, 3) DEFAULT 0,
+        euro_paid DECIMAL(15, 2) DEFAULT 0,
+        taux_change_euro DECIMAL(15, 2) DEFAULT 0,
+        dollar_paid DECIMAL(15, 2) DEFAULT 0,
+        taux_change_dollar DECIMAL(15, 2) DEFAULT 0,
         
         status ENUM('COMPLETED', 'CANCELLED') DEFAULT 'COMPLETED', -- حالة الفاتورة
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -231,6 +208,12 @@ DAILY_JOURNAL_TABLE_QUERIES = [
         FOREIGN KEY (client_id) REFERENCES Clients(id),
         FOREIGN KEY (user_id) REFERENCES Users(id)
     );""",
+
+    # ── Migrations Sales : devises étrangères ──
+    "ALTER TABLE Sales ADD COLUMN euro_paid DECIMAL(15, 2) DEFAULT 0;",
+    "ALTER TABLE Sales ADD COLUMN taux_change_euro DECIMAL(15, 2) DEFAULT 0;",
+    "ALTER TABLE Sales ADD COLUMN dollar_paid DECIMAL(15, 2) DEFAULT 0;",
+    "ALTER TABLE Sales ADD COLUMN taux_change_dollar DECIMAL(15, 2) DEFAULT 0;",
 
     """CREATE TABLE IF NOT EXISTS SaleItems (
         id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -580,11 +563,15 @@ ACHAT_OC_TABLE_QUERIES = [
         date_achat DATE NOT NULL,
         weight_g DECIMAL(10, 3) NOT NULL,
         unit_price_da DECIMAL(15, 2) NOT NULL,
-        total_amount_da DECIMAL(15, 2) NOT NULL,
-        notes TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );"""
+        montant_da VARCHAR(50) NOT NULL DEFAULT '0',
+        tpe VARCHAR(50) NOT NULL DEFAULT '0',
+        ccp VARCHAR(50) NOT NULL DEFAULT '0',
+        euro VARCHAR(50) NOT NULL DEFAULT '0',
+        dollar VARCHAR(50) NOT NULL DEFAULT '0',
+        designation TEXT NULL
+    );""",
 ]
+
 RH_TABLE_QUERIES = [
     """CREATE TABLE IF NOT EXISTS RH_Personnel (
         id INT PRIMARY KEY AUTO_INCREMENT,
@@ -592,7 +579,8 @@ RH_TABLE_QUERIES = [
         date_debut VARCHAR(50) NOT NULL,
         date_sortie VARCHAR(50) NULL,
         duree_travail VARCHAR(100) NULL,
-        observations TEXT NULL
+        observations TEXT NULL,
+        user_id INT NULL
     );""",
 
     """CREATE TABLE IF NOT EXISTS RH_Avances (
@@ -600,8 +588,12 @@ RH_TABLE_QUERIES = [
         nom_ouvrier VARCHAR(150) NOT NULL,
         date_avance VARCHAR(50) NOT NULL,
         montant_da VARCHAR(50) NOT NULL,
-        observations TEXT NULL
+        observations TEXT NULL,
+        user_id INT NULL
     );""",
+
+    "ALTER TABLE RH_Personnel ADD COLUMN user_id INT NULL;",
+    "ALTER TABLE RH_Avances ADD COLUMN user_id INT NULL;"
 ]
 
 COFFRE_MAGASIN_TABLE_QUERIES = [
@@ -614,8 +606,9 @@ COFFRE_MAGASIN_TABLE_QUERIES = [
         euro VARCHAR(50) NOT NULL DEFAULT '0',
         dollar VARCHAR(50) NOT NULL DEFAULT '0',
         designation TEXT NULL
-    );""",
+    );"""
 ]
+
 ARTISAN_WORK_TABLE_QUERIES = [
     """CREATE TABLE IF NOT EXISTS Artisans (
         id INT PRIMARY KEY AUTO_INCREMENT,
@@ -626,20 +619,55 @@ ARTISAN_WORK_TABLE_QUERIES = [
 
     """CREATE TABLE IF NOT EXISTS ArtisanWorkOrders (
         id INT PRIMARY KEY AUTO_INCREMENT,
-        artisan_id INT NOT NULL,
-        client_id INT NULL,                  -- 🟢 تم إضافة عمود لربط الزبون
+        artisan_id INT NULL,
+        client_id INT NULL,
         numero VARCHAR(50) NOT NULL DEFAULT 'x',
         date_remis VARCHAR(50),
         obj TEXT,
         poid VARCHAR(50),
+        poids_entre_g VARCHAR(50) NULL,
+        poids_retour_g VARCHAR(50) NULL,
         date_recue VARCHAR(50),
         date_sortie VARCHAR(50),
         prix VARCHAR(50),
         vente VARCHAR(50),
         diff VARCHAR(50),
-        FOREIGN KEY (artisan_id) REFERENCES Artisans(id) ON DELETE RESTRICT,
-        FOREIGN KEY (client_id) REFERENCES Clients(id) ON DELETE SET NULL  -- 🟢 ربط جدول الزبائن
+        status VARCHAR(50) NOT NULL DEFAULT 'RECEPTION',
+        observations TEXT NULL,
+        cout_artisan_da VARCHAR(50) NULL,
+        prix_vente_da VARCHAR(50) NULL,
+        FOREIGN KEY (artisan_id) REFERENCES Artisans(id) ON DELETE SET NULL,
+        FOREIGN KEY (client_id) REFERENCES Clients(id) ON DELETE SET NULL
     );""",
+
+    """CREATE TABLE IF NOT EXISTS ArtisanTransactions (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        artisan_id INT NOT NULL,
+        order_id INT NULL,
+        metal_type_id INT NULL,
+        transaction_type VARCHAR(50) NOT NULL,
+        direction VARCHAR(20) NOT NULL DEFAULT 'DEBIT',
+        amount_da DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+        weight_gold_g DECIMAL(10, 3) NOT NULL DEFAULT 0.000,
+        weight_silver_g DECIMAL(10, 3) NOT NULL DEFAULT 0.000,
+        date_trans VARCHAR(50) NOT NULL,
+        observations TEXT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (artisan_id) REFERENCES Artisans(id) ON DELETE CASCADE,
+        FOREIGN KEY (order_id) REFERENCES ArtisanWorkOrders(id) ON DELETE SET NULL,
+        FOREIGN KEY (metal_type_id) REFERENCES MetalTypes(id) ON DELETE SET NULL
+    );""",
+
+    "ALTER TABLE ArtisanWorkOrders MODIFY COLUMN artisan_id INT NULL;",
+    "ALTER TABLE ArtisanWorkOrders ADD COLUMN poids_entre_g VARCHAR(50) NULL;",
+    "ALTER TABLE ArtisanWorkOrders ADD COLUMN poids_retour_g VARCHAR(50) NULL;",
+    "ALTER TABLE ArtisanWorkOrders ADD COLUMN status VARCHAR(50) NOT NULL DEFAULT 'RECEPTION';",
+    "ALTER TABLE ArtisanWorkOrders ADD COLUMN observations TEXT NULL;",
+    "ALTER TABLE ArtisanWorkOrders ADD COLUMN cout_artisan_da VARCHAR(50) NULL;",
+    "ALTER TABLE ArtisanWorkOrders ADD COLUMN prix_vente_da VARCHAR(50) NULL;",
+    "ALTER TABLE ArtisanTransactions ADD COLUMN metal_type_id INT NULL;",
+    "ALTER TABLE Suppliers ADD COLUMN primary_purity VARCHAR(50) DEFAULT '750';",
+    "ALTER TABLE Suppliers ADD COLUMN supplier_type VARCHAR(50) DEFAULT 'Gold';"
 ]
 
 FINANCIAL_TABLE_QUERIES = [

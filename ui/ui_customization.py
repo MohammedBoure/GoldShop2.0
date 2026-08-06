@@ -54,12 +54,11 @@ _INLINE_DATA_CONTAINER_SELECTOR_RE = re.compile(
 _INLINE_QSS_RULE_RE = re.compile(r"(?P<selectors>[^{}]+)\{(?P<body>[^{}]*)\}", re.DOTALL)
 
 DEFAULT_SIDEBAR_ITEMS = [
+    {"page_id": 0, "key": "nav_dashboard", "label": "Tableau de Bord", "icon": "fa5s.tachometer-alt"},
     {"page_id": 1, "key": "nav_inventory", "label": "Stock", "icon": "fa5s.ring"},
     {"page_id": 2, "key": "nav_sales", "label": "Point de Vente (POS)", "icon": "fa5s.cash-register"},
-    {"page_id": 12, "key": "nav_client_commands", "label": "Commandes Client", "icon": "fa5s.clipboard-list"},
-    {"page_id": 13, "key": "nav_inventory_count", "label": "Inventaire Physique", "icon": "fa5s.tasks"},
-    {"page_id": 3, "key": "nav_partners", "label": "Partenaires", "icon": "fa5s.users"},
-    {"page_id": 14, "key": "nav_official_suppliers", "label": "Fournisseurs Officiels", "icon": "fa5s.file-contract"},
+    {"page_id": 17, "key": "nav_atelier", "label": "Atelier & Travaux", "icon": "fa5s.tools"},
+    {"page_id": 19, "key": "nav_official_suppliers", "label": "Fournisseurs", "icon": "fa5s.truck"},
     {"page_id": 6, "key": "nav_data", "label": "Donnees de Base", "icon": "fa5s.database"},
     {"page_id": 7, "key": "nav_settings", "label": "Parametres", "icon": "fa5s.cog"},
 ]
@@ -72,15 +71,15 @@ DEFAULT_SIDEBAR_GROUPS = [
             "nav_dashboard",
             "nav_sales",
             "nav_versement",
-            "nav_client_commands",
+            "nav_atelier",
+            "nav_official_suppliers",
             "nav_inventory",
-            "nav_inventory_count",
         ],
     },
     {
         "id": "management",
         "label": "Gestion",
-        "items": ["nav_partners", "nav_official_suppliers", "nav_services", "nav_finance", "nav_reports", "nav_history"],
+        "items": ["nav_services", "nav_finance", "nav_reports", "nav_history"],
     },
     {
         "id": "system",
@@ -94,10 +93,6 @@ DEFAULT_TAB_LAYOUTS = {
         {"key": "tab_inv_list", "label": "Stock"},
         {"key": "tab_inv_form", "label": "Ajouter Produit"},
     ],
-    "nav_partners": [
-        {"key": "tab_clients", "label": "Clients"},
-        {"key": "tab_suppliers", "label": "Fournisseurs"},
-    ],
     "nav_services": [
         {"key": "tab_repairs", "label": "Reparations"},
         {"key": "tab_artisans", "label": "Artisans"},
@@ -109,6 +104,8 @@ DEFAULT_TAB_LAYOUTS = {
         {"key": "tab_expenses", "label": "Depenses"},
     ],
     "nav_data": [
+        {"key": "tab_clients", "label": "Clients"},
+        {"key": "tab_suppliers", "label": "Fournisseurs"},
         {"key": "tab_metals", "label": "Types de Metaux"},
         {"key": "tab_categories", "label": "Categories (Produits)"},
         {"key": "tab_product_names", "label": "Designations (Noms)"},

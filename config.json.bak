@@ -8,7 +8,7 @@
     "currency": "DA",
     "backup_paths": [],
     "theme": "Standard (Gold)",
-    "zoom_level": 99,
+    "zoom_level": 90,
     "animations": true,
     "auto_virtual_keyboard_enabled": false,
     "auto_virtual_keyboard_targets": {
@@ -200,10 +200,10 @@
         "domain": "rtxa",
         "token": "7c592332-77e7-4f81-b7a0-ba14f03cf0e5",
         "interval_minutes": 30.0,
-        "last_ip": "105.110.1.244",
+        "last_ip": "154.249.200.188",
         "last_status": "ok",
         "last_message": "DuckDNS updated successfully.",
-        "last_update_at": "2026-06-29T15:28:25"
+        "last_update_at": "2026-08-06T11:30:00"
     },
     "print_settings": {
         "default": {
@@ -546,7 +546,7 @@
         "margin_mm": 3,
         "fonts": {
             "shop_name": 22,
-            "doc_title": 18,
+            "doc_title": 19,
             "normal": 12,
             "table_header": 12,
             "qr_text": 10
@@ -569,7 +569,7 @@
         "codes": {
             "qr_link": "",
             "qr_text": "Notre Page",
-            "qr_size": 60,
+            "qr_size": 63,
             "show_qr": true,
             "invoice_barcode_mode": "Code-Barres + Texte"
         },
@@ -578,8 +578,8 @@
             "show_history": true,
             "show_weight_balance": true,
             "show_item_note": true,
-            "show_item_code_column": false,
-            "item_code_format": "Code-Barres",
+            "show_item_code_column": true,
+            "item_code_format": "Texte Simple",
             "reste_in_weight": true,
             "item_barcode_w": 70,
             "item_barcode_h": 20,
@@ -625,7 +625,7 @@
                 "margin_mm": 3,
                 "fonts": {
                     "shop_name": 22,
-                    "doc_title": 18,
+                    "doc_title": 19,
                     "normal": 12,
                     "table_header": 12,
                     "qr_text": 10
@@ -648,7 +648,7 @@
                 "codes": {
                     "qr_link": "",
                     "qr_text": "Notre Page",
-                    "qr_size": 60,
+                    "qr_size": 63,
                     "show_qr": true,
                     "invoice_barcode_mode": "Code-Barres + Texte"
                 },
@@ -657,8 +657,8 @@
                     "show_history": true,
                     "show_weight_balance": true,
                     "show_item_note": true,
-                    "show_item_code_column": false,
-                    "item_code_format": "Code-Barres",
+                    "show_item_code_column": true,
+                    "item_code_format": "Texte Simple",
                     "reste_in_weight": true,
                     "item_barcode_w": 70,
                     "item_barcode_h": 20,

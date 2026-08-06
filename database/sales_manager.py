@@ -22,7 +22,10 @@ class SalesManager:
     def create_sale(self, journee_id: int, client_id: int, user_id: int, 
                     cart_items: list, total_amount: float, discount: float, 
                     net_to_pay: float, cash_paid: float, tpe_paid: float, 
-                    old_gold_weight: float = 0.0, impos_weight: float = 0.0, notes: str = "") -> dict:
+                    old_gold_weight: float = 0.0, impos_weight: float = 0.0,
+                    euro_paid: float = 0.0, taux_change_euro: float = 0.0,
+                    dollar_paid: float = 0.0, taux_change_dollar: float = 0.0,
+                    notes: str = "") -> dict:
         conn = None
         cursor = None
         try:
@@ -39,12 +42,17 @@ class SalesManager:
                 INSERT INTO Sales (
                     receipt_number, journee_id, client_id, user_id, 
                     total_amount_da, discount_da, net_to_pay_da, 
-                    cash_paid_da, tpe_paid_da, old_gold_weight_g, impos_weight_g, notes
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    cash_paid_da, tpe_paid_da, old_gold_weight_g, impos_weight_g,
+                    euro_paid, taux_change_euro, dollar_paid, taux_change_dollar,
+                    notes
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             cursor.execute(sale_query, (
                 receipt_number, journee_id, client_id, user_id,
-                total_amount, discount, net_to_pay, cash_paid, tpe_paid, old_gold_weight, impos_weight, notes
+                total_amount, discount, net_to_pay, cash_paid, tpe_paid,
+                old_gold_weight, impos_weight,
+                euro_paid, taux_change_euro, dollar_paid, taux_change_dollar,
+                notes
             ))
             sale_id = cursor.lastrowid
 
@@ -211,6 +219,7 @@ class SalesManager:
                     SELECT 
                         s.id as sale_id,
                         si.id as item_id,
+                        c.name as client_name,
                         CONCAT(si.name, 
                                IF(cat.name IS NOT NULL AND cat.name != '', CONCAT(' | Cat: ', cat.name), ''),
                                IF(sup.name IS NOT NULL AND sup.name != '', CONCAT(' | Fourn: ', sup.name), '')
@@ -220,11 +229,11 @@ class SalesManager:
                         IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.old_gold_weight_g, 0) as OC,
                         IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.tpe_paid_da, 0) as TPE,
                         IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.impos_weight_g, 0) as Impos,
-                        0 as Euro,
-                        0 as Dollar,
-                        u.username as Vendeur_Sofiane,
+                        IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.euro_paid, 0) as Euro,
+                        IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.dollar_paid, 0) as Dollar,
+                        u.username as Vendeur_Name,
                         s.user_id as vendeur_id,
-                        COALESCE(NULLIF(si.custom_note, ''), NULLIF(s.notes, ''), CONCAT('Fac: ', s.receipt_number, ' - ', COALESCE(c.name, ''))) as Observation,
+                        COALESCE(NULLIF(s.notes, ''), NULLIF(si.custom_note, ''), CONCAT('Fac: ', s.receipt_number)) as raw_notes,
                         s.created_at as timestamp
                     FROM SaleItems si
                     JOIN Sales s ON si.sale_id = s.id
@@ -242,7 +251,8 @@ class SalesManager:
                     SELECT 
                         CONCAT('VRS_', vp.versement_id) as sale_id,
                         vp.id as item_id,
-                        CONCAT('Versement Client: ', COALESCE(c.name, '')) as Designation,
+                        c.name as client_name,
+                        COALESCE(NULLIF(vi.designation, ''), CONCAT('Versement N° VRS-', vp.versement_id)) as Designation,
                         0.0 as P_S,
                         IF(COALESCE(vp.montant_euro, 0) > 0 OR COALESCE(vp.montant_dollar, 0) > 0 OR COALESCE(vp.or_casse_g, 0) > 0, 0.0, vp.montant_da) as Recette,
                         vp.or_casse_g as OC,
@@ -250,19 +260,33 @@ class SalesManager:
                         0.0 as Impos,
                         vp.montant_euro as Euro,
                         vp.montant_dollar as Dollar,
-                        '' as Vendeur_Sofiane,
+                        '' as Vendeur_Name,
                         NULL as vendeur_id,
-                        COALESCE(NULLIF(vp.notes, ''), CONCAT('Versement N° VRS-', vp.versement_id)) as Observation,
+                        COALESCE(NULLIF(vp.notes, ''), CONCAT('Versement N° VRS-', vp.versement_id)) as raw_notes,
                         vp.payment_date as timestamp
                     FROM Versement_Payments vp
                     JOIN Versements v ON vp.versement_id = v.id
                     LEFT JOIN Clients c ON v.client_id = c.id
-                    WHERE vp.journee_id = %s
+                    LEFT JOIN Versement_Items vi ON vp.versement_item_id = vi.id
+                    WHERE vp.journee_id = %s AND v.status != 'ANNULE'
                 """
                 cursor.execute(query_vp, (journee_id,))
                 vp_results = cursor.fetchall()
                 
                 all_results = sales_results + vp_results
+                for r in all_results:
+                    c_name = r.get('client_name')
+                    r_notes = str(r.get('raw_notes') or r.get('Observation') or '').strip()
+                    obs_parts = []
+                    if c_name and str(c_name).strip() and str(c_name).strip() != 'Passager':
+                        obs_parts.append(f"Client: {str(c_name).strip()}")
+                    if r_notes:
+                        if c_name and f" - {c_name}" in r_notes:
+                            r_notes = r_notes.replace(f" - {c_name}", "").strip()
+                        if r_notes and r_notes not in obs_parts:
+                            obs_parts.append(r_notes)
+                    r['Observation'] = " | ".join(obs_parts) if obs_parts else (r_notes or "-")
+
                 from datetime import datetime
                 all_results.sort(key=lambda x: (x['timestamp'] if x['timestamp'] else datetime.min, str(x['sale_id']), x['item_id']))
                 
@@ -280,6 +304,8 @@ class SalesManager:
                         SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN cash_paid_da ELSE 0 END) as total_recette,
                         SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN tpe_paid_da ELSE 0 END) as total_tpe,
                         SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN old_gold_weight_g ELSE 0 END) as total_oc,
+                        SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN euro_paid ELSE 0 END) as total_euro,
+                        SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN dollar_paid ELSE 0 END) as total_dollar,
                         SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN impos_weight_g ELSE 0 END) as total_impos
                     FROM Sales 
                     WHERE journee_id = %s AND status = 'COMPLETED'
@@ -297,14 +323,15 @@ class SalesManager:
                 
                 cursor.execute("""
                     SELECT 
-                        SUM(montant_da) as total_recette,
-                        SUM(tpe_da) as total_tpe,
-                        SUM(or_casse_g) as total_oc,
-                        SUM(montant_euro) as total_euro,
-                        SUM(montant_dollar) as total_dollar,
+                        SUM(vp.montant_da) as total_recette,
+                        SUM(vp.tpe_da) as total_tpe,
+                        SUM(vp.or_casse_g) as total_oc,
+                        SUM(vp.montant_euro) as total_euro,
+                        SUM(vp.montant_dollar) as total_dollar,
                         0.0 as total_p_s
-                    FROM Versement_Payments 
-                    WHERE journee_id = %s
+                    FROM Versement_Payments vp
+                    JOIN Versements v ON vp.versement_id = v.id
+                    WHERE vp.journee_id = %s AND v.status != 'ANNULE'
                 """, (journee_id,))
                 vp_totals = cursor.fetchone()
 
@@ -312,8 +339,8 @@ class SalesManager:
                     'total_recette': float((sales_totals['total_recette'] or 0) + (vp_totals['total_recette'] or 0)),
                     'total_tpe': float((sales_totals['total_tpe'] or 0) + (vp_totals['total_tpe'] or 0)),
                     'total_oc': float((sales_totals['total_oc'] or 0) + (vp_totals['total_oc'] or 0)),
-                    'total_euro': float(vp_totals['total_euro'] or 0),
-                    'total_dollar': float(vp_totals['total_dollar'] or 0),
+                    'total_euro': float((sales_totals['total_euro'] or 0) + (vp_totals['total_euro'] or 0)),
+                    'total_dollar': float((sales_totals['total_dollar'] or 0) + (vp_totals['total_dollar'] or 0)),
                     'total_p_s': float((weight_totals['total_p_s'] or 0) + (vp_totals['total_p_s'] or 0)),
                     'total_impos': float(sales_totals['total_impos'] or 0)
                 }
@@ -324,16 +351,16 @@ class SalesManager:
     # ============================================================
     # 4. تعديل المبالغ المالية لفاتورة منجزة
     # ============================================================
-    def update_sale_financials(self, sale_id: int, cash: float, tpe: float, oc: float, impos: float) -> bool:
+    def update_sale_financials(self, sale_id: int, cash: float, tpe: float, oc: float, euro: float = 0.0, dollar: float = 0.0, impos: float = 0.0) -> bool:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
                 query = """
                     UPDATE Sales 
-                    SET cash_paid_da = %s, tpe_paid_da = %s, old_gold_weight_g = %s, impos_weight_g = %s
+                    SET cash_paid_da = %s, tpe_paid_da = %s, old_gold_weight_g = %s, euro_paid = %s, dollar_paid = %s, impos_weight_g = %s
                     WHERE id = %s
                 """
-                cursor.execute(query, (cash, tpe, oc, impos, sale_id))
+                cursor.execute(query, (cash, tpe, oc, euro, dollar, impos, sale_id))
                 conn.commit()
                 return True
         except Exception as e:
@@ -344,8 +371,9 @@ class SalesManager:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
-                query = "UPDATE Sales SET notes = %s WHERE id = %s"
-                cursor.execute(query, (notes, sale_id))
+                clean_note = str(notes or '').strip()
+                cursor.execute("UPDATE Sales SET notes = %s WHERE id = %s", (clean_note, sale_id))
+                cursor.execute("UPDATE SaleItems SET custom_note = %s WHERE sale_id = %s", (clean_note, sale_id))
                 conn.commit()
                 return True
         except Exception as e:
@@ -365,12 +393,17 @@ class SalesManager:
         except Exception as e:
             logging.error(f"Erreur update_sale_seller: {e}")
             return False
+
     def update_sale_item_notes(self, sale_item_id: int, notes: str) -> bool:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
                 custom_note = str(notes or '').strip()[:255]
                 cursor.execute("UPDATE SaleItems SET custom_note = %s WHERE id = %s", (custom_note, sale_item_id))
+                cursor.execute("SELECT sale_id FROM SaleItems WHERE id = %s", (sale_item_id,))
+                row = cursor.fetchone()
+                if row and row[0]:
+                    cursor.execute("UPDATE Sales SET notes = %s WHERE id = %s", (custom_note, row[0]))
                 conn.commit()
                 return True
         except Exception as e:
@@ -379,7 +412,7 @@ class SalesManager:
 
     def _enrich_versement_closure_sale(self, cursor, sale: dict) -> None:
         """Attach the payment source to final and individual Versement sales."""
-        from database.versement_invoice_summary import build_versement_payment_summary
+        from database.versement import build_versement_payment_summary
 
         versement_id = source_versement_id(sale.get("receipt_number"), sale.get("notes"))
         if versement_id is None:
@@ -537,3 +570,42 @@ class SalesManager:
         except Exception as e:
             logging.error(f"Erreur get_monthly_profit_by_day: {e}")
             return {}
+
+    def update_sale_notes(self, sale_id: int, notes: str) -> bool:
+        """Mettre à jour la note / observation globale de la vente"""
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                query = "UPDATE Sales SET notes = %s WHERE id = %s"
+                cursor.execute(query, (notes, sale_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Erreur update_sale_notes: {e}")
+            return False
+
+    def update_sale_item_notes(self, item_id: int, notes: str) -> bool:
+        """Mettre à jour la note / observation d'un article de vente"""
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                query = "UPDATE SaleItems SET custom_note = %s WHERE id = %s"
+                cursor.execute(query, (notes, item_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Erreur update_sale_item_notes: {e}")
+            return False
+
+    def update_sale_seller(self, sale_id: int, user_id: int) -> bool:
+        """Mettre à jour le vendeur d'une vente"""
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                query = "UPDATE Sales SET user_id = %s WHERE id = %s"
+                cursor.execute(query, (user_id, sale_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Erreur update_sale_seller: {e}")
+            return False

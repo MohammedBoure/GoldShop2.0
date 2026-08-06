@@ -89,7 +89,7 @@ logger = logging.getLogger("JEWELLERY_SYS")
 TABLE_IMPORT_ORDER = [
     'Users', 'MetalTypes', 'Categories', 'ProductNames', 'StorageLocations',
     'Currencies', 'TreasuryLocations', 'ExpenseCategories', 'InvoiceNotes',
-    'Suppliers', 'OfficialSuppliers', 'Clients', 'SupplierAccounts', 'OfficialSupplierOperations',
+    'Suppliers', 'Clients', 'SupplierAccounts',
     'LegacyImportBatches', 'LegacyImportRows',
     'LegacyClientCreditRows', 'LegacySupplierCreditRows',
     'PartnerInitialBalances',

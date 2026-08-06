@@ -90,9 +90,24 @@ class SaleDetailsDialog(QDialog):
                 """, (self.sale_id,))
                 items = cursor.fetchall()
                 while cursor.nextset(): pass
+
         except Exception as e:
             layout.addWidget(QLabel(f"Erreur de chargement: {e}"))
             return
+
+        try:
+            profit_sale = self.manager.sales.get_sale_profit_details(self.sale_id)
+            if profit_sale:
+                sale = profit_sale
+                profit_items = {row.get("id"): row for row in profit_sale.get("items", [])}
+                for item in items:
+                    metrics = profit_items.get(item.get("id"))
+                    if metrics:
+                        item["realized_revenue_da"] = metrics.get("realized_revenue_da")
+                        item["cost_da"] = metrics.get("cost_da")
+                        item["profit_da"] = metrics.get("profit_da")
+        except Exception:
+            pass
 
         if not sale:
             layout.addWidget(QLabel("Vente introuvable."))
@@ -128,7 +143,7 @@ class SaleDetailsDialog(QDialog):
         table = QTableWidget(0, 9)
         table.setHorizontalHeaderLabels([
             "Code Barres", "Catégorie", "Désignation", "Fournisseur", 
-            "Poids (g)", "Qté", "Prix Vendu", "Coût Estimé", "Faaida (Bénéfice)"
+            "Poids (g)", "Qté", "Montant réalisé", "Coût historique", "Faaida (Bénéfice)"
         ])
         
         table.setStyleSheet("""
@@ -154,6 +169,7 @@ class SaleDetailsDialog(QDialog):
         for i in range(4, 9):
             header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
 
+        has_profit_metrics = any("profit_da" in item for item in items)
         total_benefice_brut = 0.0
         
         for item in items:
@@ -166,14 +182,16 @@ class SaleDetailsDialog(QDialog):
             sup_name = str(item.get('supplier_name') or 'N/A')
             w = float(item.get('sold_weight_g') or 0)
             q = int(item.get('sold_quantity') or 1)
-            total_price = float(item.get('total_price_da') or 0)
-
-            m_cost = float(item.get('m_cost', 0))
-            l_cost = float(item.get('l_cost', 0))
-            item_type = item.get('item_type', 'WEIGHT')
-
-            cost = ((m_cost + l_cost) * w) if item_type == 'WEIGHT' else ((m_cost + l_cost) * q)
-            benefice = total_price - cost
+            total_price = float(item.get('realized_revenue_da', item.get('total_price_da', 0)) or 0)
+            if "profit_da" in item:
+                cost = float(item.get('cost_da') or 0)
+                benefice = float(item.get('profit_da') or 0)
+            else:
+                m_cost = float(item.get('m_cost', 0))
+                l_cost = float(item.get('l_cost', 0))
+                item_type = item.get('item_type', 'WEIGHT')
+                cost = ((m_cost + l_cost) * w) if item_type == 'WEIGHT' else ((m_cost + l_cost) * q)
+                benefice = total_price - cost
             total_benefice_brut += benefice
 
             def create_item(text, bold=False, color=None, align_left=False):
@@ -200,7 +218,7 @@ class SaleDetailsDialog(QDialog):
 
         discount = float(sale.get('discount_da') or 0)
         net_pay = float(sale.get('net_to_pay_da') or 0)
-        final_profit = total_benefice_brut - discount
+        final_profit = total_benefice_brut if has_profit_metrics else total_benefice_brut - discount
 
         summary_frame = QFrame()
         summary_frame.setStyleSheet("background-color: #fdf2e9; border: 1px solid #e67e22; border-radius: 8px; padding: 20px;")
@@ -225,10 +243,10 @@ class SaleDetailsDialog(QDialog):
 
 
 class EditSaleDialog(QDialog):
-    def __init__(self, cash, tpe, oc, impos, parent=None):
+    def __init__(self, cash, tpe, oc, euro=0, dollar=0, impos=0, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Modifier les montants de la vente")
-        self.setFixedSize(400, 300)
+        self.setFixedSize(420, 360)
         
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -236,6 +254,8 @@ class EditSaleDialog(QDialog):
         self.inp_cash = QLineEdit(str(cash))
         self.inp_tpe = QLineEdit(str(tpe))
         self.inp_oc = QLineEdit(str(oc))
+        self.inp_euro = QLineEdit(str(euro))
+        self.inp_dollar = QLineEdit(str(dollar))
         self.inp_impos = QLineEdit(str(impos))
         
         from ui.tools.virtual_numpad import VirtualNumpad
@@ -243,7 +263,7 @@ class EditSaleDialog(QDialog):
         def show_pad(inp):
             VirtualNumpad(mode="direct", target_widget=inp, allow_decimal=True, allow_negative=False, parent=self).show()
         
-        for inp in [self.inp_cash, self.inp_tpe, self.inp_oc, self.inp_impos]:
+        for inp in [self.inp_cash, self.inp_tpe, self.inp_oc, self.inp_euro, self.inp_dollar, self.inp_impos]:
             inp.setStyleSheet("font-size: 18px; padding: 5px; font-weight: bold;")
             inp.setFocusPolicy(Qt.ClickFocus) 
             inp.mousePressEvent = lambda e, i=inp: show_pad(i)
@@ -251,6 +271,8 @@ class EditSaleDialog(QDialog):
         form.addRow("💰 Cash (DA) :", self.inp_cash)
         form.addRow("💳 TPE (DA) :", self.inp_tpe)
         form.addRow("⚖️ Or Cassé (g) :", self.inp_oc)
+        form.addRow("💶 Euro (€) :", self.inp_euro)
+        form.addRow("💵 Dollar ($) :", self.inp_dollar)
         form.addRow("📑 Impos (g) :", self.inp_impos)
         layout.addLayout(form)
         
@@ -268,9 +290,13 @@ class EditSaleDialog(QDialog):
         except: t = 0.0
         try: o = float(self.inp_oc.text() or 0)
         except: o = 0.0
+        try: e = float(self.inp_euro.text() or 0)
+        except: e = 0.0
+        try: d = float(self.inp_dollar.text() or 0)
+        except: d = 0.0
         try: i = float(self.inp_impos.text() or 0)
         except: i = 0.0
-        return c, t, o, i
+        return c, t, o, e, d, i
 
     def accept(self):
         try:
@@ -468,7 +494,7 @@ class ExcelJournalView(QWidget):
 
         self.table = QTableWidget(0, 10)
         self.table.setItemDelegate(ColorOverrideDelegate(self.table)) 
-        self.table.setHorizontalHeaderLabels(["Disignation", "P.S", "Recette", "O.C", "TPE", "Euro", "Dollar", "Vendeur", "Observation", "Impos"])
+        self.table.setHorizontalHeaderLabels(["Désignation", "P.S", "Recette", "O.C", "TPE", "Euro", "Dollar", "Vendeur", "Observation", "Impos"])
         self.table.setStyleSheet("""
             QHeaderView::section { background-color: #0f8f83; color: white; font-weight: bold; border: 1px solid #0b776d; padding: 5px; font-size: 14px; }
             QTableWidget::item:selected { background-color: #d1d8e0; color: black; }
@@ -476,18 +502,53 @@ class ExcelJournalView(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setWordWrap(False)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_context_menu)
         self.table.itemSelectionChanged.connect(self.on_table_selection_changed)
         
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)       
-        for i in range(1, 10):
-            if i != 8: header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(8, QHeaderView.Stretch)       
+        header.setStretchLastSection(False)
+        header.setDefaultSectionSize(110)
         layout.addWidget(self.table)
         self.load_sellers_combo()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._adjust_table_columns()
+
+    def _adjust_table_columns(self):
+        """
+        تعديل أبعاد أعمدة الجدول ديناميكياً:
+        - إذا كان إجمالي عرض المحتوى أقل من عرض الشاشة المتاح: تتمدد الأعمدة لتغطي 100% من الشاشة.
+        - إذا كان إجمالي عرض المحتوى أكبر من عرض الشاشة: يتم الحفاظ على الحجم الطبيعي وتفعيل السحب الأفقي (scroll).
+        """
+        if not hasattr(self, "table") or self.table.columnCount() == 0:
+            return
+
+        header = self.table.horizontalHeader()
+        viewport_w = self.table.viewport().width()
+        if viewport_w <= 0:
+            return
+
+        for i in range(10):
+            header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        
+        content_w = sum(self.table.columnWidth(i) for i in range(10))
+
+        if content_w < viewport_w:
+            header.setSectionResizeMode(0, QHeaderView.Stretch)       # Désignation
+            for i in range(1, 9):
+                if i != 8:
+                    header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(8, QHeaderView.Stretch)       # Observation
+            header.setSectionResizeMode(9, QHeaderView.ResizeToContents)
+        else:
+            for i in range(10):
+                header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
 
     # ──────────────────────────────────────────────────────────────
     # قراءة أسماء الطابعات من الإعدادات
@@ -534,11 +595,14 @@ class ExcelJournalView(QWidget):
         cash = item.data(Qt.UserRole + 2)
         tpe = item.data(Qt.UserRole + 3)
         oc = item.data(Qt.UserRole + 4)
-        impos = item.data(Qt.UserRole + 5)
-        seller_id = item.data(Qt.UserRole + 6)
+        euro = item.data(Qt.UserRole + 5)
+        dollar = item.data(Qt.UserRole + 6)
+        impos = item.data(Qt.UserRole + 7)
+        seller_id = item.data(Qt.UserRole + 8)
 
+        raw_obs = item.data(Qt.UserRole + 9)
         item_obs = self.table.item(row, 8)
-        current_obs = item_obs.text() if item_obs else ""
+        current_obs = str(raw_obs if raw_obs is not None else (item_obs.text() if item_obs else ""))
 
         # قراءة أسماء الطابعات
         pdf_printer = self._get_pdf_printer_name()
@@ -599,7 +663,7 @@ class ExcelJournalView(QWidget):
         elif action == act_details:
             self.show_sale_details(sale_id)
         elif action == act_edit:
-            self.edit_sale(sale_id, cash, tpe, oc, impos)
+            self.edit_sale(sale_id, cash, tpe, oc, euro, dollar, impos)
         elif action == act_edit_seller:
             self.edit_seller(sale_id, seller_id)
         elif action == act_edit_obs:
@@ -641,19 +705,22 @@ class ExcelJournalView(QWidget):
         is_versement = isinstance(sale_id, str) and sale_id.startswith("VRS_")
         item_id = item.data(Qt.UserRole + 1)
         
+        raw_obs = item.data(Qt.UserRole + 7)
         if is_versement:
-            current_vrs_obs = self.table.item(row, 8).text() if self.table.item(row, 8) else ""
+            current_vrs_obs = str(raw_obs if raw_obs is not None else (self.table.item(row, 8).text() if self.table.item(row, 8) else ""))
             self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_versement_observation(item_id, current_vrs_obs))
             return
 
         cash = item.data(Qt.UserRole + 2)
         tpe = item.data(Qt.UserRole + 3)
         oc = item.data(Qt.UserRole + 4)
-        impos = item.data(Qt.UserRole + 5)
-        seller_id = item.data(Qt.UserRole + 6)
+        euro = item.data(Qt.UserRole + 5)
+        dollar = item.data(Qt.UserRole + 6)
+        impos = item.data(Qt.UserRole + 7)
+        seller_id = item.data(Qt.UserRole + 8)
 
         item_obs = self.table.item(row, 8)
-        current_obs = item_obs.text() if item_obs else ""
+        current_obs = str(raw_obs if raw_obs is not None else (item_obs.text() if item_obs else ""))
 
         pdf_printer = self._get_pdf_printer_name()
         thermal_printer = self._get_thermal_printer_name()
@@ -662,7 +729,7 @@ class ExcelJournalView(QWidget):
         self._add_action_btn("fa5s.file-pdf", "Télécharger PDF (Aperçu)", "#e74c3c", "#c0392b", lambda: self.print_invoice_pdf(sale_id))
         self._add_action_btn("fa5s.print", f"Imprimer directement → {pdf_printer}" if pdf_printer else "Imprimer directement (non configurée)", "#9b59b6", "#8e44ad", lambda: self.print_invoice_pdf(sale_id, open_pdf=False, direct=True), enabled=bool(pdf_printer))
         self._add_action_btn("fa5s.receipt", f"Imprimer sur thermique → {thermal_printer}" if thermal_printer else "Imprimer sur thermique (non configurée)", "#e67e22", "#d35400", lambda: self.print_invoice_thermal(sale_id), enabled=bool(thermal_printer))
-        self._add_action_btn("fa5s.edit", "Modifier les montants de cette vente", "#27ae60", "#2ecc71", lambda: self.edit_sale(sale_id, cash, tpe, oc, impos))
+        self._add_action_btn("fa5s.edit", "Modifier les montants de cette vente", "#27ae60", "#2ecc71", lambda: self.edit_sale(sale_id, cash, tpe, oc, euro, dollar, impos))
         self._add_action_btn("fa5s.user-edit", "Modifier le vendeur", "#16a085", "#1abc9c", lambda: self.edit_seller(sale_id, seller_id))
         self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, item_id, current_obs))
         self._add_action_btn("fa5s.trash-alt", "Supprimer (Annuler) cette vente", "#c0392b", "#962d2d", lambda: self.delete_sale(sale_id))
@@ -696,6 +763,8 @@ class ExcelJournalView(QWidget):
             mapped['cart_unit_price'] = float(it.get('unit_price_da', 0))
             mapped['custom_note'] = str(it.get('custom_note') or '')
             mapped_items.append(mapped)
+            if it.get('paid_amount_da') is not None:
+                mapped['paid_amount_da'] = float(it.get('paid_amount_da') or 0)
 
         try:
             from ui.tools.invoice_generator import generate_invoice_pdf
@@ -726,7 +795,10 @@ class ExcelJournalView(QWidget):
                 facture_number=sale.get('receipt_number', ''),
                 printed_at=sale.get('created_at'),
                 open_pdf=open_pdf,
-                direct_printer_name=direct_printer
+                direct_printer_name=direct_printer,
+                # لا نرسل تفاصيل وسائل الدفع إلى الفاتورة؛ فقط القيم الإجمالية أعلاه.
+                payment_details=None,
+                payments_history=None,
             )
 
             if direct:
@@ -858,11 +930,11 @@ class ExcelJournalView(QWidget):
         dlg = SaleDetailsDialog(self.manager, sale_id, self)
         dlg.exec()
 
-    def edit_sale(self, sale_id, cash, tpe, oc, impos):
-        dlg = EditSaleDialog(cash, tpe, oc, impos, self)
+    def edit_sale(self, sale_id, cash, tpe, oc, euro=0, dollar=0, impos=0):
+        dlg = EditSaleDialog(cash, tpe, oc, euro, dollar, impos, self)
         if dlg.exec() == QDialog.Accepted:
-            n_cash, n_tpe, n_oc, n_impos = dlg.get_values()
-            if self.manager.sales.update_sale_financials(sale_id, n_cash, n_tpe, n_oc, n_impos):
+            n_cash, n_tpe, n_oc, n_euro, n_dollar, n_impos = dlg.get_values()
+            if self.manager.sales.update_sale_financials(sale_id, n_cash, n_tpe, n_oc, n_euro, n_dollar, n_impos):
                 self.load_data() 
             else:
                 QMessageBox.warning(self, "Erreur", "Erreur lors de la mise à jour.")
@@ -877,16 +949,16 @@ class ExcelJournalView(QWidget):
             if self.manager.sales.update_sale_seller(sale_id, seller_id):
                 self.load_data()
             else:
-                QMessageBox.warning(self, "Erreur", "Erreur lors de la mise Ã  jour du vendeur.")
+                QMessageBox.warning(self, "Erreur", "Erreur lors de la mise Ã  jour du vendeur.")
     def edit_observation(self, sale_id, sale_item_id, current_obs):
         dlg = EditObservationDialog(current_obs, self)
         if dlg.exec() == QDialog.Accepted:
             n_obs = dlg.get_value()
             updated = False
-            if sale_item_id and hasattr(self.manager.sales, "update_sale_item_notes"):
-                updated = self.manager.sales.update_sale_item_notes(sale_item_id, n_obs)
-            elif hasattr(self.manager.sales, "update_sale_notes"):
+            if hasattr(self.manager.sales, "update_sale_notes"):
                 updated = self.manager.sales.update_sale_notes(sale_id, n_obs)
+            if not updated and sale_item_id and hasattr(self.manager.sales, "update_sale_item_notes"):
+                updated = self.manager.sales.update_sale_item_notes(sale_item_id, n_obs)
             if updated:
                 self.load_data()
             else:
@@ -907,7 +979,6 @@ class ExcelJournalView(QWidget):
         reply = QMessageBox.question(self, "Confirmation", "Voulez-vous vraiment annuler cette vente ?\n\n(Les articles seront automatiquement remis en stock)", QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             if self.manager.sales.cancel_sale(sale_id): 
-                QMessageBox.information(self, "Succès", "Vente annulée avec succès. Le stock a été mis à jour.")
                 self.load_data()
             else:
                 QMessageBox.warning(self, "Erreur", "Impossible d'annuler la vente.")
@@ -952,7 +1023,7 @@ class ExcelJournalView(QWidget):
         day_name = days[date_obj.weekday()]
         return f"{day_name} Le {date_obj.strftime('%d/%m/%Y')}"
         
-    def add_merged_row(self, text1, col_span1, text2=None, col_span2=None, bg_color="#2c3e50", text_color="white", bg_color2="#d35400"):
+    def add_merged_row(self, text1, col_span1, text2=None, col_span2=None, bg_color="#e1e8ef", text_color="#17212b", bg_color2="#e8eef3"):
         row = self.table.rowCount()
         self.table.insertRow(row)
         item1 = QTableWidgetItem(text1)
@@ -1008,14 +1079,15 @@ class ExcelJournalView(QWidget):
                     for r in receipts:
                         obs = str(r.get('Observation', '')).lower()
                         des = str(r.get('Designation', '')).lower()
-                        vend = str(r.get('Vendeur_Sofiane', ''))
-                        if client_search and (client_search not in obs and client_search not in des): continue
+                        c_name = str(r.get('client_name', '')).lower()
+                        vend = str(r.get('Vendeur_Name') or r.get('Vendeur_Sofiane', ''))
+                        if client_search and (client_search not in obs and client_search not in des and client_search not in c_name): continue
                         if seller_filter_id != 0 and vend != seller_filter_name: continue
                         filtered_receipts.append(r)
                         
                     if not filtered_receipts and (client_search or seller_filter_id != 0): continue
                         
-                    self.add_merged_row(self.get_french_date_string(date_obj), 3, f"Fc : {fc_amount:,.0f} Da", 7, bg_color="#2c3e50", text_color="white", bg_color2="#d35400")
+                    self.add_merged_row(self.get_french_date_string(date_obj), 3, f"Fc : {fc_amount:,.0f} Da", 7, bg_color="#dfe8ef", text_color="#17212b", bg_color2="#e8eef3")
                     
                     if not filtered_receipts:
                         row = self.table.rowCount()
@@ -1054,7 +1126,7 @@ class ExcelJournalView(QWidget):
                             f"{float(r.get('TPE') or 0):.0f}" if float(r.get('TPE') or 0) != 0 else "0",
                             f"{float(r.get('Euro') or 0):.0f}" if float(r.get('Euro') or 0) != 0 else "0",
                             f"{float(r.get('Dollar') or 0):.0f}" if float(r.get('Dollar') or 0) != 0 else "0",
-                            str(r.get('Vendeur_Sofiane', '')),
+                            str(r.get('Vendeur_Name') or r.get('Vendeur_Sofiane', '')),
                             str(r.get('Observation', '')),
                             f"{float(r.get('Impos') or 0):.2f}" if float(r.get('Impos') or 0) != 0 else "0"
                         ]
@@ -1073,8 +1145,11 @@ class ExcelJournalView(QWidget):
                                 item.setData(Qt.UserRole + 2, float(r.get('Recette') or 0))
                                 item.setData(Qt.UserRole + 3, float(r.get('TPE') or 0))
                                 item.setData(Qt.UserRole + 4, float(r.get('OC') or 0))
-                                item.setData(Qt.UserRole + 5, float(r.get('Impos') or 0))
-                                item.setData(Qt.UserRole + 6, r.get('vendeur_id'))
+                                item.setData(Qt.UserRole + 5, float(r.get('Euro') or 0))
+                                item.setData(Qt.UserRole + 6, float(r.get('Dollar') or 0))
+                                item.setData(Qt.UserRole + 7, float(r.get('Impos') or 0))
+                                item.setData(Qt.UserRole + 8, r.get('vendeur_id'))
+                                item.setData(Qt.UserRole + 9, r.get('raw_notes') or '')
                                 
                             self.table.setItem(row, col_idx, item)
                             
@@ -1085,8 +1160,8 @@ class ExcelJournalView(QWidget):
                     empty_item = QTableWidgetItem("Total Journée")
                     empty_item.setFont(QFont("", 11, QFont.Bold))
                     empty_item.setTextAlignment(Qt.AlignCenter)
-                    empty_item.setBackground(QBrush(QColor("#0f8f83")))
-                    empty_item.setForeground(QBrush(QColor("white")))
+                    empty_item.setBackground(QBrush(QColor("#e1e8ef")))
+                    empty_item.setForeground(QBrush(QColor("#17212b")))
                     self.table.setItem(row, 0, empty_item)
                     
                     for idx, t_val in enumerate([t_ps, t_rec, t_oc, t_tpe, t_euro, t_dollar], start=1):
@@ -1094,21 +1169,23 @@ class ExcelJournalView(QWidget):
                         t_item = QTableWidgetItem(fmt)
                         t_item.setFont(QFont("", 11, QFont.Bold))
                         t_item.setTextAlignment(Qt.AlignCenter)
-                        t_item.setBackground(QBrush(QColor("#0f8f83")))
-                        t_item.setForeground(QBrush(QColor("white")))
+                        t_item.setBackground(QBrush(QColor("#e1e8ef")))
+                        t_item.setForeground(QBrush(QColor("#17212b")))
                         self.table.setItem(row, idx, t_item)
                         
                     for col_idx in [7, 8]:
                         item = QTableWidgetItem("")
-                        item.setBackground(QBrush(QColor("#0f8f83")))
+                        item.setBackground(QBrush(QColor("#e1e8ef")))
                         self.table.setItem(row, col_idx, item)
                         
                     t_impos = QTableWidgetItem(f"{totals.get('total_impos', 0):.2f}")
                     t_impos.setFont(QFont("", 11, QFont.Bold))
                     t_impos.setTextAlignment(Qt.AlignCenter)
-                    t_impos.setBackground(QBrush(QColor("#0f8f83")))
-                    t_impos.setForeground(QBrush(QColor("white")))
+                    t_impos.setBackground(QBrush(QColor("#e1e8ef")))
+                    t_impos.setForeground(QBrush(QColor("#17212b")))
                     self.table.setItem(row, 9, t_impos)
+
+            self._adjust_table_columns()
         except Exception as e:
             pass
 

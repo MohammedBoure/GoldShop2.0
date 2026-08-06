@@ -205,10 +205,10 @@ class MainWindowPermissionsMixin:
             9: "nav_history",
             10: "nav_market",
             11: "nav_versement",
-            12: "nav_client_commands",
-            13: "nav_inventory_count",
-            14: "nav_official_suppliers",
             15: "nav_rh",
+            16: "nav_coffre_magasin",
+            17: "nav_atelier",
+            19: "nav_official_suppliers",
         }.get(page_id)
 
     def _page_permission_label(self, page_id):
@@ -226,8 +226,10 @@ class MainWindowPermissionsMixin:
             11: "Versements & Dettes",
             12: "Commandes Client",
             13: "Inventaire Physique",
-            14: "Fournisseurs Officiels",
             15: "Gestion Personnel & RH",
+            16: "Coffre Magasin",
+            17: "Atelier & Travaux",
+            19: "Fournisseurs",
         }.get(page_id)
 
     def _open_first_available_page(self):

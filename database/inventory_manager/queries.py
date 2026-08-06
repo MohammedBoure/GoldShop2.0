@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple
 
 import mysql.connector
 
-from database.versement_reservation import sellable_stock_condition_sql
+from database.versement import sellable_stock_condition_sql
 
 
 class InventoryQueryMixin:
@@ -200,10 +200,19 @@ class InventoryQueryMixin:
                     params.append(max_weight)
 
                 sort_mapping = {
-                    0: "i.id", 1: "i.barcode", 2: "i.name", 3: "c.name",
-                    4: "mt.name", 5: "i.weight", 6: "i.remaining_weight",
-                    7: "i.labor_cost_per_gram", 8: "i.margin_type", 9: "i.profit_margin",
-                    10: "i.selling_price", 11: "cl.name", 12: "i.status"
+                    1: "i.id",
+                    2: "i.barcode",
+                    3: "i.name",
+                    4: "c.name",
+                    5: "mt.name",
+                    6: "i.weight",
+                    7: "COALESCE(i.remaining_weight, i.weight)",
+                    8: "i.labor_cost_per_gram",
+                    9: "i.margin_type",
+                    10: "i.profit_margin",
+                    11: "i.selling_price",
+                    12: "cl.name",
+                    13: "i.status"
                 }
                 order_by_clause = sort_mapping.get(sort_col, "i.id")
                 direction = "ASC" if sort_dir.upper() == "ASC" else "DESC"

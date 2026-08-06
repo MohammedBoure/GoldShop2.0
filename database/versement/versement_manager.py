@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-from database.versement_reservation import (
+from .versement_reservation import (
     derived_inventory_status,
     normalize_reserved_quantity,
 )
@@ -57,7 +57,15 @@ class VersementManager:
             remaining_weight = float(inventory.get("remaining_weight") or 0.0)
             legacy_reserved = status == "Reserved" and not reserved_client_id and reservation_count == 0
             if (status not in ("Available", "Partially_Sold") and not legacy_reserved) or reservation_count > 0 or remaining_weight <= 0:
-                raise ValueError("L'article pondÃ©rÃ© est dÃ©jÃ  rÃ©servÃ© ou indisponible.")
+                if reservation_count > 0:
+                    cursor.execute("SELECT DISTINCT versement_id FROM Versement_Items WHERE inventory_id = %s AND item_status = 'EN_COURS'", (inventory_id,))
+                    v_ids = [str(r['versement_id']) for r in cursor.fetchall()]
+                    v_ids_str = ", ".join(v_ids)
+                    raise ValueError(f"L'article pondéré est déjà réservé dans le(s) dossier(s) N°: {v_ids_str}. Veuillez l'annuler de ce(s) dossier(s) d'abord.")
+                elif remaining_weight <= 0:
+                    raise ValueError("L'article pondéré est indisponible car il a été vendu.")
+                else:
+                    raise ValueError(f"L'article pondéré est indisponible. Details: status={status}")
 
         return inventory, requested
 
@@ -199,7 +207,7 @@ class VersementManager:
                 cursor.execute("SELECT inventory_id FROM Versement_Items WHERE id = %s", (item_id,))
                 item = cursor.fetchone()
                 cursor.execute(
-                    "UPDATE Versement_Items SET item_status = 'ANNULE' "
+                    "UPDATE Versement_Items SET item_status = 'ANNULE', reserved_quantity = 0 "
                     "WHERE id = %s AND item_status = 'EN_COURS'",
                     (item_id,),
                 )
@@ -259,7 +267,7 @@ class VersementManager:
             items_to_retire = cursor.fetchall()
 
 
-            from database.versement_invoice_summary import build_versement_payment_summary
+            from .versement_invoice_summary import build_versement_payment_summary
             cursor.execute("""
                 SELECT p.*, vi.designation AS item_designation
                 FROM Versement_Payments p
@@ -758,7 +766,11 @@ class VersementManager:
         except Exception as e:
             if conn:
                 conn.rollback()
-            logging.error(f"Erreur revert_versement_item_status: {e}")
+            try:
+                import traceback
+                logging.error(f"Erreur revert_versement_item_status: {e}\n{traceback.format_exc()}")
+            except:
+                logging.error(f"Erreur revert_versement_item_status: {e}")
             return False, str(e)
         finally:
             if cursor:

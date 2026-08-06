@@ -50,7 +50,6 @@ PERMISSIONS_CATALOG = [
             {"key": "nav_dashboard", "label": "Tableau de Bord", "icon": "fa5s.tachometer-alt"},
             {"key": "nav_inventory", "label": "Stock", "icon": "fa5s.box-open"},
             {"key": "nav_sales", "label": "Point de Vente", "icon": "fa5s.cash-register"},
-            {"key": "nav_partners", "label": "Partenaires", "icon": "fa5s.handshake"},
             {"key": "nav_services", "label": "Services", "icon": "fa5s.concierge-bell"},
             {"key": "nav_finance", "label": "Finance", "icon": "fa5s.coins"},
             {"key": "nav_data", "label": "Données de Base", "icon": "fa5s.database"},
@@ -59,11 +58,10 @@ PERMISSIONS_CATALOG = [
             {"key": "nav_history", "label": "Traçabilité", "icon": "fa5s.history"},
             {"key": "nav_market", "label": "Marché", "icon": "fa5s.globe-africa"},
             {"key": "nav_versement", "label": "Versements & Dettes", "icon": "fa5s.hand-holding-usd"},
-            {"key": "nav_client_commands", "label": "Commandes Client", "icon": "fa5s.clipboard-list"},
-            {"key": "nav_inventory_count", "label": "Inventaire Physique", "icon": "fa5s.tasks"},
-            {"key": "nav_official_suppliers", "label": "Fournisseurs Officiels", "icon": "fa5s.truck"},
             {"key": "nav_rh", "label": "Gestion RH", "icon": "fa5s.users-cog"},
             {"key": "nav_coffre_magasin", "label": "Coffre Magasin", "icon": "fa5s.archive"},
+            {"key": "nav_atelier", "label": "Atelier & Travaux", "icon": "fa5s.tools"},
+            {"key": "nav_official_suppliers", "label": "Fournisseurs", "icon": "fa5s.truck"},
         ]
     },
     {
@@ -74,14 +72,10 @@ PERMISSIONS_CATALOG = [
         ]
     },
     {
-        "label": "Onglets Partenaires", "icon": "fa5s.users",
-        "children": [
-            {"key": "tab_clients", "label": "Clients"},
-        ]
-    },
-    {
         "label": "Onglets Données de Base", "icon": "fa5s.list",
         "children": [
+            {"key": "tab_clients", "label": "Clients"},
+            {"key": "tab_suppliers", "label": "Fournisseurs"},
             {"key": "tab_metals", "label": "Types de Métaux"},
             {"key": "tab_categories", "label": "Catégories (Produits)"},
             {"key": "tab_product_names", "label": "Désignations (Noms)"},

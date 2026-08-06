@@ -6,26 +6,26 @@ class RHManager:
         self.db = db_instance
 
     # ========================== ENTRÉES (حر) ==========================
-    def add_entree(self, nom: str, date_debut: str, observations: str = "") -> dict:
+    def add_entree(self, nom: str, date_debut: str, observations: str = "", user_id: int = None) -> dict:
         """إضافة سطر جديد بحرية تامة"""
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
-                query = "INSERT INTO RH_Personnel (nom, date_debut, observations) VALUES (%s, %s, %s)"
-                cursor.execute(query, (nom, date_debut, observations))
+                query = "INSERT INTO RH_Personnel (nom, date_debut, observations, user_id) VALUES (%s, %s, %s, %s)"
+                cursor.execute(query, (nom, date_debut, observations, user_id))
                 conn.commit()
                 return {"success": True, "id": cursor.lastrowid}
         except Exception as e:
             logging.error(f"Erreur add_entree: {e}")
             return {"success": False, "message": str(e)}
 
-    def update_entree(self, p_id: int, nom: str, date_debut: str, observations: str = "") -> bool:
+    def update_entree(self, p_id: int, nom: str, date_debut: str, observations: str = "", user_id: int = None) -> bool:
         """تعديل سطر بحرية"""
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
-                query = "UPDATE RH_Personnel SET nom=%s, date_debut=%s, observations=%s WHERE id=%s"
-                cursor.execute(query, (nom, date_debut, observations, p_id))
+                query = "UPDATE RH_Personnel SET nom=%s, date_debut=%s, observations=%s, user_id=%s WHERE id=%s"
+                cursor.execute(query, (nom, date_debut, observations, user_id, p_id))
                 conn.commit()
                 return True
         except Exception as e:
@@ -49,34 +49,34 @@ class RHManager:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
-                cursor.execute("SELECT id, nom, date_debut, observations FROM RH_Personnel ORDER BY id DESC")
+                cursor.execute("SELECT id, nom, date_debut, observations, user_id FROM RH_Personnel ORDER BY id DESC")
                 return cursor.fetchall()
         except Exception as e:
             logging.error(f"Erreur get_all_entrees: {e}")
             return []
 
     # ========================== SORTIES (حر) ==========================
-    def add_sortie(self, nom: str, date_sortie: str, duree: str = "") -> dict:
+    def add_sortie(self, nom: str, date_sortie: str, duree: str = "", user_id: int = None) -> dict:
         """إضافة سطر خروج جديد بحرية"""
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
                 # تم إضافة date_debut كقيمة فارغة لتجنب خطأ NOT NULL
-                query = "INSERT INTO RH_Personnel (nom, date_debut, date_sortie, duree_travail) VALUES (%s, %s, %s, %s)"
-                cursor.execute(query, (nom, "", date_sortie, duree))
+                query = "INSERT INTO RH_Personnel (nom, date_debut, date_sortie, duree_travail, user_id) VALUES (%s, %s, %s, %s, %s)"
+                cursor.execute(query, (nom, "", date_sortie, duree, user_id))
                 conn.commit()
                 return {"success": True, "id": cursor.lastrowid}
         except Exception as e:
             logging.error(f"Erreur add_sortie: {e}")
             return {"success": False, "message": str(e)}
 
-    def update_sortie(self, p_id: int, nom: str, date_sortie: str, duree: str = "") -> bool:
+    def update_sortie(self, p_id: int, nom: str, date_sortie: str, duree: str = "", user_id: int = None) -> bool:
         """تعديل سطر خروج بحرية"""
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
-                query = "UPDATE RH_Personnel SET nom=%s, date_sortie=%s, duree_travail=%s WHERE id=%s"
-                cursor.execute(query, (nom, date_sortie, duree, p_id))
+                query = "UPDATE RH_Personnel SET nom=%s, date_sortie=%s, duree_travail=%s, user_id=%s WHERE id=%s"
+                cursor.execute(query, (nom, date_sortie, duree, user_id, p_id))
                 conn.commit()
                 return True
         except Exception as e:
@@ -100,33 +100,33 @@ class RHManager:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
-                cursor.execute("SELECT id, nom, date_sortie, duree_travail FROM RH_Personnel WHERE date_sortie IS NOT NULL AND date_sortie != '' ORDER BY id DESC")
+                cursor.execute("SELECT id, nom, date_sortie, duree_travail, user_id FROM RH_Personnel WHERE date_sortie IS NOT NULL AND date_sortie != '' ORDER BY id DESC")
                 return cursor.fetchall()
         except Exception as e:
             logging.error(f"Erreur get_all_sorties: {e}")
             return []
 
     # ========================== AVANCES (حر تماماً) ==========================
-    def add_avance(self, nom_ouvrier: str, date_avance: str, montant_da: str, observations: str = "") -> dict:
-        """إضافة سلفة بحرية - الاسم نص عادي وليس مرتبطاً بأي جدول"""
+    def add_avance(self, nom_ouvrier: str, date_avance: str, montant_da: str, observations: str = "", user_id: int = None) -> dict:
+        """إضافة سلفة بحرية - الاسم نص عادي أو مرتبط بمستخدم"""
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
-                query = "INSERT INTO RH_Avances (nom_ouvrier, date_avance, montant_da, observations) VALUES (%s, %s, %s, %s)"
-                cursor.execute(query, (nom_ouvrier, date_avance, montant_da, observations))
+                query = "INSERT INTO RH_Avances (nom_ouvrier, date_avance, montant_da, observations, user_id) VALUES (%s, %s, %s, %s, %s)"
+                cursor.execute(query, (nom_ouvrier, date_avance, montant_da, observations, user_id))
                 conn.commit()
                 return {"success": True, "id": cursor.lastrowid}
         except Exception as e:
             logging.error(f"Erreur add_avance: {e}")
             return {"success": False, "message": str(e)}
 
-    def update_avance(self, a_id: int, nom_ouvrier: str, date_avance: str, montant_da: str, observations: str = "") -> bool:
+    def update_avance(self, a_id: int, nom_ouvrier: str, date_avance: str, montant_da: str, observations: str = "", user_id: int = None) -> bool:
         """تعديل سلفة بحرية"""
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
-                query = "UPDATE RH_Avances SET nom_ouvrier=%s, date_avance=%s, montant_da=%s, observations=%s WHERE id=%s"
-                cursor.execute(query, (nom_ouvrier, date_avance, montant_da, observations, a_id))
+                query = "UPDATE RH_Avances SET nom_ouvrier=%s, date_avance=%s, montant_da=%s, observations=%s, user_id=%s WHERE id=%s"
+                cursor.execute(query, (nom_ouvrier, date_avance, montant_da, observations, user_id, a_id))
                 conn.commit()
                 return True
         except Exception as e:
@@ -150,7 +150,7 @@ class RHManager:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
-                cursor.execute("SELECT id, nom_ouvrier, date_avance, montant_da, observations FROM RH_Avances ORDER BY id DESC")
+                cursor.execute("SELECT id, nom_ouvrier, date_avance, montant_da, observations, user_id FROM RH_Avances ORDER BY id DESC")
                 return cursor.fetchall()
         except Exception as e:
             logging.error(f"Erreur get_all_avances: {e}")

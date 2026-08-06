@@ -1,6 +1,6 @@
 import unittest
 
-from database.versement_pricing import (
+from database.versement import (
     discount_for_target_price,
     payment_value_da,
     price_after_discount,

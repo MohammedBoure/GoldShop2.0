@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QDialog
 
-from database.versement_manager import VersementManager
+from database.versement import VersementManager
 from ui.widgets.versements.invoice_note_selector import (
     create_invoice_note_combo,
     normalize_custom_note,
@@ -55,6 +55,19 @@ class _ClosureCursor:
                     "barcode": "B-22",
                 },
             ]
+        elif "FROM Versement_Payments p" in compact:
+            self._all = [{
+                "id": 1,
+                "montant_da": 30000,
+                "tpe_da": 10000,
+                "montant_euro": 100,
+                "taux_change_euro": 280,
+                "montant_dollar": 10,
+                "taux_change_dollar": 150,
+                "or_casse_g": 0.5,
+                "poids_deduit_g": 0.9,
+                "remise_da": 2500,
+            }]
         elif compact.startswith("INSERT INTO Sales"):
             self.lastrowid = 99
 
@@ -152,6 +165,26 @@ class VersementCustomNoteTests(unittest.TestCase):
         self.assertEqual(len(sale_item_params), 2)
         self.assertEqual(sale_item_params[0][-1], "A vendre")
         self.assertEqual(sale_item_params[1][-1], "Commande client")
+
+    def test_full_closure_persists_complete_payment_summary_for_invoice(self):
+        connection = _ClosureConnection()
+        manager = VersementManager(SimpleNamespace(get_raw_connection=lambda: connection))
+
+        self.assertTrue(manager.cloture_versement(versement_id=7, journee_id=3))
+        sale_params = next(
+            params for query, params in connection.cursor_instance.executions
+            if query.startswith("INSERT INTO Sales")
+        )
+        sale_item_params = [
+            params for query, params in connection.cursor_instance.executions
+            if query.startswith("INSERT INTO SaleItems")
+        ]
+
+        self.assertEqual(
+            sale_params[3:10],
+            (72000.0, 2500.0, 69500.0, 30000.0, 10000.0, 0.5, 0.9),
+        )
+        self.assertTrue(all(len(params) == 6 for params in sale_item_params))
 
     def test_failed_individual_invoice_restores_item_to_en_cours(self):
         class FakeDialog:

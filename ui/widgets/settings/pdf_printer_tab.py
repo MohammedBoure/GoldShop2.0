@@ -830,7 +830,8 @@ class PdfPrinterTab(QWidget):
         text_arrete = texts.get("text_arrete", "Arrêté la présente somme de :")
 
         def _txt(key, fallback):
-            return texts.get(key) or fallback
+            val = texts.get(key)
+            return val if val is not None else fallback
 
         lbl_items_title = _txt("versement_items_section_title", "Détail des produits réservés")
         lbl_payments_title = _txt("versement_payments_section_title", "Versements sur produit")

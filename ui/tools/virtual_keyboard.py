@@ -1,7 +1,10 @@
 # ui/tools/virtual_keyboard.py
 
 import logging
-import pyautogui
+try:
+    import pyautogui
+except ImportError:
+    pyautogui = None
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, 
     QPushButton, QLineEdit, QSizePolicy, QApplication,

@@ -21,7 +21,6 @@ class ProductNameManager:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
-                # استخدمنا INSERT IGNORE لتفادي الخطأ إذا كان الاسم موجوداً مسبقاً
                 query = "INSERT IGNORE INTO ProductNames (name) VALUES (%s)"
                 cursor.execute(query, (name.strip(),))
                 conn.commit()

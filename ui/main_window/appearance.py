@@ -166,6 +166,17 @@ class MainWindowAppearanceMixin:
             super().wheelEvent(event)
 
     def _populate_sidebar_from_layout(self):
+        dashboard_item = {
+            "key": "nav_dashboard",
+            "label": "Tableau de Bord",
+            "icon": "fa5s.tachometer-alt",
+            "page_id": 0
+        }
+        dashboard_inserted = False
+        if self._sidebar_item_allowed(dashboard_item):
+            self._add_sidebar_button(dashboard_item)
+            dashboard_inserted = True
+
         report_item = {
             "key": "nav_reports",
             "label": "Rapports",
@@ -190,20 +201,47 @@ class MainWindowAppearanceMixin:
             "icon": "fa5s.archive",
             "page_id": 16
         }
+        atelier_item = {
+            "key": "nav_atelier",
+            "label": "Atelier & Travaux",
+            "icon": "fa5s.tools",
+            "page_id": 17
+        }
+        official_supplier_item = {
+            "key": "nav_official_suppliers",
+            "label": "Fournisseurs",
+            "icon": "fa5s.truck",
+            "page_id": 19
+        }
+        
+        settings_item = {
+            "key": "nav_settings",
+            "label": "Paramètres",
+            "icon": "fa5s.cog",
+            "page_id": 7
+        }
         
         reports_inserted = False
         versements_inserted = False
         rh_inserted = False
         coffre_inserted = False
+        atelier_inserted = False
+        official_suppliers_inserted = False
 
         for group in self._sidebar_layout_groups():
             group_label = self._make_sidebar_group_label(group.get("label", ""))
             group_added = False
             for item in group.get("items", []):
+                if item.get("key") == "nav_settings":
+                    settings_item = item
+                    continue
+                if item.get("key") == "nav_dashboard" and dashboard_inserted: continue
                 if item.get("key") == "nav_reports" and reports_inserted: continue
                 if item.get("key") == "nav_versement" and versements_inserted: continue
                 if item.get("key") == "nav_rh" and rh_inserted: continue
                 if item.get("key") == "nav_coffre_magasin" and coffre_inserted: continue
+                if item.get("key") == "nav_atelier" and atelier_inserted: continue
+                if item.get("key") == "nav_official_suppliers" and official_suppliers_inserted: continue
                 
                 if not self._sidebar_item_allowed(item): continue
                 if not group_added and group_label is not None:
@@ -221,6 +259,11 @@ class MainWindowAppearanceMixin:
                     if self._sidebar_item_allowed(report_item):
                         self._add_sidebar_button(report_item)
                         reports_inserted = True
+
+                if item.get("key") == "nav_inventory" and not atelier_inserted:
+                    if self._sidebar_item_allowed(atelier_item):
+                        self._add_sidebar_button(atelier_item)
+                        atelier_inserted = True
                         
                 if item.get("key") == "nav_reports" and not rh_inserted:
                     if self._sidebar_item_allowed(rh_item):
@@ -234,6 +277,9 @@ class MainWindowAppearanceMixin:
 
         if not versements_inserted and self._sidebar_item_allowed(versement_item):
             self._add_sidebar_button(versement_item)
+
+        if not atelier_inserted and self._sidebar_item_allowed(atelier_item):
+            self._add_sidebar_button(atelier_item)
             
         if not rh_inserted and self._sidebar_item_allowed(rh_item):
             self._add_sidebar_button(rh_item)
@@ -247,6 +293,10 @@ class MainWindowAppearanceMixin:
                 lbl = self._make_sidebar_group_label("Analyses & Rapports")
                 if lbl: self.nav_layout.addWidget(lbl)
                 self._add_sidebar_button(report_item)
+
+        # Placer le bouton Paramètres (nav_settings) tout en bas comme dernier élément absolu
+        if self._sidebar_item_allowed(settings_item):
+            self._add_sidebar_button(settings_item)
 
     def _sidebar_layout_groups(self):
         ui_config = self.get_ui_customization_config()

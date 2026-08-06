@@ -86,21 +86,56 @@ def main():
         QMessageBox.critical(None, "Error", f"Manager Init Error:\n{e}")
         sys.exit(1)
 
-    login_dialog = LoginDialog(data_manager)
+    current_user = None
+
+    # Try Auto-Login (Skip LoginDialog if session is saved)
+    import json
+    import base64
+    from ui.login_dialog import SESSION_FILE, LEGACY_SESSION_FILE
+
+    session_file = SESSION_FILE if os.path.exists(SESSION_FILE) else LEGACY_SESSION_FILE
+    if os.path.exists(session_file):
+        try:
+            with open(session_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            username = data.get("username", "")
+            token = data.get("token", "")
+            
+            if token:
+                password = base64.b64decode(token).decode('utf-8')
+            else:
+                password = ""
+
+            if username and password:
+                user_found = data_manager.users.authenticate(username, password)
+                if user_found:
+                    logging.info(f"Auto-login successful for user: {username}")
+                    current_user = user_found
+                else:
+                    logging.warning("Auto-login failed. Clearing session.")
+                    if os.path.exists(SESSION_FILE): os.remove(SESSION_FILE)
+                    if os.path.exists(LEGACY_SESSION_FILE): os.remove(LEGACY_SESSION_FILE)
+        except Exception as e:
+            logging.error(f"Session recovery error: {e}")
+
+    # If auto-login failed or no session, show LoginDialog
+    if not current_user:
+        login_dialog = LoginDialog(data_manager)
+        if login_dialog.exec() == QDialog.Accepted:
+            current_user = login_dialog.authenticated_user
+        else:
+            logging.info("Login cancelled. Exiting.")
+            sys.exit(0)
+
+    logging.info(f"User Logged In: {current_user['username']} ({current_user['role']})")
     
-    if login_dialog.exec() == QDialog.Accepted:
-        current_user = login_dialog.authenticated_user
-        logging.info(f"User Logged In: {current_user['username']} ({current_user['role']})")
-        
-        from ui.main_window import MainWindow
-        window = MainWindow(data_manager, current_user)
-        window.show()
-        #QTimer.singleShot(1500, lambda: start_flask_server(qt_app))
-        
-        sys.exit(qt_app.exec())
-    else:
-        logging.info("Login cancelled. Exiting.")
-        sys.exit(0)
+    from ui.main_window import MainWindow
+    window = MainWindow(data_manager, current_user)
+    window.show()
+    #QTimer.singleShot(1500, lambda: start_flask_server(qt_app))
+    
+    sys.exit(qt_app.exec())
 
 if __name__ == "__main__":
     main()

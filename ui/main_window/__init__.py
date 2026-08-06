@@ -272,6 +272,11 @@ class MainWindow(
         if confirm == QMessageBox.Yes:
             self._skip_exit_confirmation = True
             try:
+                from ui.login_dialog import SESSION_FILE, LEGACY_SESSION_FILE
+                import os
+                if os.path.exists(SESSION_FILE): os.remove(SESSION_FILE)
+                if os.path.exists(LEGACY_SESSION_FILE): os.remove(LEGACY_SESSION_FILE)
+                
                 if self.close():
                     os.execl(sys.executable, sys.executable, *sys.argv)
             finally:

@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 
 from database.sales_manager import SalesManager
-from database.versement_manager import VersementManager
+from database.versement import VersementManager
 
 
 class _FakeCursor:

@@ -105,6 +105,5 @@ class POSClientManager:
                     ))
                     conn.commit()
                     
-                QMessageBox.information(self, "Succès", f"Versement de {amount:,.2f} DA enregistré avec succès.")
             except Exception as e:
                 QMessageBox.critical(self, "Erreur", f"Erreur lors de l'enregistrement: {e}")

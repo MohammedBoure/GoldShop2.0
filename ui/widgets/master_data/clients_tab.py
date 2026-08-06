@@ -1,4 +1,4 @@
-# ui/widgets/partners/clients_tab.py
+# ui/widgets/master_data/clients_tab.py
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, 

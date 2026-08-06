@@ -225,6 +225,29 @@ DIALOG_BTN_CANCEL_STYLE = """
 
 
 # =====================================================================
+# Fonction utilitaire pour récupérer les utilisateurs système
+# =====================================================================
+
+def get_system_users_list(manager):
+    """Récupère dynamiquement la liste des noms des utilisateurs enregistrés dans le système (database/user_manager.py)"""
+    names = []
+    if hasattr(manager, 'users') and manager.users:
+        try:
+            users = manager.users.get_all_users()
+            for u in users:
+                if u.get('is_active', 1):
+                    full_name = str(u.get('full_name') or '').strip()
+                    username = str(u.get('username') or '').strip()
+                    if full_name and full_name not in names:
+                        names.append(full_name)
+                    if username and username not in names:
+                        names.append(username)
+        except Exception as e:
+            logging.error(f"Erreur get_system_users_list: {e}")
+    return names
+
+
+# =====================================================================
 # Dialog de base : Positionné TOUT EN HAUT
 # =====================================================================
 
@@ -237,6 +260,15 @@ class BaseTopDialog(QDialog):
         self.move(x, 0)
 
     def _open_keyboard(self, target):
+        if isinstance(target, QComboBox) and target.isEditable():
+            line_edit = target.lineEdit()
+            if line_edit:
+                line_edit.setFocus()
+                line_edit.selectAll()
+                kb = VirtualKeyboardDialog(self.window())
+                kb.show()
+                kb.raise_()
+                return
         target.setFocus()
         kb = VirtualKeyboardDialog(self.window())
         kb.show()
@@ -308,11 +340,26 @@ class EntreeDialog(BaseTopDialog):
         form.setSpacing(12)
         form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
-        self.inp_nom = QLineEdit()
+        self.inp_nom = QComboBox()
+        self.inp_nom.setEditable(True)
         self.inp_nom.setStyleSheet(DIALOG_FIELD_STYLE)
-        self.inp_nom.setPlaceholderText("Nom de l'ouvrier...")
-        if self.record:
-            self.inp_nom.setText(str(self.record.get('nom', '')))
+        if self.inp_nom.lineEdit():
+            self.inp_nom.lineEdit().setPlaceholderText("Nom de l'ouvrier...")
+
+        system_users = get_system_users_list(self.manager)
+        for user_name in system_users:
+            self.inp_nom.addItem(user_name)
+
+        current_val = str(self.record.get('nom', '')) if self.record else ""
+        if current_val:
+            if self.inp_nom.findText(current_val) < 0:
+                self.inp_nom.addItem(current_val)
+            self.inp_nom.setCurrentText(current_val)
+        else:
+            self.inp_nom.setCurrentIndex(-1)
+            if self.inp_nom.lineEdit():
+                self.inp_nom.lineEdit().clear()
+
         form.addRow("👤 Nom :", self._wrap_field_kb(self.inp_nom))
 
         self.inp_date = QDateEdit()
@@ -358,7 +405,8 @@ class EntreeDialog(BaseTopDialog):
         date_str = self.inp_date.date().toString("dd/MM/yyyy")
         return {
             "id": self.record['id'] if self.record else None,
-            "nom": self.inp_nom.text().strip(),
+            "nom": self.inp_nom.currentText().strip(),
+            "user_id": self.inp_nom.currentData(),
             "date_debut": date_str,
             "obs": self.inp_obs.text().strip()
         }
@@ -388,11 +436,26 @@ class SortieDialog(BaseTopDialog):
         form.setSpacing(12)
         form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
-        self.inp_nom = QLineEdit()
+        self.inp_nom = QComboBox()
+        self.inp_nom.setEditable(True)
         self.inp_nom.setStyleSheet(DIALOG_FIELD_STYLE)
-        self.inp_nom.setPlaceholderText("Nom de l'ouvrier...")
-        if self.record:
-            self.inp_nom.setText(str(self.record.get('nom', '')))
+        if self.inp_nom.lineEdit():
+            self.inp_nom.lineEdit().setPlaceholderText("Nom de l'ouvrier...")
+
+        system_users = get_system_users_list(self.manager)
+        for user_name in system_users:
+            self.inp_nom.addItem(user_name)
+
+        current_val = str(self.record.get('nom', '')) if self.record else ""
+        if current_val:
+            if self.inp_nom.findText(current_val) < 0:
+                self.inp_nom.addItem(current_val)
+            self.inp_nom.setCurrentText(current_val)
+        else:
+            self.inp_nom.setCurrentIndex(-1)
+            if self.inp_nom.lineEdit():
+                self.inp_nom.lineEdit().clear()
+
         form.addRow("👤 Nom :", self._wrap_field_kb(self.inp_nom))
 
         self.inp_date = QDateEdit()
@@ -438,7 +501,8 @@ class SortieDialog(BaseTopDialog):
         date_str = self.inp_date.date().toString("dd/MM/yyyy")
         return {
             "id": self.record['id'] if self.record else None,
-            "nom": self.inp_nom.text().strip(),
+            "nom": self.inp_nom.currentText().strip(),
+            "user_id": self.inp_nom.currentData(),
             "date_sortie": date_str,
             "duree": self.inp_duree.text().strip()
         }
@@ -468,11 +532,26 @@ class AvanceDialog(BaseTopDialog):
         form.setSpacing(12)
         form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
-        self.inp_nom = QLineEdit()
+        self.inp_nom = QComboBox()
+        self.inp_nom.setEditable(True)
         self.inp_nom.setStyleSheet(DIALOG_FIELD_STYLE)
-        self.inp_nom.setPlaceholderText("Nom de l'ouvrier...")
-        if self.record:
-            self.inp_nom.setText(str(self.record.get('nom_ouvrier', '')))
+        if self.inp_nom.lineEdit():
+            self.inp_nom.lineEdit().setPlaceholderText("Nom de l'ouvrier...")
+
+        system_users = get_system_users_list(self.manager)
+        for user_name in system_users:
+            self.inp_nom.addItem(user_name)
+
+        current_val = str(self.record.get('nom_ouvrier', '')) if self.record else ""
+        if current_val:
+            if self.inp_nom.findText(current_val) < 0:
+                self.inp_nom.addItem(current_val)
+            self.inp_nom.setCurrentText(current_val)
+        else:
+            self.inp_nom.setCurrentIndex(-1)
+            if self.inp_nom.lineEdit():
+                self.inp_nom.lineEdit().clear()
+
         form.addRow("👤 Nom :", self._wrap_field_kb(self.inp_nom))
 
         self.inp_date = QDateEdit()
@@ -526,7 +605,8 @@ class AvanceDialog(BaseTopDialog):
         date_str = self.inp_date.date().toString("dd/MM/yyyy")
         return {
             "id": self.record['id'] if self.record else None,
-            "nom": self.inp_nom.text().strip(),
+            "nom": self.inp_nom.currentText().strip(),
+            "user_id": self.inp_nom.currentData(),
             "date": date_str,
             "montant": self.inp_montant.text().strip(),
             "obs": self.inp_obs.text().strip()
@@ -546,7 +626,6 @@ class EntreesTab(QWidget):
         defer_initial_load(self, self._initial_load)
 
     def _initial_load(self):
-        self._build_year_combo()
         self.load_data()
 
     def init_ui(self):
@@ -575,6 +654,14 @@ class EntreesTab(QWidget):
         self.combo_mois.currentIndexChanged.connect(self.on_filter_changed)
         filter_lay.addWidget(QLabel("Mois:"))
         filter_lay.addWidget(self.combo_mois)
+
+        self.combo_ouvrier = QComboBox()
+        self.combo_ouvrier.setStyleSheet(FILTER_STYLE)
+        self.combo_ouvrier.addItem("Tous les ouvriers", "")
+        self.combo_ouvrier.currentIndexChanged.connect(self.on_filter_changed)
+        filter_lay.addWidget(QLabel("Ouvrier:"))
+        filter_lay.addWidget(self.combo_ouvrier)
+
         filter_lay.addStretch()
         layout.addLayout(filter_lay)
 
@@ -611,9 +698,8 @@ class EntreesTab(QWidget):
         current = self.combo_annee.currentData()
         self.combo_annee.clear()
         self.combo_annee.addItem("Toutes les années", 0)
-        records = self.manager.rh.get_all_entrees()
         years = set()
-        for r in records:
+        for r in self.full_data:
             year = extract_year(r.get('date_debut', ''))
             if year:
                 years.add(year)
@@ -624,17 +710,40 @@ class EntreesTab(QWidget):
             self.combo_annee.setCurrentIndex(idx)
         self.combo_annee.blockSignals(False)
 
+    def _build_ouvrier_combo(self):
+        self.combo_ouvrier.blockSignals(True)
+        current = self.combo_ouvrier.currentData()
+        self.combo_ouvrier.clear()
+        self.combo_ouvrier.addItem("Tous les ouvriers", "")
+        
+        system_users = get_system_users_list(self.manager)
+        all_names = set(system_users)
+        for r in self.full_data:
+            n = str(r.get('nom', '')).strip()
+            if n:
+                all_names.add(n)
+                
+        for name in sorted(all_names):
+            self.combo_ouvrier.addItem(name, name)
+            
+        idx = self.combo_ouvrier.findData(current)
+        if idx >= 0:
+            self.combo_ouvrier.setCurrentIndex(idx)
+        self.combo_ouvrier.blockSignals(False)
+
     def on_filter_changed(self):
         self._apply_filter()
 
     def _apply_filter(self):
         annee = self.combo_annee.currentData()
         mois = self.combo_mois.currentData()
+        ouvrier = self.combo_ouvrier.currentData()
         filtered = []
         for r in self.full_data:
             d = str(r.get('date_debut', ''))
             rec_year = extract_year(d)
             rec_month = extract_month(d)
+            rec_nom = str(r.get('nom', '')).strip()
             
             ok = True
             if annee and annee != 0:
@@ -642,6 +751,9 @@ class EntreesTab(QWidget):
                     ok = False
             if mois and mois != 0:
                 if rec_month != mois:
+                    ok = False
+            if ouvrier and ouvrier != "":
+                if rec_nom.lower() != str(ouvrier).lower():
                     ok = False
             if ok:
                 filtered.append(r)
@@ -680,6 +792,7 @@ class EntreesTab(QWidget):
     def load_data(self):
         self.full_data = self.manager.rh.get_all_entrees()
         self._build_year_combo()
+        self._build_ouvrier_combo()
         self._apply_filter()
 
     def open_add_dialog(self):
@@ -687,14 +800,14 @@ class EntreesTab(QWidget):
         if dlg.exec() == QDialog.Accepted:
             data = dlg.get_data()
             if data['nom']:
-                self.manager.rh.add_entree(data['nom'], data['date_debut'], data['obs'])
+                self.manager.rh.add_entree(data['nom'], data['date_debut'], data['obs'], user_id=data.get('user_id'))
                 self.load_data()
 
     def open_edit_dialog(self, record):
         dlg = EntreeDialog(self.manager, record=record, parent=self)
         if dlg.exec() == QDialog.Accepted:
             data = dlg.get_data()
-            self.manager.rh.update_entree(data['id'], data['nom'], data['date_debut'], data['obs'])
+            self.manager.rh.update_entree(data['id'], data['nom'], data['date_debut'], data['obs'], user_id=data.get('user_id'))
             self.load_data()
 
     def delete_record(self, rid):
@@ -717,7 +830,6 @@ class SortiesTab(QWidget):
         defer_initial_load(self, self._initial_load)
 
     def _initial_load(self):
-        self._build_year_combo()
         self.load_data()
 
     def init_ui(self):
@@ -746,6 +858,14 @@ class SortiesTab(QWidget):
         self.combo_mois.currentIndexChanged.connect(self.on_filter_changed)
         filter_lay.addWidget(QLabel("Mois:"))
         filter_lay.addWidget(self.combo_mois)
+
+        self.combo_ouvrier = QComboBox()
+        self.combo_ouvrier.setStyleSheet(FILTER_STYLE)
+        self.combo_ouvrier.addItem("Tous les ouvriers", "")
+        self.combo_ouvrier.currentIndexChanged.connect(self.on_filter_changed)
+        filter_lay.addWidget(QLabel("Ouvrier:"))
+        filter_lay.addWidget(self.combo_ouvrier)
+
         filter_lay.addStretch()
         layout.addLayout(filter_lay)
 
@@ -782,9 +902,8 @@ class SortiesTab(QWidget):
         current = self.combo_annee.currentData()
         self.combo_annee.clear()
         self.combo_annee.addItem("Toutes les années", 0)
-        records = self.manager.rh.get_all_sorties()
         years = set()
-        for r in records:
+        for r in self.full_data:
             year = extract_year(r.get('date_sortie', ''))
             if year:
                 years.add(year)
@@ -795,17 +914,40 @@ class SortiesTab(QWidget):
             self.combo_annee.setCurrentIndex(idx)
         self.combo_annee.blockSignals(False)
 
+    def _build_ouvrier_combo(self):
+        self.combo_ouvrier.blockSignals(True)
+        current = self.combo_ouvrier.currentData()
+        self.combo_ouvrier.clear()
+        self.combo_ouvrier.addItem("Tous les ouvriers", "")
+        
+        system_users = get_system_users_list(self.manager)
+        all_names = set(system_users)
+        for r in self.full_data:
+            n = str(r.get('nom', '')).strip()
+            if n:
+                all_names.add(n)
+                
+        for name in sorted(all_names):
+            self.combo_ouvrier.addItem(name, name)
+            
+        idx = self.combo_ouvrier.findData(current)
+        if idx >= 0:
+            self.combo_ouvrier.setCurrentIndex(idx)
+        self.combo_ouvrier.blockSignals(False)
+
     def on_filter_changed(self):
         self._apply_filter()
 
     def _apply_filter(self):
         annee = self.combo_annee.currentData()
         mois = self.combo_mois.currentData()
+        ouvrier = self.combo_ouvrier.currentData()
         filtered = []
         for r in self.full_data:
             d = str(r.get('date_sortie', ''))
             rec_year = extract_year(d)
             rec_month = extract_month(d)
+            rec_nom = str(r.get('nom', '')).strip()
             
             ok = True
             if annee and annee != 0:
@@ -813,6 +955,9 @@ class SortiesTab(QWidget):
                     ok = False
             if mois and mois != 0:
                 if rec_month != mois:
+                    ok = False
+            if ouvrier and ouvrier != "":
+                if rec_nom.lower() != str(ouvrier).lower():
                     ok = False
             if ok:
                 filtered.append(r)
@@ -851,6 +996,7 @@ class SortiesTab(QWidget):
     def load_data(self):
         self.full_data = self.manager.rh.get_all_sorties()
         self._build_year_combo()
+        self._build_ouvrier_combo()
         self._apply_filter()
 
     def open_add_dialog(self):
@@ -858,14 +1004,14 @@ class SortiesTab(QWidget):
         if dlg.exec() == QDialog.Accepted:
             data = dlg.get_data()
             if data['nom']:
-                self.manager.rh.add_sortie(data['nom'], data['date_sortie'], data['duree'])
+                self.manager.rh.add_sortie(data['nom'], data['date_sortie'], data['duree'], user_id=data.get('user_id'))
                 self.load_data()
 
     def open_edit_dialog(self, record):
         dlg = SortieDialog(self.manager, record=record, parent=self)
         if dlg.exec() == QDialog.Accepted:
             data = dlg.get_data()
-            self.manager.rh.update_sortie(data['id'], data['nom'], data['date_sortie'], data['duree'])
+            self.manager.rh.update_sortie(data['id'], data['nom'], data['date_sortie'], data['duree'], user_id=data.get('user_id'))
             self.load_data()
 
     def delete_record(self, rid):
@@ -888,7 +1034,6 @@ class AvancesTab(QWidget):
         defer_initial_load(self, self._initial_load)
 
     def _initial_load(self):
-        self._build_year_combo()
         self.load_data()
 
     def init_ui(self):
@@ -917,11 +1062,19 @@ class AvancesTab(QWidget):
         self.combo_mois.currentIndexChanged.connect(self.on_filter_changed)
         filter_lay.addWidget(QLabel("Mois:"))
         filter_lay.addWidget(self.combo_mois)
+
+        self.combo_ouvrier = QComboBox()
+        self.combo_ouvrier.setStyleSheet(FILTER_STYLE)
+        self.combo_ouvrier.addItem("Tous les ouvriers", "")
+        self.combo_ouvrier.currentIndexChanged.connect(self.on_filter_changed)
+        filter_lay.addWidget(QLabel("Ouvrier:"))
+        filter_lay.addWidget(self.combo_ouvrier)
+
         filter_lay.addStretch()
         layout.addLayout(filter_lay)
 
         header = QHBoxLayout()
-        title = QLabel("💸 Avances (Sallafia)")
+        title = QLabel("💸 Avances (Acomptes)")
         title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2c3e50;")
         header.addWidget(title)
         header.addStretch()
@@ -953,9 +1106,8 @@ class AvancesTab(QWidget):
         current = self.combo_annee.currentData()
         self.combo_annee.clear()
         self.combo_annee.addItem("Toutes les années", 0)
-        records = self.manager.rh.get_all_avances()
         years = set()
-        for r in records:
+        for r in self.full_data:
             year = extract_year(r.get('date_avance', ''))
             if year:
                 years.add(year)
@@ -966,18 +1118,41 @@ class AvancesTab(QWidget):
             self.combo_annee.setCurrentIndex(idx)
         self.combo_annee.blockSignals(False)
 
+    def _build_ouvrier_combo(self):
+        self.combo_ouvrier.blockSignals(True)
+        current = self.combo_ouvrier.currentData()
+        self.combo_ouvrier.clear()
+        self.combo_ouvrier.addItem("Tous les ouvriers", "")
+        
+        system_users = get_system_users_list(self.manager)
+        all_names = set(system_users)
+        for r in self.full_data:
+            n = str(r.get('nom_ouvrier', '')).strip()
+            if n:
+                all_names.add(n)
+                
+        for name in sorted(all_names):
+            self.combo_ouvrier.addItem(name, name)
+            
+        idx = self.combo_ouvrier.findData(current)
+        if idx >= 0:
+            self.combo_ouvrier.setCurrentIndex(idx)
+        self.combo_ouvrier.blockSignals(False)
+
     def on_filter_changed(self):
         self._apply_filter()
 
     def _apply_filter(self):
         annee = self.combo_annee.currentData()
         mois = self.combo_mois.currentData()
+        ouvrier = self.combo_ouvrier.currentData()
         filtered = []
         total = 0.0
         for r in self.full_data:
             d = str(r.get('date_avance', ''))
             rec_year = extract_year(d)
             rec_month = extract_month(d)
+            rec_nom = str(r.get('nom_ouvrier', '')).strip()
             
             ok = True
             if annee and annee != 0:
@@ -985,6 +1160,9 @@ class AvancesTab(QWidget):
                     ok = False
             if mois and mois != 0:
                 if rec_month != mois:
+                    ok = False
+            if ouvrier and ouvrier != "":
+                if rec_nom.lower() != str(ouvrier).lower():
                     ok = False
             if ok:
                 filtered.append(r)
@@ -1045,6 +1223,7 @@ class AvancesTab(QWidget):
     def load_data(self):
         self.full_data = self.manager.rh.get_all_avances()
         self._build_year_combo()
+        self._build_ouvrier_combo()
         self._apply_filter()
 
     def open_add_dialog(self):
@@ -1052,14 +1231,14 @@ class AvancesTab(QWidget):
         if dlg.exec() == QDialog.Accepted:
             data = dlg.get_data()
             if data['nom'] and data['montant']:
-                self.manager.rh.add_avance(data['nom'], data['date'], data['montant'], data['obs'])
+                self.manager.rh.add_avance(data['nom'], data['date'], data['montant'], data['obs'], user_id=data.get('user_id'))
                 self.load_data()
 
     def open_edit_dialog(self, record):
         dlg = AvanceDialog(self.manager, record=record, parent=self)
         if dlg.exec() == QDialog.Accepted:
             data = dlg.get_data()
-            self.manager.rh.update_avance(data['id'], data['nom'], data['date'], data['montant'], data['obs'])
+            self.manager.rh.update_avance(data['id'], data['nom'], data['date'], data['montant'], data['obs'], user_id=data.get('user_id'))
             self.load_data()
 
     def delete_record(self, rid):
@@ -1109,7 +1288,7 @@ class RHManagementView(QWidget):
         self.tabs.addTab(self.tab_sorties, "🚪 Date de Sortie des ouvriers")
 
         self.tab_avances = AvancesTab(self.manager)
-        self.tabs.addTab(self.tab_avances, "💸 Avances (Sallafia)")
+        self.tabs.addTab(self.tab_avances, "💸 Avances (Acomptes)")
 
         self.tabs.currentChanged.connect(self.on_tab_changed)
         layout.addWidget(self.tabs)

@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QMessageBox, QVBoxLayout
-
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QMessageBox, QVBoxLayout, QPushButton
 from ui.touch_design import apply_touch_button_defaults
 
-from .supplier_editor_form import OfficialSupplierEditorForm
+from .supplier_editor_form import SupplierEditorForm
 
-
-class OfficialSupplierEditorDialog(QDialog):
+class SupplierEditorDialog(QDialog):
     def __init__(
         self,
         manager,
@@ -19,11 +18,11 @@ class OfficialSupplierEditorDialog(QDialog):
     ):
         super().__init__(parent)
         self.manager = manager
-        self.service = manager.official_suppliers
+        self.service = manager.suppliers
         self.supplier = dict(supplier or {})
         self.current_user = current_user or {}
         self.result_id = self.supplier.get("id")
-        self.setWindowTitle("Fournisseur officiel")
+        self.setWindowTitle("Fournisseur")
         self.setMinimumSize(720, 560)
         self._resize_for_touch_screen()
         self._init_ui()
@@ -39,21 +38,48 @@ class OfficialSupplierEditorDialog(QDialog):
             min(max(600, int(available.height() * 0.72)), available.height() - 60),
         )
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._position_at_top()
+        QTimer.singleShot(0, self._position_at_top)
+
+    def _position_at_top(self):
+        screen = QApplication.primaryScreen()
+        if screen:
+            available = screen.availableGeometry()
+            x = (available.width() - self.width()) // 2
+            self.move(max(0, x), available.top())
+
+    def _show_keyboard(self):
+        from ui.tools.virtual_keyboard import VirtualKeyboardDialog
+        focused = self.focusWidget()
+        if focused:
+            focused.setFocus()
+        kb = VirtualKeyboardDialog(self)
+        kb.show()
+        kb.raise_()
+
     def _init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(12)
 
-        self.form = OfficialSupplierEditorForm(self.manager, self.supplier, self)
+        self.form = SupplierEditorForm(self.manager, self.supplier, self)
         layout.addWidget(self.form, 1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         save_button = buttons.button(QDialogButtonBox.Save)
         cancel_button = buttons.button(QDialogButtonBox.Cancel)
+        kb_button = QPushButton(" ⌨️ Clavier Tactile")
+        buttons.addButton(kb_button, QDialogButtonBox.ActionRole)
+
         save_button.setText("Enregistrer")
         cancel_button.setText("Annuler")
         apply_touch_button_defaults(save_button, primary=True)
         apply_touch_button_defaults(cancel_button)
+        apply_touch_button_defaults(kb_button)
+
+        kb_button.clicked.connect(self._show_keyboard)
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -61,19 +87,21 @@ class OfficialSupplierEditorDialog(QDialog):
     def _save(self):
         error = self.form.validation_error()
         if error:
-            QMessageBox.warning(self, "Fournisseur officiel", error)
+            QMessageBox.warning(self, "Fournisseur", error)
             return
 
         payload = self.form.payload(user_id=self.current_user.get("id"))
         if self.result_id:
             payload.pop("user_id", None)
-            ok = self.service.update_official_supplier(int(self.result_id), **payload)
+            ok = self.service.update_supplier_details(sid=int(self.result_id), **payload)
             if not ok:
-                QMessageBox.critical(self, "Fournisseur officiel", "Impossible de modifier le fournisseur.")
+                QMessageBox.critical(self, "Fournisseur", "Impossible de modifier le fournisseur.")
                 return
         else:
-            self.result_id = self.service.create_official_supplier(**payload)
+            self.result_id = self.service.create_supplier(**payload)
             if not self.result_id:
-                QMessageBox.critical(self, "Fournisseur officiel", "Impossible de creer le fournisseur.")
+                QMessageBox.critical(self, "Fournisseur", "Impossible de créer le fournisseur.")
                 return
         self.accept()
+
+OfficialSupplierEditorDialog = SupplierEditorDialog

@@ -19,7 +19,6 @@ class POSCheckoutDialog(QDialog):
         self.client_name = client_name
         self.current_user_id = current_user_id
         self.current_client_id = current_client_id
-        self.available_versement = 0.0
         
         self.setWindowTitle("Finalisation de la Vente")
         self.setObjectName("panel") 
@@ -53,23 +52,68 @@ class POSCheckoutDialog(QDialog):
         form_layout.setSpacing(10)
         form_layout.setLabelAlignment(Qt.AlignRight)
 
-        self.load_versement_balance()
-        
         self.inp_cash = QLineEdit(str(int(self.net_to_pay)))
         self.inp_cash.setStyleSheet("font-size: 20px; font-weight: bold; color: #27ae60; height: 40px;")
         self.inp_tpe = QLineEdit("0")
         self.inp_tpe.setStyleSheet("font-size: 20px; font-weight: bold; color: #2980b9; height: 40px;")
-        self.inp_oc = QLineEdit("0.00")
-        self.inp_oc.setStyleSheet("font-size: 20px; font-weight: bold; color: #8e44ad; height: 40px;")
+        # ── Or Cassé : Poids × Prix/g → Total auto-calculé ──
+        oc_container = QWidget()
+        oc_row_layout = QHBoxLayout(oc_container)
+        oc_row_layout.setContentsMargins(0, 0, 0, 0)
+        oc_row_layout.setSpacing(6)
+
+        self.inp_oc_weight = QLineEdit("0.000")
+        self.inp_oc_weight.setPlaceholderText("Poids (g)")
+        self.inp_oc_weight.setStyleSheet("font-size: 19px; font-weight: bold; color: #8e44ad; height: 40px; min-width: 110px;")
+
+        lbl_oc_sep = QLabel("×")
+        lbl_oc_sep.setStyleSheet("font-size: 20px; font-weight: bold; color: #8e44ad;")
+        lbl_oc_sep.setAlignment(Qt.AlignCenter)
+        lbl_oc_sep.setFixedWidth(20)
+
+        self.inp_oc_price = QLineEdit("0.00")
+        self.inp_oc_price.setPlaceholderText("Prix/g (DA)")
+        self.inp_oc_price.setStyleSheet("font-size: 19px; font-weight: bold; color: #8e44ad; height: 40px; min-width: 120px;")
+
+        lbl_oc_eq = QLabel("=")
+        lbl_oc_eq.setStyleSheet("font-size: 20px; font-weight: bold; color: #8e44ad;")
+        lbl_oc_eq.setAlignment(Qt.AlignCenter)
+        lbl_oc_eq.setFixedWidth(18)
+
+        self.lbl_oc_total = QLabel("0.00 DA")
+        self.lbl_oc_total.setStyleSheet(
+            "font-size: 19px; font-weight: 900; color: #6c3483; "
+            "background: #f5eef8; border: 1px solid #c39bd3; "
+            "border-radius: 4px; padding: 4px 10px; min-width: 140px;"
+        )
+        self.lbl_oc_total.setAlignment(Qt.AlignCenter)
+
+        oc_row_layout.addWidget(self.inp_oc_weight)
+        oc_row_layout.addWidget(lbl_oc_sep)
+        oc_row_layout.addWidget(self.inp_oc_price)
+        oc_row_layout.addWidget(lbl_oc_eq)
+        oc_row_layout.addWidget(self.lbl_oc_total)
+        oc_row_layout.addStretch()
         
-        self.inp_impos = QLineEdit("0.00")
-        self.inp_impos.setStyleSheet("font-size: 20px; font-weight: bold; color: #d35400; height: 40px;")
-        
-        self.inp_versement = QLineEdit("0.00")
-        self.inp_versement.setStyleSheet("font-size: 20px; font-weight: bold; color: #e67e22; height: 40px;")
-        
-        self.inp_versement.textChanged.connect(self.update_cash_auto)
+        self.inp_obs = QLineEdit("")
+        self.inp_obs.setPlaceholderText("Remarque / Observation sur la vente...")
+        self.inp_obs.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50; height: 40px; padding: 5px; border: 1px solid #bdc3c7; border-radius: 4px;")
+
+        # ── Euro : montant € × taux DA/€ → Total DA auto-calculé ──
+        euro_container, self.inp_euro_amt, self.inp_euro_rate, self.lbl_euro_total = \
+            self._build_currency_row("#1a6b8a", "€", "Montant (€)", "Taux (DA/€)")
+
+        # ── Dollar : montant $ × taux DA/$ → Total DA auto-calculé ──
+        dollar_container, self.inp_dollar_amt, self.inp_dollar_rate, self.lbl_dollar_total = \
+            self._build_currency_row("#1d8348", "$", "Montant ($)", "Taux (DA/$)")
+
         self.inp_tpe.textChanged.connect(self.update_cash_auto)
+        self.inp_oc_weight.textChanged.connect(self._update_oc_and_cash)
+        self.inp_oc_price.textChanged.connect(self._update_oc_and_cash)
+        self.inp_euro_amt.textChanged.connect(self._update_euro_and_cash)
+        self.inp_euro_rate.textChanged.connect(self._update_euro_and_cash)
+        self.inp_dollar_amt.textChanged.connect(self._update_dollar_and_cash)
+        self.inp_dollar_rate.textChanged.connect(self._update_dollar_and_cash)
 
         self.combo_vendeur = QComboBox()
         self.combo_vendeur.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50; height: 40px;")
@@ -77,16 +121,10 @@ class POSCheckoutDialog(QDialog):
 
         form_layout.addRow("💸 Vers. Espèces (Cash) :", self.inp_cash)
         form_layout.addRow("💳 Vers. Carte TPE :", self.inp_tpe)
-        
-        vers_lay = QHBoxLayout()
-        vers_lay.addWidget(self.inp_versement)
-        lbl_dispo = QLabel(f"(Dispo: {self.available_versement:,.2f} DA)")
-        lbl_dispo.setStyleSheet("font-size: 14px; font-weight: bold; color: #7f8c8d;")
-        vers_lay.addWidget(lbl_dispo)
-        form_layout.addRow("💰 Utiliser Versement :", vers_lay)
-
-        form_layout.addRow("⚖️ Or Cassé (O.C) :", self.inp_oc)
-        form_layout.addRow("📑 Impos (Déclaré) :", self.inp_impos)
+        form_layout.addRow("⚖️ Or Cassé (O.C) :", oc_container)
+        form_layout.addRow("🇪🇺 Euro (€) :", euro_container)
+        form_layout.addRow("🇺🇸 Dollar ($) :", dollar_container)
+        form_layout.addRow("📝 Observation :", self.inp_obs)
         form_layout.addRow("👨‍💼 Vendeur :", self.combo_vendeur)
         layout.addLayout(form_layout)
 
@@ -113,22 +151,116 @@ class POSCheckoutDialog(QDialog):
         btn_layout.addWidget(self.btn_confirm, 2)
         layout.addLayout(btn_layout)
 
-    def load_versement_balance(self):
-        try:
-            v_list = self.manager.versements.get_versements(status_filter='EN_COURS', client_id=self.current_client_id)
-            for v in v_list:
-                if v.get('type_versement') == 'A_VIDE':
-                    self.available_versement += float(v.get('total_paid_money_da', 0))
-        except Exception:
-            pass
+    # ─────────────────────────────────────────────────────────────
+    # Helpers : construction et calcul des lignes devise
+    # ─────────────────────────────────────────────────────────────
+    def _build_currency_row(self, accent: str, symbol: str, ph_amount: str, ph_rate: str):
+        """Construit une ligne: [montant devise] × [taux] = [total DA]. Retourne (container, inp_amt, inp_rate, lbl_total)."""
+        container = QWidget()
+        row = QHBoxLayout(container)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+
+        inp_amt = QLineEdit("0.00")
+        inp_amt.setPlaceholderText(ph_amount)
+        inp_amt.setStyleSheet(f"font-size: 19px; font-weight: bold; color: {accent}; height: 40px; min-width: 110px;")
+
+        lbl_x = QLabel("×")
+        lbl_x.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {accent};")
+        lbl_x.setAlignment(Qt.AlignCenter)
+        lbl_x.setFixedWidth(20)
+
+        inp_rate = QLineEdit("0.00")
+        inp_rate.setPlaceholderText(ph_rate)
+        inp_rate.setStyleSheet(f"font-size: 19px; font-weight: bold; color: {accent}; height: 40px; min-width: 120px;")
+
+        lbl_eq = QLabel("=")
+        lbl_eq.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {accent};")
+        lbl_eq.setAlignment(Qt.AlignCenter)
+        lbl_eq.setFixedWidth(18)
+
+        lbl_total = QLabel(f"{symbol} 0.00 DA")
+        lbl_total.setStyleSheet(
+            f"font-size: 19px; font-weight: 900; color: {accent}; "
+            f"background: #f0f9ff; border: 1px solid {accent}55; "
+            "border-radius: 4px; padding: 4px 10px; min-width: 160px;"
+        )
+        lbl_total.setAlignment(Qt.AlignCenter)
+
+        row.addWidget(inp_amt)
+        row.addWidget(lbl_x)
+        row.addWidget(inp_rate)
+        row.addWidget(lbl_eq)
+        row.addWidget(lbl_total)
+        row.addStretch()
+        return container, inp_amt, inp_rate, lbl_total
+
+    def _calc_devise_da(self, inp_amt: QLineEdit, inp_rate: QLineEdit) -> float:
+        """Calcule montant_devise × taux → valeur DA."""
+        try: a = float(inp_amt.text() or 0)
+        except: a = 0.0
+        try: r = float(inp_rate.text() or 0)
+        except: r = 0.0
+        return a * r
+
+    def _refresh_devise_label(self, lbl: QLabel, symbol: str, accent: str, amount_da: float):
+        lbl.setText(f"{symbol} {amount_da:,.2f} DA")
+        over = amount_da > self.net_to_pay
+        if over:
+            lbl.setStyleSheet(
+                "font-size: 19px; font-weight: 900; color: #c0392b; "
+                "background: #fdf2e9; border: 1px solid #e74c3c; "
+                "border-radius: 4px; padding: 4px 10px; min-width: 160px;"
+            )
+        else:
+            lbl.setStyleSheet(
+                f"font-size: 19px; font-weight: 900; color: {accent}; "
+                f"background: #f0f9ff; border: 1px solid {accent}55; "
+                "border-radius: 4px; padding: 4px 10px; min-width: 160px;"
+            )
+
+    def _get_oc_amount(self) -> float:
+        """Retourne le montant en DA de l'or cassé (poids × prix/g)."""
+        try: w = float(self.inp_oc_weight.text() or 0)
+        except: w = 0.0
+        try: p = float(self.inp_oc_price.text() or 0)
+        except: p = 0.0
+        return w * p
+
+    def _update_oc_and_cash(self):
+        oc_amount = self._get_oc_amount()
+        self.lbl_oc_total.setText(f"{oc_amount:,.2f} DA")
+        if oc_amount > self.net_to_pay:
+            self.lbl_oc_total.setStyleSheet(
+                "font-size: 19px; font-weight: 900; color: #c0392b; "
+                "background: #fdf2e9; border: 1px solid #e74c3c; "
+                "border-radius: 4px; padding: 4px 10px; min-width: 140px;"
+            )
+        else:
+            self.lbl_oc_total.setStyleSheet(
+                "font-size: 19px; font-weight: 900; color: #6c3483; "
+                "background: #f5eef8; border: 1px solid #c39bd3; "
+                "border-radius: 4px; padding: 4px 10px; min-width: 140px;"
+            )
+        self.update_cash_auto()
+
+    def _update_euro_and_cash(self):
+        da = self._calc_devise_da(self.inp_euro_amt, self.inp_euro_rate)
+        self._refresh_devise_label(self.lbl_euro_total, "€", "#1a6b8a", da)
+        self.update_cash_auto()
+
+    def _update_dollar_and_cash(self):
+        da = self._calc_devise_da(self.inp_dollar_amt, self.inp_dollar_rate)
+        self._refresh_devise_label(self.lbl_dollar_total, "$", "#1d8348", da)
+        self.update_cash_auto()
 
     def update_cash_auto(self):
         try: tpe = float(self.inp_tpe.text() or 0)
         except: tpe = 0.0
-        try: versement = float(self.inp_versement.text() or 0)
-        except: versement = 0.0
-        
-        req_cash = self.net_to_pay - tpe - versement
+        oc_da     = self._get_oc_amount()
+        euro_da   = self._calc_devise_da(self.inp_euro_amt, self.inp_euro_rate)
+        dollar_da = self._calc_devise_da(self.inp_dollar_amt, self.inp_dollar_rate)
+        req_cash  = self.net_to_pay - tpe - oc_da - euro_da - dollar_da
         if not self.focusWidget() or self.focusWidget() != self.inp_cash:
             self.inp_cash.setText(f"{req_cash:.2f}")
 
@@ -137,28 +269,39 @@ class POSCheckoutDialog(QDialog):
         except: cash = 0.0
         try: tpe = float(self.inp_tpe.text() or 0)
         except: tpe = 0.0
-        try: oc = float(self.inp_oc.text() or 0)
-        except: oc = 0.0
-        try: impos = float(self.inp_impos.text() or 0)
-        except: impos = 0.0
-        try: versement = float(self.inp_versement.text() or 0)
-        except: versement = 0.0
-        
-        if versement > self.available_versement:
-            versement = self.available_versement
-            
+        try: oc_weight = float(self.inp_oc_weight.text() or 0)
+        except: oc_weight = 0.0
+        try: oc_price = float(self.inp_oc_price.text() or 0)
+        except: oc_price = 0.0
+        oc_amount = oc_weight * oc_price
+        try: euro = float(self.inp_euro_amt.text() or 0)
+        except: euro = 0.0
+        try: taux_euro = float(self.inp_euro_rate.text() or 0)
+        except: taux_euro = 0.0
+        try: dollar = float(self.inp_dollar_amt.text() or 0)
+        except: dollar = 0.0
+        try: taux_dollar = float(self.inp_dollar_rate.text() or 0)
+        except: taux_dollar = 0.0
+        obs = self.inp_obs.text().strip()
         vendeur_id = self.combo_vendeur.currentData()
-        return cash, tpe, oc, impos, vendeur_id, versement
+        # cash, tpe, oc_weight(g), oc_price(DA/g), oc_amount(DA),
+        # euro(€), taux_euro(DA/€), dollar($), taux_dollar(DA/$), vendeur_id, obs
+        return cash, tpe, oc_weight, oc_price, oc_amount, euro, taux_euro, dollar, taux_dollar, vendeur_id, obs
 
     def load_sellers(self):
         try:
             with self.manager.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
-                cursor.execute("SELECT id, username FROM Users WHERE is_active = 1")
+                cursor.execute("SELECT id, username, full_name FROM Users WHERE is_active = 1")
                 users = cursor.fetchall()
                 while cursor.nextset(): pass
                 for u in users:
-                    self.combo_vendeur.addItem(u['username'], u['id'])
+                    fn = str(u.get('full_name') or '').strip()
+                    un = str(u.get('username') or '').strip()
+                    display_name = fn if fn else un
+                    if fn and un and fn != un:
+                        display_name = f"{fn} ({un})"
+                    self.combo_vendeur.addItem(display_name, u['id'])
                     if u['id'] == self.current_user_id:
                         self.combo_vendeur.setCurrentIndex(self.combo_vendeur.count() - 1)
         except Exception:
@@ -248,7 +391,7 @@ class POSInterfaceWidget(POSUIBuilder, POSClientManager, POSInventoryLoader, POS
 
         dialog = POSCheckoutDialog(self.manager, net_to_pay, client_name, self.session_info.get('user_id', 1), self.current_client_id, self)
         if dialog.exec() == QDialog.Accepted:
-            cash, tpe, oc, impos, vendeur_id, versement_used = dialog.get_payment_values()
+            cash, tpe, oc_weight, oc_price, oc_amount, euro, taux_euro, dollar, taux_dollar, vendeur_id, obs = dialog.get_payment_values()
 
             journee = self.manager.cash_box.get_or_create_today_session(user_id=self.session_info.get('user_id', 1))
             if not journee: return
@@ -265,15 +408,15 @@ class POSInterfaceWidget(POSUIBuilder, POSClientManager, POSInventoryLoader, POS
                 net_to_pay=net_to_pay,
                 cash_paid=cash,
                 tpe_paid=tpe,
-                old_gold_weight=oc,
-                impos_weight=impos, 
-                notes=f"Payé {versement_used:,.0f} DA par Versement" if versement_used > 0 else ""
+                old_gold_weight=oc_weight,
+                euro_paid=euro,
+                taux_change_euro=taux_euro,
+                dollar_paid=dollar,
+                taux_change_dollar=taux_dollar,
+                notes=obs
             )
 
             if result.get("success"):
-                if versement_used > 0:
-                    self.deduct_from_versements(self.current_client_id, versement_used, result.get('receipt_number', ''), journee_id)
-                QMessageBox.information(self, "Succès", f"Vente enregistrée avec succès !\nFacture N°: {result['receipt_number']}")
                 self.cart_items.clear()
                 self.update_totals()
                 if hasattr(self, 'refresh_cart'): self.refresh_cart()

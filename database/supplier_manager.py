@@ -67,8 +67,8 @@ class SupplierManager:
         weight_debit = self._to_float(row.get("accounted_weight_debit"))
         weight_credit = self._to_float(row.get("accounted_weight_credit"))
 
-        has_money_columns = abs(amount_debit) > self.MONEY_EPSILON or abs(amount_credit) > self.MONEY_EPSILON
-        has_weight_columns = abs(weight_debit) > self.WEIGHT_EPSILON or abs(weight_credit) > self.WEIGHT_EPSILON
+        has_money_columns = (row.get("amount_debit") is not None or row.get("amount_credit") is not None)
+        has_weight_columns = (row.get("accounted_weight_debit") is not None or row.get("accounted_weight_credit") is not None)
 
         money_delta = 0.0
         weight_delta = 0.0
@@ -105,6 +105,13 @@ class SupplierManager:
                 "weight_delta": weight_delta,
                 "money_amount": abs(money_delta),
                 "weight_amount": abs(weight_delta),
+                "operation_date": row.get("transaction_date"),
+                "operation_type": "OUTGOING" if (weight_delta < 0 or money_delta < 0 or trans_type == "OUTGOING") else "INCOMING",
+                "weight_g": abs(weight_delta),
+                "amount_da": abs(money_delta),
+                "afacon": row.get("labor_price_per_gram") or 0.0,
+                "description": row.get("description") or row.get("notes") or "",
+                "notes": row.get("description") or row.get("notes") or "",
                 "asset_type": asset_type,
                 "asset_name": asset_name,
                 "asset_code": asset_name,
@@ -168,6 +175,307 @@ class SupplierManager:
             logging.error(f"Error adding supplier: {exc}")
             return None
 
+    def list_suppliers(
+        self,
+        search_text: str = "",
+        active_only: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[Dict]:
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                query = "SELECT s.*, mt.name as base_metal_name FROM Suppliers s LEFT JOIN MetalTypes mt ON s.base_metal_type_id = mt.id WHERE 1=1"
+                params = []
+                if active_only:
+                    query += " AND s.is_active = TRUE"
+                if search_text:
+                    query += " AND (s.name LIKE %s OR s.phone LIKE %s OR s.address LIKE %s OR s.specialization LIKE %s)"
+                    like_pattern = f"%{search_text}%"
+                    params.extend([like_pattern, like_pattern, like_pattern, like_pattern])
+                query += " ORDER BY s.name ASC LIMIT %s OFFSET %s"
+                params.extend([limit, offset])
+                cursor.execute(query, tuple(params))
+                return cursor.fetchall()
+        except Exception as exc:
+            logging.error(f"Error listing suppliers: {exc}")
+            return []
+
+    def list_official_suppliers(self, *args, **kwargs) -> List[Dict]:
+        return self.list_suppliers(*args, **kwargs)
+
+    def create_supplier(
+        self,
+        name: str,
+        phone: str = "",
+        address: str = "",
+        base_metal_id: int = None,
+        supplier_type: str = "Gold",
+        primary_purity: str = "750",
+        specialization: str = "",
+        is_active: bool = True,
+        **kwargs,
+    ) -> Optional[int]:
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO Suppliers (name, phone, address, base_metal_type_id, supplier_type, primary_purity, specialization, is_active)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (name, phone, address, base_metal_id, supplier_type, primary_purity, specialization, is_active),
+                )
+                sid = cursor.lastrowid
+                conn.commit()
+                return sid
+        except Exception as exc:
+            logging.error(f"Error creating supplier: {exc}")
+            return None
+
+    def create_official_supplier(self, *args, **kwargs) -> Optional[int]:
+        return self.create_supplier(*args, **kwargs)
+
+    def update_supplier_details(
+        self,
+        sid: int = None,
+        name: str = None,
+        phone: str = None,
+        address: str = None,
+        base_metal_id: int = None,
+        supplier_type: str = None,
+        primary_purity: str = None,
+        specialization: str = None,
+        is_active: bool = None,
+        **fields,
+    ) -> bool:
+        if sid is None:
+            sid = fields.get("official_supplier_id") or fields.get("supplier_id") or fields.get("id")
+        if not sid:
+            return False
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                updates = []
+                params = []
+                if name is not None or "name" in fields:
+                    v = name if name is not None else fields.get("name")
+                    updates.append("name = %s"); params.append(v)
+                if phone is not None or "phone" in fields:
+                    v = phone if phone is not None else fields.get("phone")
+                    updates.append("phone = %s"); params.append(v)
+                if address is not None or "address" in fields:
+                    v = address if address is not None else fields.get("address")
+                    updates.append("address = %s"); params.append(v)
+                if base_metal_id is not None or "base_metal_id" in fields or "base_metal_type_id" in fields:
+                    v = base_metal_id if base_metal_id is not None else (fields.get("base_metal_id") or fields.get("base_metal_type_id"))
+                    updates.append("base_metal_type_id = %s"); params.append(v)
+                if supplier_type is not None or "supplier_type" in fields:
+                    v = supplier_type if supplier_type is not None else fields.get("supplier_type")
+                    updates.append("supplier_type = %s"); params.append(v)
+                if primary_purity is not None or "primary_purity" in fields:
+                    v = primary_purity if primary_purity is not None else fields.get("primary_purity")
+                    updates.append("primary_purity = %s"); params.append(v)
+                if specialization is not None or "specialization" in fields:
+                    v = specialization if specialization is not None else fields.get("specialization")
+                    updates.append("specialization = %s"); params.append(v)
+                if is_active is not None or "is_active" in fields:
+                    v = is_active if is_active is not None else fields.get("is_active")
+                    updates.append("is_active = %s"); params.append(v)
+                
+                if not updates:
+                    return True
+                
+                sql = f"UPDATE Suppliers SET {', '.join(updates)} WHERE id = %s"
+                params.append(sid)
+                cursor.execute(sql, tuple(params))
+                conn.commit()
+                return True
+        except Exception as exc:
+            logging.error(f"Error updating supplier details: {exc}")
+            return False
+
+    def update_official_supplier(self, official_supplier_id: int, **fields) -> bool:
+        return self.update_supplier_details(official_supplier_id, **fields)
+
+    def set_official_supplier_active(self, sid: int, is_active: bool = True) -> bool:
+        return self.update_supplier_details(sid, is_active=is_active)
+
+    def list_operations(self, supplier_id: int = None, official_supplier_id: int = None, limit: int = 2000, **kwargs) -> List[Dict]:
+        sid = supplier_id or official_supplier_id
+        if sid:
+            return self.get_supplier_history(sid)
+        return []
+
+    def get_official_supplier(self, official_supplier_id: int) -> Optional[Dict[str, Any]]:
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM Suppliers WHERE id = %s", (official_supplier_id,))
+                return cursor.fetchone()
+        except Exception:
+            return None
+
+    def get_official_supplier_by_supplier_id(self, supplier_id: int) -> Optional[Dict[str, Any]]:
+        return self.get_official_supplier(supplier_id)
+
+    def record_operation(
+        self,
+        supplier_id: int = None,
+        official_supplier_id: int = None,
+        operation_date: str = None,
+        operation_type: str = "INCOMING",
+        weight_g: float = 0.0,
+        afacon: float = 0.0,
+        amount_da: float = 0.0,
+        description: str = "",
+        notes: str = "",
+        user_id: int = None,
+        **kwargs,
+    ) -> Optional[int]:
+        sid = supplier_id or official_supplier_id
+        if not sid:
+            return None
+
+        weight_val = float(weight_g or 0.0)
+        amount_val = float(amount_da or 0.0)
+        afacon_val = float(afacon or 0.0)
+        op_type = str(operation_type or "INCOMING").upper()
+        desc = description or notes or ""
+
+        if op_type == "OUTGOING":
+            weight_debit = weight_val
+            weight_credit = 0.0
+            amount_debit = amount_val
+            amount_credit = 0.0
+        else:
+            weight_debit = 0.0
+            weight_credit = weight_val
+            amount_debit = 0.0
+            amount_credit = amount_val
+
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO SupplierTransactions
+                    (
+                        supplier_id, type, amount,
+                        accounted_weight_debit, accounted_weight_credit,
+                        amount_debit, amount_credit,
+                        labor_price_per_gram, description, notes, transaction_date
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, NOW()))
+                    """,
+                    (
+                        sid,
+                        op_type,
+                        amount_val,
+                        weight_debit,
+                        weight_credit,
+                        amount_debit,
+                        amount_credit,
+                        afacon_val,
+                        desc,
+                        desc,
+                        operation_date,
+                    ),
+                )
+                tid = cursor.lastrowid
+                conn.commit()
+                return tid
+        except Exception as exc:
+            logging.error(f"Error recording supplier operation: {exc}")
+            return None
+
+    def record_incoming(self, *args, **kwargs) -> Optional[int]:
+        kwargs["operation_type"] = "INCOMING"
+        return self.record_operation(*args, **kwargs)
+
+    def record_outgoing(self, *args, **kwargs) -> Optional[int]:
+        kwargs["operation_type"] = "OUTGOING"
+        return self.record_operation(*args, **kwargs)
+
+    def update_operation(
+        self,
+        op_id: int,
+        operation_date: str = None,
+        operation_type: str = None,
+        weight_g: float = None,
+        afacon: float = None,
+        amount_da: float = None,
+        description: str = None,
+        notes: str = None,
+        **kwargs,
+    ) -> bool:
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                updates = []
+                params = []
+
+                if description is not None or notes is not None:
+                    desc = description if description is not None else notes
+                    updates.extend(["description = %s", "notes = %s"])
+                    params.extend([desc, desc])
+
+                if operation_date is not None:
+                    updates.append("transaction_date = %s")
+                    params.append(operation_date)
+
+                if operation_type is not None:
+                    updates.append("type = %s")
+                    params.append(operation_type)
+
+                if weight_g is not None or amount_da is not None:
+                    weight_val = float(weight_g or 0.0)
+                    amount_val = float(amount_da or 0.0)
+                    op_type = str(operation_type or "INCOMING").upper()
+                    if op_type == "OUTGOING":
+                        updates.extend(["accounted_weight_debit = %s", "accounted_weight_credit = %s", "amount_debit = %s", "amount_credit = %s"])
+                        params.extend([weight_val, 0.0, amount_val, 0.0])
+                    else:
+                        updates.extend(["accounted_weight_debit = %s", "accounted_weight_credit = %s", "amount_debit = %s", "amount_credit = %s"])
+                        params.extend([0.0, weight_val, 0.0, amount_val])
+
+                if afacon is not None:
+                    updates.append("labor_price_per_gram = %s")
+                    params.append(float(afacon))
+
+                if not updates:
+                    return True
+
+                sql = f"UPDATE SupplierTransactions SET {', '.join(updates)} WHERE id = %s"
+                params.append(op_id)
+                cursor.execute(sql, tuple(params))
+                conn.commit()
+                return True
+        except Exception as exc:
+            logging.error(f"Error updating supplier operation: {exc}")
+            return False
+
+    def delete_operation(self, op_id: int, **kwargs) -> bool:
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM SupplierTransactions WHERE id = %s", (op_id,))
+                conn.commit()
+                return True
+        except Exception as exc:
+            logging.error(f"Error deleting supplier operation: {exc}")
+            return False
+
+    def get_operation(self, op_id: int, **kwargs) -> Optional[Dict]:
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM SupplierTransactions WHERE id = %s", (op_id,))
+                row = cursor.fetchone()
+                return self._normalize_transaction_row(row) if row else None
+        except Exception:
+            return None
+
     def update_supplier(
         self,
         sid: int,
@@ -190,8 +498,6 @@ class SupplierManager:
                     """,
                     (name, phone, address, base_metal_id, sid),
                 )
-                # Historical opening balances are immutable here. Financial
-                # corrections must be represented by audited ledger documents.
                 conn.commit()
                 return True
         except Exception as exc:
@@ -417,36 +723,32 @@ class SupplierManager:
                 query = """
                     SELECT
                         t.*,
-                        c.code AS currency_code,
-                        c.name AS currency_name,
-                        c.symbol AS currency_symbol,
                         mt.id AS resolved_metal_type_id,
                         mt.name AS metal_name,
                         mt.metal_category,
-                        mt.purity_value,
-                        sa.code AS supplier_account_code,
-                        sa.name AS supplier_account_name,
-                        sa.account_type AS supplier_account_type,
-                        so.status AS supplier_operation_status,
-                        so.operation_type AS supplier_operation_type
+                        mt.purity_value
                     FROM SupplierTransactions t
-                    LEFT JOIN Currencies c ON t.currency_id = c.id
                     LEFT JOIN MetalTypes mt ON mt.id = COALESCE(t.input_metal_type_id, t.metal_type_id)
-                    LEFT JOIN SupplierAccounts sa ON sa.id = t.supplier_account_id
-                    LEFT JOIN SupplierOperations so ON so.id = t.operation_id
                     WHERE t.supplier_id = %s
-                      AND (t.operation_id IS NULL OR so.status = 'POSTED')
                 """
                 params = [supplier_id]
                 if start_date and end_date:
                     query += " AND DATE(t.transaction_date) BETWEEN %s AND %s"
                     params.extend([start_date, end_date])
-                query += " ORDER BY t.transaction_date DESC, t.id DESC"
+                query += " ORDER BY t.transaction_date ASC, t.id ASC"
                 cursor.execute(query, tuple(params))
                 return [self._normalize_transaction_row(row) for row in cursor.fetchall()]
         except Exception as exc:
             logging.error(f"Error getting supplier history: {exc}")
-            return []
+            try:
+                with self.db.get_db_connection() as conn:
+                    cursor = conn.cursor(dictionary=True)
+                    query = "SELECT * FROM SupplierTransactions WHERE supplier_id = %s ORDER BY transaction_date ASC, id ASC"
+                    cursor.execute(query, (supplier_id,))
+                    return [self._normalize_transaction_row(row) for row in cursor.fetchall()]
+            except Exception as exc2:
+                logging.error(f"Fallback error getting supplier history: {exc2}")
+                return []
 
     def get_supplier_balance(self, supplier_id: int) -> Tuple[float, float]:
         balances = self.get_supplier_current_balances(supplier_id)

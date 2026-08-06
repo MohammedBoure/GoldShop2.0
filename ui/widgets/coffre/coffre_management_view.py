@@ -285,13 +285,13 @@ class CoffreMagasinView(QWidget):
         if records:
             row = self.table.rowCount(); self.table.insertRow(row)
             it_lbl = QTableWidgetItem("TOTAUX :"); it_lbl.setTextAlignment(Qt.AlignCenter)
-            it_lbl.setBackground(QBrush(QColor("#2c3e50"))); it_lbl.setForeground(QBrush(QColor("white"))); it_lbl.setFont(QFont("", 12, QFont.Bold))
+            it_lbl.setBackground(QBrush(QColor("#e2e8f0"))); it_lbl.setForeground(QBrush(QColor("#000000"))); it_lbl.setFont(QFont("", 12, QFont.Bold))
             self.table.setItem(row, 0, it_lbl)
             for i, val in enumerate([total_da, total_tpe, total_ccp, total_euro, total_dollar]):
                 it = QTableWidgetItem(f"{val:,.2f}"); it.setTextAlignment(Qt.AlignCenter)
-                it.setBackground(QBrush(QColor("#2c3e50"))); it.setForeground(QBrush(QColor("white"))); it.setFont(QFont("", 11, QFont.Bold))
+                it.setBackground(QBrush(QColor("#e2e8f0"))); it.setForeground(QBrush(QColor("#000000"))); it.setFont(QFont("", 11, QFont.Bold))
                 self.table.setItem(row, i + 1, it)
-            it_empty = QTableWidgetItem(""); it_empty.setBackground(QBrush(QColor("#2c3e50")))
+            it_empty = QTableWidgetItem(""); it_empty.setBackground(QBrush(QColor("#e2e8f0")))
             self.table.setItem(row, 6, it_empty)
 
     def load_data(self):

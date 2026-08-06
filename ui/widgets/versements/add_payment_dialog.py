@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from database.versement_pricing import discount_for_target_price
+from database.versement import discount_for_target_price
 
 try:
     from ui.tools.virtual_numpad import VirtualNumpad
@@ -354,7 +354,7 @@ class AddPaymentDialog(QDialog):
         if selected_item_id and selected_item_id in self.item_weights:
             w = self.item_weights[selected_item_id]
             # خصم الدفعات السابقة الموجهة لهذه القطعة
-            deductions = sum(float(p.get('poids_deduit_g') or 0) for p in self.v_data.get('payments', []) if p.get('versement_item_id') == selected_item_id)
+            deductions = sum(float(p.get('poids_deduit_g') or 0) for p in (self.v_data.get('payments', []) if self.v_data else []) if p.get('versement_item_id') == selected_item_id)
             return max(0.0, w - deductions)
         elif self.v_data:
             return float(self.v_data.get('reste_poids_g', 0))
@@ -366,16 +366,22 @@ class AddPaymentDialog(QDialog):
             QMessageBox.warning(self, "Erreur", "Aucune base de prix estimé disponible pour calculer la remise.")
             return
         
+        current_pay = self.inp_montant_da.value() + self.inp_tpe.value()
+        if current_pay <= 0:
+            QMessageBox.warning(self, "Erreur", "Veuillez saisir le montant payé d'abord pour calculer la remise sur cette avance.")
+            return
+
         pad = VirtualNumpad(title="Saisir la Remise (%)", mode="dialog", allow_decimal=True, allow_negative=False, parent=self)
         if pad.exec() == QDialog.Accepted:
             val = pad.get_value()
             if val:
                 pct = float(val)
-                if 0 <= pct <= 100:
-                    remise_val = base_amount * (pct / 100.0)
+                if 0 <= pct < 100:
+                    gross_value = current_pay / (1 - pct / 100.0)
+                    remise_val = gross_value - current_pay
                     self.inp_remise_da.setValue(remise_val)
                 else:
-                    QMessageBox.warning(self, "Erreur", "Le pourcentage doit être entre 0 et 100.")
+                    QMessageBox.warning(self, "Erreur", "Le pourcentage doit être entre 0 et 99.")
 
     def open_discount_arrondi(self):
         base_amount = self._get_active_base_amount()
@@ -509,8 +515,14 @@ class AddPaymentDialog(QDialog):
 
         current_pay = self.inp_montant_da.value() + self.inp_tpe.value()
         remise = self.inp_remise_da.value()
-        prix_g_moyen = base_amount / base_weight
-        poids_suggested = (current_pay + remise) / prix_g_moyen
+        net = max(0.0, base_amount - remise)
+        if net > 0:
+            prix_g_mida = net / base_weight
+            poids_suggested = current_pay / prix_g_mida if prix_g_mida > 0 else 0.0
+        else:
+            prix_g_moyen = base_amount / base_weight
+            poids_suggested = current_pay / prix_g_moyen if prix_g_moyen > 0 else 0.0
+
         if poids_suggested > base_weight:
             return base_weight
         return poids_suggested

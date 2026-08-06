@@ -17,7 +17,7 @@ from ui.widgets.versements.invoice_note_selector import (
     normalize_custom_note,
     selected_custom_note,
 )
-from database.versement_pricing import discount_for_target_price
+from database.versement import discount_for_target_price
 
 import qtawesome as qta
 from ui.dialogs.client_selection_dialog import ClientSelectionDialog
@@ -491,23 +491,8 @@ class NewVersementDialog(QDialog):
             return
 
         current_ppg = total_brut / total_weight
-        method_idx = self.combo_method.currentIndex()
-        payment_value_da = 0.0
-        if method_idx == 1:
-            payment_value_da = float(self.inp_cash.text() or 0) + float(self.inp_tpe.text() or 0)
-        elif method_idx == 2:
-            payment_value_da = float(self.inp_euro_da.text() or 0)
-        elif method_idx == 3:
-            payment_value_da = float(self.inp_casse_da.text() or 0)
-        elif method_idx == 4:
-            payment_value_da = float(self.inp_dollar_da.text() or 0)
-        payment_value_da = max(0.0, payment_value_da)
-        if payment_value_da <= 0:
-            QMessageBox.warning(self, "Erreur", "Veuillez saisir d'abord la valeur du versement Ã  calculer.")
-            return
-
         pad = VirtualNumpad(
-            title=f"Saisir le prix/g (actuel: {current_ppg:,.2f} DA/g)",
+            title=f"Saisir le prix/g avec aide (actuel: {current_ppg:,.2f} DA/g)",
             mode="dialog",
             allow_decimal=True,
             allow_negative=False,
@@ -519,18 +504,14 @@ class NewVersementDialog(QDialog):
             if value:
                 target_ppg = float(value)
                 if target_ppg <= 0:
-                    QMessageBox.warning(self, "Erreur", "Le prix/g cible doit etre superieur a 0.")
+                    QMessageBox.warning(self, "Erreur", "Le prix/g cible doit être supérieur à 0.")
                     return
                 target_ppg = min(target_ppg, current_ppg)
-                remise_value, _payment_weight = discount_for_target_price(
-                    current_ppg,
-                    target_ppg,
-                    payment_value_da,
-                    available_weight=total_weight,
-                )
+                remise_value = max(0.0, (current_ppg - target_ppg) * total_weight)
                 self.inp_remise_da.setText(f"{remise_value:.2f}")
+
     def auto_calculate_poids_deduit(self):
-        """مساعد في الحساب: يكتب تلقائياً الوزن المقتنى بالجرام ويسمح للمستخدم بالتعديل اليدوي كأداة مساعدة"""
+        """مساعد في الحساب: يكتب تلقائياً الوزن المقتنى بالجرام بناءً على سعر الغرام بالمساعدة ويسمح للمستخدم بالتعديل اليدوي"""
         total_brut = sum(self._item_total_price(item) for item in self.cart_items)
         total_weight = sum(self._item_total_weight(item) for item in self.cart_items)
         
@@ -556,8 +537,16 @@ class NewVersementDialog(QDialog):
             except: acompte_da = 0.0
 
         if total_brut > 0 and total_weight > 0:
-            prix_g_moyen = total_brut / total_weight
-            poids_auto = (acompte_da + remise) / prix_g_moyen
+            net = max(0.0, total_brut - remise)
+            if net > 0:
+                # سعر الغرام بالمساعدة F = net / total_weight
+                prix_g_mida = net / total_weight
+                # غرامات تصفية العربون L = acompte_da / prix_g_mida
+                poids_auto = acompte_da / prix_g_mida if prix_g_mida > 0 else 0.0
+            else:
+                prix_g_moyen = total_brut / total_weight
+                poids_auto = acompte_da / prix_g_moyen if prix_g_moyen > 0 else 0.0
+                
             if poids_auto > total_weight: poids_auto = total_weight
             
             self.inp_poids_deduit.blockSignals(True)
@@ -765,8 +754,23 @@ class NewVersementDialog(QDialog):
             item["versement_quantity"] = 1
         else:
             active_count = int(item.get("active_versement_count") or 0)
-            if float(item.get("remaining_weight") or item.get("weight") or 0.0) <= 0 or active_count > 0:
-                QMessageBox.warning(self, "Stock indisponible", "Cet article pondéré est déjà réservé ou indisponible.")
+            if float(item.get("remaining_weight") or item.get("weight") or 0.0) <= 0:
+                QMessageBox.warning(self, "Stock indisponible", "Cet article pondéré est indisponible car il a été vendu.")
+                self.force_clear_barcode()
+                return
+            if active_count > 0:
+                v_ids_str = ""
+                try:
+                    with self.manager.db.get_db_connection() as conn:
+                        cursor = conn.cursor(dictionary=True)
+                        cursor.execute("SELECT DISTINCT versement_id FROM Versement_Items WHERE inventory_id = %s AND item_status = 'EN_COURS'", (item['id'],))
+                        v_ids = [str(r['versement_id']) for r in cursor.fetchall()]
+                        v_ids_str = ", ".join(v_ids)
+                except Exception:
+                    pass
+                msg = f"Cet article pondéré est déjà réservé dans le(s) dossier(s) N°: {v_ids_str}." if v_ids_str else "Cet article pondéré est déjà réservé dans un autre dossier."
+                msg += "\n\nVeuillez l'annuler de ce dossier d'abord pour pouvoir l'ajouter ici."
+                QMessageBox.warning(self, "Stock indisponible", msg)
                 self.force_clear_barcode()
                 return
             item["versement_quantity"] = 1
@@ -1050,7 +1054,6 @@ class NewVersementDialog(QDialog):
                 )
 
             if res.get("success"):
-                QMessageBox.information(self, "Succès", "Le dossier a été validé avec succès.")
                 self.accept()
             else:
                 QMessageBox.critical(self, "Erreur", str(res.get("message")))

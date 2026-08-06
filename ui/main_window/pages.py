@@ -44,7 +44,7 @@ class MainWindowPagesMixin:
         return ""
 
     def _init_placeholders(self):
-        for index in range(17):  # تم تخفيضها إلى 17
+        for index in range(25):
             label = QLabel(f"Chargement de la page {index}...")
             label.setAlignment(Qt.AlignCenter)
             self.content_area.addWidget(label)
@@ -55,7 +55,11 @@ class MainWindowPagesMixin:
 
         widget = None
 
-        if page_id == 1:
+        if page_id == 0:
+            from ui.widgets.dashboard.dashboard_view import DashboardView
+            widget = self._scope_widget(DashboardView(self.data_manager, self.current_user, parent=self), "nav_dashboard", "Tableau de Bord")
+
+        elif page_id == 1:
             tabs = QTabWidget()
             tabs.setStyleSheet("QTabBar::tab { height: 40px; min-width: 180px; font-weight: bold; font-size: 13px; }")
             inventory_tabs = {}
@@ -95,7 +99,7 @@ class MainWindowPagesMixin:
             widget = self._scope_widget(SalesView(self.data_manager, self.current_user), "nav_sales", "Point de Vente")
 
         elif page_id == 3:
-            from ui.widgets.partners.clients_tab import ClientsTab
+            from ui.widgets.master_data.clients_tab import ClientsTab
             tabs = QTabWidget()
             if self.has_permission("tab_clients"):
                 self._add_lazy_scoped_tab(tabs, lambda: ClientsTab(self.data_manager), "tab_clients", "Clients")
@@ -103,12 +107,18 @@ class MainWindowPagesMixin:
 
         elif page_id == 6:
             from ui.widgets.master_data.categories_tab import CategoriesTab
+            from ui.widgets.master_data.clients_tab import ClientsTab
+            from ui.widgets.master_data.suppliers_tab import SuppliersTab
             from ui.widgets.master_data.invoice_notes_tab import InvoiceNotesTab
             from ui.widgets.master_data.locations_tab import LocationsTab
             from ui.widgets.master_data.metals_tab import MetalsTab
             from ui.widgets.master_data.product_names_tab import ProductNamesTab
 
             tabs = QTabWidget()
+            if self.has_permission("tab_clients"):
+                self._add_lazy_scoped_tab(tabs, lambda: ClientsTab(self.data_manager), "tab_clients", "Clients")
+            if self.has_permission("tab_suppliers") or self.has_permission("nav_data"):
+                self._add_lazy_scoped_tab(tabs, lambda: SuppliersTab(self.data_manager), "tab_suppliers", "Fournisseurs")
             if self.has_permission("tab_metals"):
                 self._add_lazy_scoped_tab(tabs, lambda: MetalsTab(self.data_manager), "tab_metals", "Types de Metaux")
             if self.has_permission("tab_categories"):
@@ -160,19 +170,7 @@ class MainWindowPagesMixin:
         elif page_id == 11:
             from ui.widgets.versements.versements_view import VersementsView
             widget = self._scope_widget(VersementsView(self.data_manager), "nav_versement", "Versements & Dettes")
-    
-        elif page_id == 12:
-            from ui.widgets.client_commands import ClientCommandsView
-            widget = self._scope_widget(ClientCommandsView(self.data_manager), "nav_client_commands", "Commandes Client")
 
-        elif page_id == 13:
-            from ui.widgets.inventory_count import InventoryCountView
-            widget = self._scope_widget(InventoryCountView(self.data_manager, self.current_user), "nav_inventory_count", "Inventaire Physique")
-
-        elif page_id == 14:
-            from ui.widgets.official_suppliers import OfficialSuppliersView
-            widget = self._scope_widget(OfficialSuppliersView(self.data_manager, self.current_user), "nav_official_suppliers", "Fournisseurs Officiels")
-            
         elif page_id == 15:
             from ui.widgets.rh.rh_management_view import RHManagementView
             widget = self._scope_widget(RHManagementView(self.data_manager), "nav_rh", "Gestion Personnel & RH")
@@ -181,9 +179,19 @@ class MainWindowPagesMixin:
             from ui.widgets.coffre.coffre_management_view import CoffreMagasinView
             widget = self._scope_widget(CoffreMagasinView(self.data_manager), "nav_coffre_magasin", "Coffre Magasin")
 
+        elif page_id == 17:
+            from ui.widgets.artisan_work.artisan_work_view import ArtisanWorkView
+            widget = self._scope_widget(ArtisanWorkView(self.data_manager), "nav_atelier", "Atelier & Travaux")
+
+        elif page_id == 19:
+            from ui.widgets.suppliers.suppliers_view import SuppliersView
+            widget = self._scope_widget(SuppliersView(self.data_manager, self.current_user), "nav_official_suppliers", "Fournisseurs")
+
         if widget:
             old_widget = self.content_area.widget(page_id)
-            self.content_area.removeWidget(old_widget)
+            if old_widget is not None:
+                self.content_area.removeWidget(old_widget)
+                old_widget.deleteLater()
             self.content_area.insertWidget(page_id, widget)
             self.loaded_pages[page_id] = widget
             return widget
@@ -204,11 +212,10 @@ class MainWindowPagesMixin:
             9: "nav_history",
             10: "nav_market",
             11: "nav_versement",
-            12: "nav_client_commands",
-            13: "nav_inventory_count",
-            14: "nav_official_suppliers",
             15: "nav_rh",
             16: "nav_coffre_magasin",
+            17: "nav_atelier",
+            19: "nav_official_suppliers",
         }.get(page_id)
 
         if required_perm and not self.has_permission(required_perm):

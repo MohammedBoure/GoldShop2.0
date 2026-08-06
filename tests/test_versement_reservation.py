@@ -1,6 +1,6 @@
 import unittest
 
-from database.versement_reservation import (
+from database.versement import (
     available_piece_quantity,
     derived_inventory_status,
     is_piece_sellable,

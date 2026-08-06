@@ -390,6 +390,8 @@ def generate_invoice_pdf(
     printed_at=None,
     direct_printer_name="",
     open_pdf=True,
+    payment_details=None,
+    payments_history=None,
 ):
     global_cfg, pdf_cfg = PdfHelper.load_pdf_config()
 
@@ -440,11 +442,12 @@ def generate_invoice_pdf(
     code_format = pdf_cfg["display"].get("item_code_format", "Code-Barres")
 
     th_code = f'<th style="text-align:center; width:15%;">Code</th>' if show_code else ""
+    show_paid_column = any(item.get("paid_amount_da") is not None for item in items)
     table_headers = f"""
         {th_code}
         <th style="text-align: left;">Désignation</th>
         <th style="text-align: center;">Qté/Pds</th>
-        <th style="text-align: right;">Total</th>
+        <th style="text-align: right;">{"Montant regle" if show_paid_column else "Total"}</th>
     """
 
     items_html = ""
@@ -468,6 +471,9 @@ def generate_invoice_pdf(
         qty_or_weight = float(item.get('cart_sold_weight', 0)) if is_weight else float(item.get('cart_sold_qty', 0))
         line_total = float(item.get('cart_line_total', 0))
         unit_label = "g" if is_weight else "pcs"
+        paid_amount = _safe_float(item.get("paid_amount_da"))
+        display_amount = paid_amount if show_paid_column else line_total
+        display_color = c_grn if show_paid_column else c_txt
         if is_weight:
             total_weight += qty_or_weight
 
@@ -476,7 +482,7 @@ def generate_invoice_pdf(
             {td_code}
             <td style="vertical-align:middle;">{main_name}{note_html}</td>
             <td style="text-align:center; vertical-align:middle; font-weight:bold; white-space:nowrap;">{qty_or_weight:.2f} {unit_label}</td>
-            <td style="text-align:right; vertical-align:middle; font-weight:bold; white-space:nowrap;">{line_total:,.2f} {currency}</td>
+            <td style="text-align:right; vertical-align:middle; font-weight:bold; color:{display_color}; white-space:nowrap;">{display_amount:,.2f} {currency}</td>
         </tr>
         """
 
@@ -488,6 +494,73 @@ def generate_invoice_pdf(
     payment_summary += f"<tr><td style='padding:10px 6px; text-align:right; font-weight:bold; font-size:{int(f_norm*1.1)}px;'>NET À PAYER :</td><td style='padding:10px 6px; text-align:right; font-weight:bold; border:1px solid #ddd; background-color:#f9f9f9; font-size:{int(f_norm*1.1)}px;'>{net:,.2f} {currency}</td></tr>"
 
     weight_html = ""
+    payment_details = dict(payment_details or {})
+
+    # لا نعرض تفصيل وسائل الدفع داخل الفاتورة.
+    # نظهر فقط القيمة الإجمالية المكافئة بالدينار الجزائري.
+    if payment_details:
+        total_paid_da = _safe_float(payment_details.get("total_paid_da"))
+        if total_paid_da <= 0:
+            total_paid_da = (
+                _safe_float(payment_details.get("cash_paid_da"))
+                + _safe_float(payment_details.get("tpe_paid_da"))
+                + _safe_float(payment_details.get("euro_equivalent_da"))
+                + _safe_float(payment_details.get("dollar_equivalent_da"))
+            )
+    else:
+        total_paid_da = _safe_float(cash_paid) + _safe_float(tpe_paid)
+
+    payment_details_html = ""
+    if total_paid_da > 0.00001:
+        payment_details_html = (
+            f"<tr><td style='padding:5px 6px; text-align:right;'>Total Payé :</td>"
+            f"<td style='padding:5px 6px; text-align:right; font-weight:bold; color:{c_grn};'>"
+            f"{total_paid_da:,.2f} {currency}</td></tr>"
+        )
+    payment_history_html = ""
+    payments_history = []
+    if payments_history:
+        history_rows = ""
+        for payment in payments_history:
+            payment_date = _format_document_datetime(payment.get("payment_date")) or "-"
+            components = []
+            for label, key, unit in (
+                ("Cash", "cash_paid_da", currency),
+                ("TPE", "tpe_paid_da", currency),
+                ("EUR", "euro_paid", "EUR"),
+                ("USD", "dollar_paid", "USD"),
+                ("Or casse", "old_gold_weight_g", "g"),
+                ("Deduit", "deducted_weight_g", "g"),
+            ):
+                value = _safe_float(payment.get(key))
+                if abs(value) > 0.00001:
+                    components.append(f"{label}: {value:,.2f} {unit}")
+            note = escape(str(payment.get("notes") or "").strip())
+            product_name = escape(str(payment.get("product_name") or "").strip())
+            description = " | ".join(part for part in (product_name, note) if part) or "-"
+            remise = _safe_float(payment.get("remise_da"))
+            remise_text = f"- {remise:,.2f} {currency}" if remise else "-"
+            history_rows += (
+                "<tr>"
+                f"<td style='padding:5px; border-bottom:1px solid #eee;'>{escape(payment_date)}</td>"
+                f"<td style='padding:5px; border-bottom:1px solid #eee;'>{description}</td>"
+                f"<td style='padding:5px; border-bottom:1px solid #eee; text-align:right; font-weight:bold;'>{escape(' | '.join(components) or '-')}</td>"
+                f"<td style='padding:5px; border-bottom:1px solid #eee; text-align:right; color:{c_red};'>{remise_text}</td>"
+                "</tr>"
+            )
+        payment_history_html = f"""
+        <div style='margin-top:18px;'>
+            <div style='font-weight:bold; margin-bottom:5px;'>Detail des versements</div>
+            <table width='100%' style='border-collapse:collapse;'>
+                <tr>
+                    <th style='text-align:left;'>Date</th><th style='text-align:left;'>Article / Observation</th>
+                    <th style='text-align:right;'>Paiements</th><th style='text-align:right;'>Remise</th>
+                </tr>
+                {history_rows}
+            </table>
+        </div>
+        """
+
     if total_weight > 0:
         weight_html = f"""
         <div style="padding:10px; border:1px solid {c_grn}; border-radius:4px; width:85%; background-color:#f9fdfa; margin-top:10px; margin-bottom:15px;">
@@ -545,11 +618,12 @@ def generate_invoice_pdf(
                     {weight_html}
                 </td>
                 <td width="45%" style="vertical-align: top; padding: 0;">
-                    <table width="100%" style="border-collapse: collapse;">{payment_summary}</table>
+                    <table width="100%" style="border-collapse: collapse;">{payment_summary}{payment_details_html}</table>
                 </td>
             </tr>
         </table>
 
+        {payment_history_html}
         <div style='margin-top:25px; text-align:center; border-top:1px dashed #aaa; padding-top:15px;'><b style='font-size:{int(f_norm*0.9)}px;'>{policy}</b></div>
     </body></html>
     """
@@ -734,6 +808,7 @@ class ReceiptGenerator:
         header_extras = PdfHelper.build_document_code_html(pdf_cfg, receipt_number, f_norm)
 
         versements_html = ""
+        total_versements = 0.0
         if data.get('versements'):
             for v in data['versements']:
                 date_val = v.get('payment_date') or v.get('activity_date') or v.get('sale_date') or datetime.now()
@@ -742,6 +817,7 @@ class ReceiptGenerator:
                     v.get('amount') or v.get('display_paid_amount')
                     or v.get('paid_amount') or v.get('total_amount') or 0
                 )
+                total_versements += amount
                 used = _safe_float(v.get('used_amount'))
                 available = v.get('available_amount')
                 remaining = v.get('remaining_amount')
@@ -753,9 +829,14 @@ class ReceiptGenerator:
                 used_str = ""
                 raw_id = v.get('id', '')
                 v_id = abs(int(raw_id)) if str(raw_id).lstrip('-').isdigit() else ''
-                operation_prefix = _payment_operation_prefix(v, f_norm, operation_number)
-                id_str = f"<span style='color:#7f8c8d; font-size:{int(f_norm*0.9)}px;'>[N° {v_id}]</span> " if v_id else ""
-                versements_html += f"<tr><td style='vertical-align:middle;'>{operation_prefix}{id_str}{date_str}</td><td style='text-align:center; vertical-align:middle; font-weight:bold;'>{amount:,.2f} {currency} {used_str}</td></tr>"
+                versements_html += f"<tr><td style='vertical-align:middle;'>{date_str}</td><td style='text-align:center; vertical-align:middle; font-weight:bold;'>{amount:,.2f} {currency} {used_str}</td></tr>"
+
+            versements_html += f"""
+            <tr style="background-color:{c_th}; font-weight:bold; border-top:2px solid {c_txt};">
+                <td style="text-align:left; padding:10px 8px; font-size:{int(f_norm*1.05)}px;">TOTAL DES VERSEMENTS :</td>
+                <td style="text-align:center; padding:10px 8px; font-size:{int(f_norm*1.1)}px; color:{c_grn};">{total_versements:,.2f} {currency}</td>
+            </tr>
+            """
         else:
             versements_html = f"<tr><td colspan='2' style='text-align:center; font-style:italic;'>Aucun versement disponible</td></tr>"
 
@@ -859,21 +940,29 @@ class ReceiptGenerator:
         has_item_notes = any(
             str(item.get("custom_note") or item.get("note") or "").strip() for item in items
         )
-        show_items_section = bool(pdf_cfg["display"].get("show_versement_items_section", True)) or has_item_notes
+        show_items_section = bool(pdf_cfg["display"].get("show_versement_items_section", True))
         show_payment_rate = bool(pdf_cfg["display"].get("show_versement_payment_rate", True))
 
         def _label(key, default):
-            return escape(str(pdf_cfg["texts"].get(key) or default))
+            val = pdf_cfg["texts"].get(key)
+            return escape(str(val)) if val is not None else escape(str(default))
 
         lbl_items_title = _label("versement_items_section_title", "Détail des produits réservés")
         lbl_payments_title = _label("versement_payments_section_title", "Versements sur produit")
         lbl_article = _label("versement_label_article", "Article")
         lbl_code = _label("versement_label_code", "Code Produit")
-        lbl_total_weight = "Poids Restant (g)"
+        lbl_item_paid = _label("versement_label_paid_amount", "Montant payé")
+        lbl_total_weight = _label("versement_label_total_weight", "Poids total")
+        lbl_total_amount = _label("versement_label_total_amount", "Montant total")
+        lbl_remaining_amount = _label("versement_label_remaining_amount", "Reste montant")
+        lbl_remaining_weight = _label("versement_label_remaining_weight", "Reste poids")
         lbl_payment_date = _label("versement_label_payment_date", "Date")
         lbl_payment_amount = _label("versement_label_payment_amount", "Montant Versé")
         lbl_payment_weight = _label("versement_label_payment_weight", "Poids")
         lbl_payment_rate = _label("versement_label_payment_rate", "Prix/g paiement")
+
+        reste_in_weight = pdf_cfg["display"].get("reste_in_weight", True)
+        lbl_reste = lbl_remaining_weight if reste_in_weight else lbl_remaining_amount
 
         lbl_summary_total_weight = _label("versement_summary_total_weight", "Poids Total d'article")
         lbl_summary_total_quantity = _label("versement_summary_total_quantity", "Quantite totale")
@@ -894,7 +983,16 @@ class ReceiptGenerator:
                 item_note = escape(str(item.get('custom_note') or item.get('note') or '').strip())
                 item_name_html = f"{item_name}<br><span style='font-size:{int(f_norm*0.85)}px; color:#8e44ad; font-weight:bold;'>{item_note}</span>" if item_note else item_name
                 item_barcode = str(item.get('barcode') or item.get('inventory_barcode') or item.get('item_barcode') or '').strip()
-                rem_item_w = _safe_float(item.get('remaining_weight', item.get('weight', 0)))
+                item_weight = _safe_float(item.get('weight', 0))
+                item_total_amount = _safe_float(item.get('selling_price', item.get('total_amount', 0)))
+                rem_item_w = _safe_float(item.get('remaining_weight', item_weight))
+
+                item_paid_amount = _safe_float(
+                    item.get("paid_amount", item.get("paid_amount_da", item.get("total_amount", 0.0)))
+                )
+                
+                rem_item_amount = max(0.0, item_total_amount - item_paid_amount)
+                reste_val = f"{rem_item_w:.3f} g" if reste_in_weight else f"{rem_item_amount:,.2f} {currency}"
 
                 code_td_item = ""
                 if show_code:
@@ -910,13 +1008,16 @@ class ReceiptGenerator:
 
                 items_detail_html += f"""
                 <tr>
-                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#2c3e50; font-weight:bold;">{item_name_html}</td>
                     {code_td_item}
-                    <td style="padding:6px 5px; border-bottom:1px solid #eee; text-align:center; color:#c0392b; font-weight:bold;">{rem_item_w:.3f} g</td>
+                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#2c3e50; font-weight:bold;">{item_name_html}</td>
+                    <td style="padding:6px 5px; border-bottom:1px solid #eee; text-align:center; font-weight:bold;">{item_weight:.3f} g</td>
+                    <td style="padding:6px 5px; border-bottom:1px solid #eee; text-align:right; font-weight:bold;">{item_total_amount:,.2f} {currency}</td>
+                    <td style="padding:6px 5px; border-bottom:1px solid #eee; text-align:right; font-weight:bold; color:{c_grn};">{item_paid_amount:,.2f} {currency}</td>
+                    <td style="padding:6px 5px; border-bottom:1px solid #eee; text-align:center; color:#c0392b; font-weight:bold;">{reste_val}</td>
                 </tr>
                 """
         else:
-            cols = 2 if show_code else 1
+            cols = 6 if show_code else 5
             items_detail_html = f"<tr><td colspan='{cols}' style='text-align:center; font-style:italic; padding:10px;'>Aucun article</td></tr>"
 
         versements_html = ""
@@ -954,7 +1055,7 @@ class ReceiptGenerator:
 
                 versements_html += f"""
                 <tr>
-                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#333333;">{operation_prefix}{id_str}{date_str}</td>
+                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#333333;">{date_str}</td>
                     <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#2c3e50; font-weight:bold;">{v_name}</td>
                     {code_td_v}
                     <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:{c_grn}; text-align:center; font-weight:bold;">{amount:,.2f} {currency}</td>
@@ -1002,12 +1103,30 @@ class ReceiptGenerator:
             if show_payment_rate else ""
         )
 
-        # ─── ملخص بدون "montant facture" ───
+        # ─── ملخص مختصر فقط: بدون تفاصيل وسائل الدفع ───
+        payment_summary_data = dict(data.get("payment_summary") or {})
+        total_remise = _safe_float(
+            payment_summary_data.get("total_remise_da", data.get("total_remise_da", 0.0))
+        )
+
+        lbl_summary_invoice = _label("versement_summary_invoice_amount", "Montant facture")
+        txt_arabic_paid = pdf_cfg["texts"].get("arabic_paid", "")
+        
         summary_rows = ""
-        summary_rows += f"<tr><td style='padding:5px; border-bottom:1px solid #eee;'>{lbl_summary_total_weight}</td><td style='padding:5px; border-bottom:1px solid #eee; text-align:center; font-weight:bold;'>{total_weight:.3f} g</td></tr>"
-        summary_rows += f"<tr><td style='padding:5px; border-bottom:1px solid #eee;'>{lbl_summary_total_paid}</td><td style='padding:5px; border-bottom:1px solid #eee; text-align:center; font-weight:bold; color:{c_grn};'>{total_paid:,.2f} {currency}</td></tr>"
-        summary_rows += f"<tr><td style='padding:5px; border-bottom:1px solid #eee;'>{lbl_summary_paid_weight}</td><td style='padding:5px; border-bottom:1px solid #eee; text-align:center; font-weight:bold; color:#2980b9;'>{total_paid_weight:.3f} g</td></tr>"
-        summary_rows += f"<tr><td style='padding:8px 5px; font-weight:bold; font-size:{int(f_norm*1.05)}px; color:{c_red};'>{lbl_summary_remaining_weight}</td><td style='padding:8px 5px; text-align:center; font-weight:bold; font-size:{int(f_norm*1.05)}px; color:{c_red}; background-color:#fdf5f5;'>{remainder_weight:.3f} g</td></tr>"
+        total_estimated = _safe_float(data.get("total_estimated_price_da", data.get("total_amount", 0)))
+        if total_estimated > 0:
+            summary_rows += f"<tr><td style='padding:5px; text-align:right; font-size:{int(f_norm*0.9)}px;'>{lbl_summary_invoice} :</td><td style='padding:5px; text-align:right; font-weight:bold;'>{total_estimated:,.2f} {currency}</td></tr>"
+        
+        summary_rows += f"<tr><td style='padding:5px; text-align:right; font-size:{int(f_norm*0.9)}px;'>{lbl_summary_total_weight} :</td><td style='padding:5px; text-align:right; font-weight:bold;'>{total_weight:.3f} g</td></tr>"
+        summary_rows += f"<tr><td style='padding:5px; text-align:right; font-size:{int(f_norm*0.9)}px;'>{lbl_summary_total_paid} :</td><td style='padding:5px; text-align:right; color:{c_grn}; font-weight:bold;'>{total_paid:,.2f} {currency}</td></tr>"
+        
+        arabic_text = f" ({txt_arabic_paid})" if txt_arabic_paid else ""
+        summary_rows += f"<tr><td style='padding:5px; text-align:right; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px;'>{lbl_summary_paid_weight}{arabic_text} :</td><td style='padding:5px; text-align:right; color:#2980b9; font-weight:bold; border-bottom:1px solid #eee;'>{total_paid_weight:.3f} g</td></tr>"
+        
+        if total_remise > 0:
+            summary_rows += f"<tr><td style='padding:5px; text-align:right; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px;'>Remise totale :</td><td style='padding:5px; text-align:right; font-weight:bold; color:{c_red}; border-bottom:1px solid #eee;'>{total_remise:,.2f} {currency}</td></tr>"
+            
+        summary_rows += f"<tr><td style='padding:8px 5px; text-align:right; font-weight:bold; color:{c_red};'>{lbl_summary_remaining_weight} :</td><td style='padding:8px 5px; text-align:right; font-weight:bold; background-color:#fdf5f5; border:1px solid #eee; color:{c_red};'>{remainder_weight:.3f} g</td></tr>"
 
         items_section_html = ""
         if show_items_section:
@@ -1016,9 +1135,12 @@ class ReceiptGenerator:
                 <div style="font-weight:bold; font-size:{int(f_norm*1.05)}px; margin-bottom:5px; color:#2c3e50;">{lbl_items_title}</div>
                 <table width="100%" style="border-collapse: collapse;">
                     <tr>
-                        <th style="text-align:left; background-color:{c_th}; padding:8px 5px; border-bottom:2px solid #333;">{lbl_article}</th>
                         {th_code_detail}
+                        <th style="text-align:left; background-color:{c_th}; padding:8px 5px; border-bottom:2px solid #333;">{lbl_article}</th>
                         <th style="text-align:center; background-color:{c_th}; padding:8px 5px; border-bottom:2px solid #333;">{lbl_total_weight}</th>
+                        <th style="text-align:right; background-color:{c_th}; padding:8px 5px; border-bottom:2px solid #333;">{lbl_total_amount}</th>
+                        <th style="text-align:right; color:{c_grn}; background-color:{c_th}; padding:8px 5px; border-bottom:2px solid #333;">{lbl_item_paid}</th>
+                        <th style="text-align:center; color:{c_red}; background-color:{c_th}; padding:8px 5px; border-bottom:2px solid #333;">{lbl_reste}</th>
                     </tr>
                     {items_detail_html}
                 </table>

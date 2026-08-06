@@ -6,9 +6,9 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget,
     QTableWidgetItem, QHeaderView, QLabel, QLineEdit, QComboBox,
     QMenu, QMessageBox, QDialog, QAbstractScrollArea, QFormLayout,
-    QDoubleSpinBox, QApplication, QGroupBox
+    QDoubleSpinBox, QApplication, QGroupBox, QCompleter
 )
-from PySide6.QtCore import Qt, QUrl, QSize
+from PySide6.QtCore import Qt, QUrl, QSize, QStringListModel
 from PySide6.QtGui import QColor, QFont, QBrush, QDesktopServices
 import qtawesome as qta
 
@@ -17,7 +17,7 @@ try:
 except ImportError:
     ReceiptGenerator = None
 
-from database.versement_pricing import (
+from database.versement import (
     payment_value_da as calculate_payment_value_da,
     price_after_discount,
     shop_price_per_gram,
@@ -628,8 +628,14 @@ class EditPaymentDialog(QDialog):
         remise = self.inp_remise.value()
         
         if base_amount > 0 and base_weight > 0:
-            prix_g_moyen = base_amount / base_weight
-            poids_auto = (current_pay + remise) / prix_g_moyen
+            net = max(0.0, base_amount - remise)
+            if net > 0:
+                prix_g_mida = net / base_weight
+                poids_auto = current_pay / prix_g_mida if prix_g_mida > 0 else 0.0
+            else:
+                prix_g_moyen = base_amount / base_weight
+                poids_auto = current_pay / prix_g_moyen if prix_g_moyen > 0 else 0.0
+                
             if poids_auto > base_weight: poids_auto = base_weight
             
             self.inp_deduit.blockSignals(True)
@@ -904,8 +910,55 @@ class VersementsView(QWidget):
     def __init__(self, manager):
         super().__init__()
         self.manager = manager
+        self.current_page = 1
+        self.total_pages = 1
+        self.target_rows_per_page = 100
         self.init_ui()
         self.load_data()
+
+    def _on_filter_changed(self):
+        self.current_page = 1
+        self.load_data()
+
+    def _go_first_page(self):
+        if self.current_page != 1:
+            self.current_page = 1
+            self.load_data()
+
+    def _go_prev_page(self):
+        if self.current_page > 1:
+            self.current_page -= 1
+            self.load_data()
+
+    def _go_next_page(self):
+        if self.current_page < self.total_pages:
+            self.current_page += 1
+            self.load_data()
+
+    def _go_last_page(self):
+        if self.current_page != self.total_pages:
+            self.current_page = self.total_pages
+            self.load_data()
+
+    @staticmethod
+    def _estimate_versement_rows(v):
+        items = v.get('items', [])
+        payments = v.get('payments', [])
+        statut = v.get('status', '')
+        is_annule = (statut == 'ANNULE')
+
+        rows = 1  # Header row
+        rows += len(items)  # Item rows
+        if is_annule and not payments:
+            rows += 1
+        elif not payments and not is_annule:
+            rows += 1
+        else:
+            rows += len(payments)
+
+        if not is_annule:
+            rows += 2  # Summary row + empty separator row
+        return rows
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -922,15 +975,23 @@ class VersementsView(QWidget):
 
         tools_layout = QHBoxLayout()
         self.inp_search = QLineEdit()
-        self.inp_search.setPlaceholderText("🔍 Rechercher par nom ou téléphone...")
+        self.inp_search.setPlaceholderText("🔍 Rechercher par article, code-barres, client, tél, N° VRS...")
         self.inp_search.setStyleSheet("font-size: 13px; padding: 5px 8px; border: 1px solid #cbd5df; border-radius: 4px; background-color: white;")
-        self.inp_search.textChanged.connect(self.load_data)
-        tools_layout.addWidget(self.inp_search)
+        self.inp_search.setClearButtonEnabled(True)
+        self.inp_search.textChanged.connect(self._on_filter_changed)
+
+        self.completer = QCompleter(self)
+        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.completer.setFilterMode(Qt.MatchContains)
+        self.completer.activated.connect(lambda text: self.inp_search.setText(text))
+        self.inp_search.setCompleter(self.completer)
+
+        tools_layout.addWidget(_wrap_with_keyboard(self.inp_search, self))
 
         self.combo_status = QComboBox()
         self.combo_status.addItems(["En Cours", "Clôturé", "Annulé", "Tous"])
         self.combo_status.setStyleSheet("font-size: 13px; padding: 5px 8px; border: 1px solid #cbd5df; border-radius: 4px; background-color: white;")
-        self.combo_status.currentTextChanged.connect(self.load_data)
+        self.combo_status.currentTextChanged.connect(self._on_filter_changed)
         tools_layout.addWidget(self.combo_status)
 
         self.btn_new = QPushButton(" + Nouveau Versement")
@@ -983,6 +1044,41 @@ class VersementsView(QWidget):
         self.table.itemSelectionChanged.connect(self.on_table_selection_changed)
         layout.addWidget(self.table)
 
+        # ─── شريط التحكم بالصفحات (Pagination Toolbar) ───
+        page_layout = QHBoxLayout()
+        page_layout.setContentsMargins(0, 5, 0, 0)
+        page_layout.setSpacing(8)
+
+        self.lbl_page_info = QLabel("Page 1 / 1 (0 dossiers)")
+        self.lbl_page_info.setStyleSheet("font-size: 13px; font-weight: bold; color: #2c3e50;")
+
+        self.btn_first_page = QPushButton("⏮")
+        self.btn_prev_page = QPushButton("◀ Précédent")
+        self.btn_next_page = QPushButton("Suivant ▶")
+        self.btn_last_page = QPushButton("⏭")
+
+        for btn in [self.btn_first_page, self.btn_prev_page, self.btn_next_page, self.btn_last_page]:
+            btn.setStyleSheet("""
+                QPushButton { background-color: #ecf0f1; color: #2c3e50; font-weight: bold; padding: 5px 12px; border: 1px solid #bdc3c7; border-radius: 4px; font-size: 13px; }
+                QPushButton:hover { background-color: #d5dbdb; }
+                QPushButton:disabled { background-color: #f2f3f4; color: #bdc3c7; border-color: #eaeded; }
+            """)
+            btn.setCursor(Qt.PointingHandCursor)
+
+        self.btn_first_page.clicked.connect(self._go_first_page)
+        self.btn_prev_page.clicked.connect(self._go_prev_page)
+        self.btn_next_page.clicked.connect(self._go_next_page)
+        self.btn_last_page.clicked.connect(self._go_last_page)
+
+        page_layout.addWidget(self.lbl_page_info)
+        page_layout.addStretch()
+        page_layout.addWidget(self.btn_first_page)
+        page_layout.addWidget(self.btn_prev_page)
+        page_layout.addWidget(self.btn_next_page)
+        page_layout.addWidget(self.btn_last_page)
+
+        layout.addLayout(page_layout)
+
     # ──────────────────────────────────────────────────────────────
     # قراءة أسماء الطابعات من الإعدادات
     # ──────────────────────────────────────────────────────────────
@@ -1016,7 +1112,7 @@ class VersementsView(QWidget):
         if not v_data:
             return None, None
 
-        from database.versement_invoice_summary import build_versement_payment_summary
+        from database.versement import build_versement_payment_summary
         payment_summary = build_versement_payment_summary(v_data.get('payments', []))
         v_num = f"VRS-{v_data['id']:05d}"
         
@@ -1653,16 +1749,101 @@ class VersementsView(QWidget):
         
         try:
             versements = getattr(self.manager.versements, 'get_versements', lambda **k: [])(status_filter=selected_status)
+            search_suggestions = set()
+            filtered_versements = []
             
             for v in versements:
                 client_name = v.get('client_name', 'Inconnu')
                 client_phone = str(v.get('phone') or '')
                 statut = v.get('status', '')
                 v_id = v['id']
-                is_annule = (statut == 'ANNULE')
+                v_code = f"vrs-{v_id:05d}"
+                v_code_short = f"vrs-{v_id}"
+
+                items = v.get('items', [])
+                payments = v.get('payments', [])
+
+                if client_name and client_name != 'Inconnu':
+                    search_suggestions.add(client_name)
+                if client_phone:
+                    search_suggestions.add(client_phone)
+                search_suggestions.add(f"VRS-{v_id:05d}")
+
+                for item in items:
+                    desig = item.get('designation', '')
+                    barcode = item.get('barcode', '')
+                    c_note = item.get('custom_note') or item.get('notes') or ''
+                    if desig: search_suggestions.add(desig)
+                    if barcode: search_suggestions.add(barcode)
+                    if c_note: search_suggestions.add(c_note)
 
                 if search_text:
-                    if not (search_text in client_name.lower() or search_text in client_phone): continue
+                    match_found = False
+                    if (search_text in client_name.lower() or 
+                        search_text in client_phone or 
+                        search_text in v_code or 
+                        search_text in v_code_short or 
+                        search_text in str(v_id)):
+                        match_found = True
+
+                    if not match_found:
+                        for item in items:
+                            desig = str(item.get('designation') or '').lower()
+                            barcode = str(item.get('barcode') or '').lower()
+                            c_note = str(item.get('custom_note') or item.get('notes') or '').lower()
+                            if search_text in desig or search_text in barcode or search_text in c_note:
+                                match_found = True
+                                break
+
+                    if not match_found:
+                        for p in payments:
+                            p_notes = str(p.get('notes') or '').lower()
+                            p_desig = str(p.get('item_designation') or '').lower()
+                            if search_text in p_notes or search_text in p_desig:
+                                match_found = True
+                                break
+
+                    if not match_found:
+                        continue
+
+                filtered_versements.append(v)
+
+            # Partition filtered_versements into pages (~100 rows per page limit)
+            pages = []
+            current_page_versements = []
+            current_page_rows = 0
+            target_rows = getattr(self, 'target_rows_per_page', 100)
+
+            for v in filtered_versements:
+                v_rows = self._estimate_versement_rows(v)
+                if current_page_versements and (current_page_rows + v_rows > target_rows):
+                    pages.append(current_page_versements)
+                    current_page_versements = [v]
+                    current_page_rows = v_rows
+                else:
+                    current_page_versements.append(v)
+                    current_page_rows += v_rows
+
+            if current_page_versements:
+                pages.append(current_page_versements)
+
+            if not pages:
+                pages = [[]]
+
+            self.total_pages = len(pages)
+            if self.current_page < 1:
+                self.current_page = 1
+            elif self.current_page > self.total_pages:
+                self.current_page = self.total_pages
+
+            versements_to_display = pages[self.current_page - 1]
+
+            for v in versements_to_display:
+                client_name = v.get('client_name', 'Inconnu')
+                client_phone = str(v.get('phone') or '')
+                statut = v.get('status', '')
+                v_id = v['id']
+                is_annule = (statut == 'ANNULE')
 
                 header_data = {"type": "HEADER", "v_id": v_id, "statut": statut}
                 header_title = f" 📦 VRS-{v_id} | Client: {client_name} {f'(Tel: {client_phone})' if client_phone else ''}"
@@ -1811,6 +1992,22 @@ class VersementsView(QWidget):
                         empty_item = QTableWidgetItem("")
                         empty_item.setFlags(Qt.NoItemFlags)
                         self.table.setItem(row_space, col, empty_item)
+
+            if hasattr(self, 'completer') and self.completer:
+                model = QStringListModel(sorted(list(search_suggestions)), self.completer)
+                self.completer.setModel(model)
+
+            total_count = len(filtered_versements)
+            if hasattr(self, 'lbl_page_info'):
+                self.lbl_page_info.setText(
+                    f"Page {self.current_page} / {self.total_pages} ({total_count} dossier{'s' if total_count > 1 else ''})"
+                )
+            if hasattr(self, 'btn_first_page'):
+                self.btn_first_page.setEnabled(self.current_page > 1)
+                self.btn_prev_page.setEnabled(self.current_page > 1)
+                self.btn_next_page.setEnabled(self.current_page < self.total_pages)
+                self.btn_last_page.setEnabled(self.current_page < self.total_pages)
+
         except Exception as e:
             import traceback
             print(f"Erreur load_data: {e}\n{traceback.format_exc()}")
