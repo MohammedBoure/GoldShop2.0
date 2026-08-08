@@ -100,7 +100,8 @@ class MetalBreakdownSection(QGroupBox):
             lname.setStyleSheet("font-weight: bold; color: #34495e; font-size: 13px; border: none;")
             lname.setAlignment(Qt.AlignCenter)
 
-            lval = QLabel(f"{float(item['weight']):.2f} g")
+            w_val = float(item.get('weight') or 0.0)
+            lval = QLabel(f"{w_val:.2f} g")
             lval.setStyleSheet("font-weight: 900; color: #d35400; font-size: 16px; border: none;")
             lval.setAlignment(Qt.AlignCenter)
 

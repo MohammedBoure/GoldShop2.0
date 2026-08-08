@@ -302,7 +302,20 @@ class SupplierOperationDialog(QDialog):
             
             # Automatically write into main Poids (g) field in real-time
             self.is_auto_updating = True
-            self.poids_spin.setValue(converted_w)
+            self.poids_spin.setValue(raw_w)
+            
+            if raw_w < 0:
+                purity_formatted = f"{op_purity}".replace(".", ",")
+                if purity_formatted.endswith(",0"):
+                    purity_formatted = purity_formatted[:-2]
+                
+                # Check if user already typed something custom; if it's empty or already a Verssement, override it
+                current_obs = self.obs_edit.text().strip()
+                if not current_obs or current_obs.startswith("Verssement") or current_obs == "Régler":
+                    self.obs_edit.setText(f"Verssement {purity_formatted}%")
+                
+                self.color_combo.setCurrentIndex(1)
+                
             self.is_auto_updating = False
             self._auto_calc_montant()
 
@@ -409,6 +422,40 @@ class SupplierOperationDialog(QDialog):
                 return
         else:
             new_id = service.record_operation(**payload) if hasattr(service, "record_operation") else None
-            if not new_id:
-                pass
+            if new_id:
+                # 🟢 Check for Alliage if raw_weight < 0 and we are using the converter
+                raw_w = self.inp_raw_weight.value()
+                if abs(raw_w) > 0.0001 and raw_w < 0 and abs(raw_w - poids) < 0.001:
+                    op_purity_str = self.inp_op_purity.text().strip().replace(",", ".")
+                    base_purity_str = self.inp_base_purity.text().strip().replace(",", ".")
+                    try:
+                        op_purity = float(op_purity_str)
+                        base_purity = float(base_purity_str)
+                    except ValueError:
+                        op_purity = 0.0
+                        base_purity = 0.0
+                    
+                    if op_purity > 0 and base_purity > 0 and abs(op_purity - base_purity) > 0.001:
+                        converted_w = raw_w * (op_purity / base_purity)
+                        diff = converted_w - raw_w
+                        
+                        if abs(diff) > 0.001:
+                            base_purity_formatted = f"{base_purity}".replace(".", ",")
+                            if base_purity_formatted.endswith(",0"):
+                                base_purity_formatted = base_purity_formatted[:-2]
+                                
+                            alliage_obs = f"Alliage {base_purity_formatted}"
+                            alliage_payload = {
+                                "supplier_id": supplier_id,
+                                "operation_date": op_date,
+                                "operation_type": "INCOMING" if diff > 0 else "OUTGOING",
+                                "weight_g": abs(diff),
+                                "afacon": 0.0,
+                                "amount_da": 0.0,
+                                "description": alliage_obs,
+                                "notes": alliage_obs,
+                                "user_id": self.current_user.get("id"),
+                            }
+                            if hasattr(service, "record_operation"):
+                                service.record_operation(**alliage_payload)
         self.accept()

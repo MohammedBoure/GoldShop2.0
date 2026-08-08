@@ -15,39 +15,12 @@ class POSInventoryLoader:
 
     @staticmethod
     def _has_real_stock(item):
-        reserved_client_id = item.get('reserved_for_client_id')
-        if item.get('status') in ('Scrap', 'Repair', 'Lost', 'Sold'):
+        if not item:
             return False
-
-        item_type = str(item.get('item_type') or 'WEIGHT').upper()
-        try:
-            active_count = int(item.get('active_versement_count') or 0)
-        except (TypeError, ValueError):
-            active_count = 0
-
-        if item_type == 'PIECE':
-            try:
-                remaining = int(item.get('remaining_quantity') or 0)
-                reserved = int(item.get('active_reserved_quantity') or 0)
-                return remaining - reserved > 0
-            except (TypeError, ValueError):
-                return False
-
-        try:
-            return (
-                float(item.get('remaining_weight') or 0.0) > 0.0
-                and active_count == 0
-                and (
-                    item.get('status') in ('Available', 'Partially_Sold')
-                    or (
-                        item.get('status') == 'Reserved'
-                        and bool(item.get('reserved_for_client_id'))
-                        and str(item.get('reserved_for_client_id')) != '1'
-                    )
-                )
-            )
-        except (TypeError, ValueError):
+        status = item.get('status')
+        if status in ('Scrap', 'Repair', 'Lost'):
             return False
+        return True
 
     # ------------------------------------------------------------------ cache
     def load_inventory_cache(self):
@@ -148,27 +121,38 @@ class POSInventoryLoader:
         return super().eventFilter(obj, event)
 
     def on_text_changed_auto_add(self, text):
+        # تجنب التنفيذ إذا كان هناك معالجة جارية من مصدر آخر
+        if getattr(self, '_processing_barcode', False):
+            return
         text = text.strip()
         if not text:
             return
-        if text in self.products_cache:
-            self.process_barcode(text)
+        clean_code = text.split(" | ")[0].strip() if " | " in text else text.strip()
+        if clean_code in self.products_cache:
+            self.process_barcode(clean_code)
 
     def on_completer_activated(self, text):
-        if " | " in text:
-            barcode = text.split(" | ")[0].strip()
+        if not text:
+            return
+        # تعيين العلامة لمنع on_text_changed_auto_add من الاستدعاء المزدوج
+        self._processing_barcode = True
+        try:
+            barcode = text.split(" | ")[0].strip() if " | " in text else text.strip()
             self.inp_barcode.blockSignals(True)
             self.inp_barcode.setText(barcode)
             self.inp_barcode.blockSignals(False)
             self.process_barcode(barcode)
+        finally:
+            self._processing_barcode = False
 
     def on_barcode_entered(self):
+        # تجنب التنفيذ إذا كان هناك معالجة جارية من مصدر آخر
+        if getattr(self, '_processing_barcode', False):
+            return
         text = self.inp_barcode.text().strip()
         if not text:
             return
-        barcode = text
-        if " | " in text:
-            barcode = text.split(" | ")[0].strip()
+        barcode = text.split(" | ")[0].strip() if " | " in text else text.strip()
         self.process_barcode(barcode)
 
     def open_numpad_for_barcode(self):
@@ -214,37 +198,20 @@ class POSInventoryLoader:
         item = self.manager.inventory.get_item_by_barcode(barcode)
         
         if item:
-            # 2. معالجة المنتجات المحجوزة جزئياً (Partially_Sold)
-            if item.get('status') == 'Partially_Sold':
-                # إزالة أي مفتاح قديم قد يسبب استخدام سعر قديم
-                if 'exact_remaining_debt' in item:
-                    del item['exact_remaining_debt']
-                # التأكد من وجود remaining_weight/quantity صحيحين (يتم جلبهما من قاعدة البيانات)
-                if item.get('item_type') == 'WEIGHT':
-                    if 'remaining_weight' not in item or item['remaining_weight'] is None:
-                        item['remaining_weight'] = item.get('weight', 0.0)
-                else:
-                    if 'remaining_quantity' not in item or item['remaining_quantity'] is None:
-                        item['remaining_quantity'] = item.get('quantity', 1)
+            if 'exact_remaining_debt' in item:
+                del item['exact_remaining_debt']
+            if item.get('remaining_weight') is None:
+                item['remaining_weight'] = item.get('weight', 0.0)
+            if item.get('remaining_quantity') is None:
+                item['remaining_quantity'] = item.get('quantity', 1)
             
-            # 3. يعتمد السماح على المخزون القابل للبيع بعد خصم حجوزات العربون.
-            if not self._has_real_stock(item):
-                QMessageBox.warning(
-                    self, "Stock indisponible",
-                    f"L'article '{barcode}' n'est pas disponible pour la vente "
-                    f"(stock vendable épuisé ou réservé)."
-                )
-                self.force_clear_barcode()
-                return
-            
-            # 4. إضافة المنتج للسلة
+            # 🟢 إضافة المنتج للسلة مباشرة بدون عوائق
             self.add_item_to_cart_logic(item)
             
-            if self.product_completer.popup().isVisible():
+            if hasattr(self, 'product_completer') and self.product_completer.popup().isVisible():
                 self.product_completer.popup().hide()
             
             self.force_clear_barcode()
-            QTimer.singleShot(0, self.force_clear_barcode)
         else:
             QMessageBox.warning(
                 self, "Article Introuvable",

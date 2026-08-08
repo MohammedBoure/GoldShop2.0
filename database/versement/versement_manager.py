@@ -292,19 +292,29 @@ class VersementManager:
                     sold_quantity = max(1, int(it.get("reserved_quantity") or 1))
                     cursor.execute("""
                         UPDATE Inventory
-                        SET status = IF(remaining_quantity - %s <= 0, 'Sold',
-                                    IF(remaining_quantity - %s < quantity, 'Partially_Sold', 'Available')),
+                        SET status = IF(COALESCE(remaining_quantity, quantity) - %s <= 0, 'Sold',
+                                    IF(COALESCE(remaining_quantity, quantity) - %s < COALESCE(quantity, 1), 'Partially_Sold', 'Available')),
                             remaining_quantity = GREATEST(0, COALESCE(remaining_quantity, quantity) - %s)
                         WHERE id = %s
                     """, (sold_quantity, sold_quantity, sold_quantity, inv_id))
                 else:
-                    sold_weight = float(it.get("remaining_weight") or it.get("weight") or 0.0)
+                    item_qty = int(it.get("quantity") or 1)
+                    sold_quantity = 1
+                    if item_qty > 1:
+                        original_weight = float(it.get("weight") or 0.0)
+                        sold_weight = round(original_weight / item_qty, 3)
+                        remaining_w = float(it.get("remaining_weight") if it.get("remaining_weight") is not None else original_weight)
+                        sold_weight = min(sold_weight, remaining_w)
+                    else:
+                        sold_weight = float(it.get("remaining_weight") if it.get("remaining_weight") is not None else it.get("weight") or 0.0)
+                    
                     cursor.execute("""
                         UPDATE Inventory
-                        SET status = IF(remaining_weight - %s <= 0.005, 'Sold', 'Partially_Sold'),
-                            remaining_weight = GREATEST(0, COALESCE(remaining_weight, weight) - %s)
+                        SET status = IF(COALESCE(remaining_weight, weight) - %s <= 0.005 OR COALESCE(remaining_quantity, quantity) - %s <= 0, 'Sold', 'Partially_Sold'),
+                            remaining_weight = GREATEST(0, COALESCE(remaining_weight, weight) - %s),
+                            remaining_quantity = GREATEST(0, COALESCE(remaining_quantity, quantity) - %s)
                         WHERE id = %s
-                    """, (sold_weight, sold_weight, inv_id))
+                    """, (sold_weight, sold_quantity, sold_weight, sold_quantity, inv_id))
 
             if items_to_retire:
                 cursor.execute("""
@@ -551,7 +561,7 @@ class VersementManager:
                     cursor.execute("""
                         SELECT vi.id as item_id, vi.inventory_id, vi.designation, vi.notes AS custom_note,
                                vi.item_status, COALESCE(vi.reserved_quantity, 1) AS reserved_quantity,
-                               i.item_type, i.weight, i.quantity, i.remaining_quantity, i.barcode, i.selling_price
+                               i.item_type, i.weight, i.remaining_weight, i.quantity, i.remaining_quantity, i.barcode, i.selling_price
                         FROM Versement_Items vi
                         LEFT JOIN Inventory i ON vi.inventory_id = i.id
                         WHERE vi.versement_id = %s
@@ -671,7 +681,7 @@ class VersementManager:
         cursor = None
         try:
             conn = self.db.get_raw_connection()
-            cursor = conn.cursor()
+            cursor = conn.cursor(dictionary=True)
             conn.autocommit = False
 
             # 1. Ø§Ù„ØªØ­Ù‚Ù‚ Ø§Ù„Ø°Ø±ÙŠ Ù…Ù† Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„Ù…ØªØ¨Ù‚ÙŠØ© ÙˆØ­Ø¬ÙˆØ²Ø§Øª Ø§Ù„Ø¹Ø±Ø¨ÙˆÙ† Ø§Ù„Ø£Ø®Ø±Ù‰.

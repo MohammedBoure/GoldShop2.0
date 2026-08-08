@@ -281,7 +281,7 @@ class AddPaymentDialog(QDialog):
         sum_layout.setContentsMargins(10, 10, 10, 10)
         sum_layout.setSpacing(6)
         
-        self.lbl_summary_reste = QLabel("0.00 g (0.00 DA)")
+        self.lbl_summary_reste = QLabel("0.00 g")
         self.lbl_summary_reste.setStyleSheet("font-size: 13px; font-weight: bold; color: #c0392b;")
         
         self.lbl_summary_current = QLabel("0.00 DA")
@@ -478,11 +478,6 @@ class AddPaymentDialog(QDialog):
             QMessageBox.warning(self, "Erreur", "Aucun article actif avec prix et poids restants n'est disponible pour calculer la remise.")
             return
 
-        payment_value_da = max(0.0, self.inp_montant_da.value() + self.inp_tpe.value())
-        if payment_value_da <= 0:
-            QMessageBox.warning(self, "Erreur", "Veuillez saisir d'abord la valeur du versement Ã  calculer.")
-            return
-
         from ui.tools.virtual_numpad import VirtualNumpad
         pad = VirtualNumpad(
             title=f"Saisir le prix/g (actuel: {current_ppg:,.2f} DA/g)",
@@ -500,13 +495,9 @@ class AddPaymentDialog(QDialog):
                     QMessageBox.warning(self, "Erreur", "Le prix/g cible doit etre superieur a 0.")
                     return
                 target_ppg = min(target_ppg, current_ppg)
-                remise_value, _payment_weight = discount_for_target_price(
-                    current_ppg,
-                    target_ppg,
-                    payment_value_da,
-                    available_weight=available_weight,
-                )
+                remise_value = max(0.0, (current_ppg - target_ppg) * available_weight)
                 self.inp_remise_da.setValue(remise_value)
+
     def _calculate_poids_suggestion(self):
         base_amount = self._get_active_base_amount()
         base_weight = self._get_active_base_weight()
@@ -567,9 +558,9 @@ class AddPaymentDialog(QDialog):
         nouveau_reste_da = max(0.0, base_amount - (current_pay + remise))
         nouveau_reste_g = max(0.0, base_weight - poids_deduit)
         
-        self.lbl_summary_reste.setText(f"{base_weight:,.2f} g  (Estimé: {base_amount:,.2f} DA)")
+        self.lbl_summary_reste.setText(f"{base_weight:,.2f} g")
         self.lbl_summary_current.setText(f"{(current_pay + remise):,.2f} DA  [Remise: {remise:,.2f} DA ({remise_pct:.1f}%)]")
-        self.lbl_summary_nouveau.setText(f"{nouveau_reste_g:,.2f} g  (Estimé: {nouveau_reste_da:,.2f} DA)")
+        self.lbl_summary_nouveau.setText(f"{nouveau_reste_g:,.2f} g")
 
     def _populate_target_combo(self):
         try:

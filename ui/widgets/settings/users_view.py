@@ -60,7 +60,7 @@ PERMISSIONS_CATALOG = [
             {"key": "nav_versement", "label": "Versements & Dettes", "icon": "fa5s.hand-holding-usd"},
             {"key": "nav_rh", "label": "Gestion RH", "icon": "fa5s.users-cog"},
             {"key": "nav_coffre_magasin", "label": "Coffre Magasin", "icon": "fa5s.archive"},
-            {"key": "nav_atelier", "label": "Atelier & Travaux", "icon": "fa5s.tools"},
+            {"key": "nav_atelier", "label": "Réparation", "icon": "fa5s.tools"},
             {"key": "nav_official_suppliers", "label": "Fournisseurs", "icon": "fa5s.truck"},
         ]
     },

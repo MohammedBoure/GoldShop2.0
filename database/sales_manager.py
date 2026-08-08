@@ -57,8 +57,8 @@ class SalesManager:
             sale_id = cursor.lastrowid
 
             for item in cart_items:
-                inv_id = item.get('id')
-                item_type = item.get('item_type', 'WEIGHT')
+                inv_id = item.get('inventory_id') or item.get('id')
+                item_type = str(item.get('item_type') or 'WEIGHT').upper()
                 barcode = item.get('barcode', '')
                 name = item.get('name', 'Article inconnu')
                 
@@ -71,7 +71,7 @@ class SalesManager:
 
                 if inv_id:
                     cursor.execute("""
-                        SELECT item_type, remaining_weight, remaining_quantity,
+                        SELECT item_type, weight, remaining_weight, quantity, remaining_quantity,
                                status, reserved_for_client_id
                         FROM Inventory WHERE id = %s FOR UPDATE
                     """, (inv_id,))
@@ -79,43 +79,17 @@ class SalesManager:
                     if not inventory:
                         raise ValueError("Article d'inventaire introuvable.")
 
-                    reserved_client_id = inventory.get("reserved_for_client_id")
-                    client_reserved_for_sale = False
-                    if reserved_client_id and str(reserved_client_id) != "1":
-                        if client_id is None or int(reserved_client_id) != int(client_id):
-                            raise ValueError("Cet article est réservé à un autre client.")
-                        client_reserved_for_sale = True
-
-                    cursor.execute("""
-                        SELECT COALESCE(SUM(COALESCE(reserved_quantity, 1)), 0) AS reserved_quantity,
-                               COUNT(*) AS reservation_count
-                        FROM Versement_Items
-                        WHERE inventory_id = %s AND item_status = 'EN_COURS'
-                    """, (inv_id,))
-                    reservation = cursor.fetchone() or {}
-                    active_reserved = int(reservation.get("reserved_quantity") or 0)
-                    active_count = int(reservation.get("reservation_count") or 0)
+                    db_item_type = str(inventory.get("item_type") or item_type).upper()
                     status = inventory.get("status")
 
-                    if item_type == "PIECE":
-                        remaining_quantity = int(inventory.get("remaining_quantity") or 0)
-                        sellable_quantity = max(0, remaining_quantity - active_reserved)
-                        if sold_q <= 0 or sold_q > sellable_quantity:
-                            raise ValueError(
-                                f"Quantité vendue ({sold_q}) supérieure au stock vendable "
-                                f"({sellable_quantity})."
-                            )
-                        legacy_reserved = status == "Reserved" and active_count > 0
-                        if status not in ("Available", "Partially_Sold") and not (legacy_reserved or client_reserved_for_sale):
-                            raise ValueError("Cet article n'est pas disponible pour la vente.")
+                    if db_item_type in ("PIECE", "UNIT"):
+                        remaining_quantity = int(inventory.get("remaining_quantity") if inventory.get("remaining_quantity") is not None else inventory.get("quantity") or 1)
+                        if status == 'Sold' and remaining_quantity <= 0:
+                            raise ValueError("Cet article est déjà totalement vendu.")
                     else:
-                        remaining_weight = float(inventory.get("remaining_weight") or 0.0)
-                        if sold_w <= 0 or sold_w > remaining_weight + 0.0001:
-                            raise ValueError("Le poids vendu dépasse le stock restant.")
-                        if active_count > 0:
-                            raise ValueError("Cet article pondéré est réservé par un versement.")
-                        if status not in ("Available", "Partially_Sold", "Reserved"):
-                            raise ValueError("Cet article n'est pas disponible pour la vente.")
+                        remaining_weight = float(inventory.get("remaining_weight") if inventory.get("remaining_weight") is not None else inventory.get("weight") or 0.0)
+                        if status == 'Sold' and remaining_weight <= 0.005:
+                            raise ValueError("Cet article est déjà totalement vendu.")
 
                 item_query = """
                     INSERT INTO SaleItems (
@@ -129,19 +103,26 @@ class SalesManager:
                 ))
 
                 if inv_id:
-                    if item_type == 'WEIGHT':
+                    # Fetch actual item_type from DB to ensure correct update logic
+                    cursor.execute("SELECT item_type FROM Inventory WHERE id = %s", (inv_id,))
+                    db_row = cursor.fetchone()
+                    db_item_type = str((db_row or {}).get('item_type') or item_type).upper()
+
+                    if db_item_type == 'WEIGHT':
                         cursor.execute("""
                             UPDATE Inventory 
-                            SET status = IF(remaining_weight - %s <= 0.005, 'Sold', 'Partially_Sold'),
-                                remaining_weight = GREATEST(0, remaining_weight - %s)
+                            SET status = IF(COALESCE(remaining_weight, weight) - %s <= 0.005 OR COALESCE(remaining_quantity, quantity) - %s <= 0, 'Sold', 'Partially_Sold'),
+                                remaining_weight = GREATEST(0, COALESCE(remaining_weight, weight) - %s),
+                                remaining_quantity = GREATEST(0, COALESCE(remaining_quantity, quantity) - %s)
                             WHERE id = %s
-                        """, (sold_w, sold_w, inv_id))
+                        """, (sold_w, sold_q, sold_w, sold_q, inv_id))
                     else:
+                        # PIECE / UNIT: evaluate status BEFORE modifying remaining_quantity
                         cursor.execute("""
                             UPDATE Inventory 
-                            SET status = IF(remaining_quantity - %s <= 0, 'Sold',
-                                        IF(remaining_quantity - %s < quantity, 'Partially_Sold', 'Available')),
-                                remaining_quantity = GREATEST(0, remaining_quantity - %s)
+                            SET status = IF(COALESCE(remaining_quantity, quantity) - %s <= 0, 'Sold',
+                                        IF(COALESCE(remaining_quantity, quantity) - %s < COALESCE(quantity, 1), 'Partially_Sold', 'Available')),
+                                remaining_quantity = GREATEST(0, COALESCE(remaining_quantity, quantity) - %s)
                             WHERE id = %s
                         """, (sold_q, sold_q, sold_q, inv_id))
 
@@ -229,8 +210,8 @@ class SalesManager:
                         IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.old_gold_weight_g, 0) as OC,
                         IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.tpe_paid_da, 0) as TPE,
                         IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.impos_weight_g, 0) as Impos,
-                        IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.euro_paid, 0) as Euro,
-                        IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.dollar_paid, 0) as Dollar,
+                        0 as Euro,
+                        0 as Dollar,
                         u.username as Vendeur_Name,
                         s.user_id as vendeur_id,
                         COALESCE(NULLIF(s.notes, ''), NULLIF(si.custom_note, ''), CONCAT('Fac: ', s.receipt_number)) as raw_notes,
@@ -268,7 +249,7 @@ class SalesManager:
                     JOIN Versements v ON vp.versement_id = v.id
                     LEFT JOIN Clients c ON v.client_id = c.id
                     LEFT JOIN Versement_Items vi ON vp.versement_item_id = vi.id
-                    WHERE vp.journee_id = %s AND v.status != 'ANNULE'
+                    WHERE vp.journee_id = %s
                 """
                 cursor.execute(query_vp, (journee_id,))
                 vp_results = cursor.fetchall()
@@ -304,8 +285,6 @@ class SalesManager:
                         SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN cash_paid_da ELSE 0 END) as total_recette,
                         SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN tpe_paid_da ELSE 0 END) as total_tpe,
                         SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN old_gold_weight_g ELSE 0 END) as total_oc,
-                        SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN euro_paid ELSE 0 END) as total_euro,
-                        SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN dollar_paid ELSE 0 END) as total_dollar,
                         SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN impos_weight_g ELSE 0 END) as total_impos
                     FROM Sales 
                     WHERE journee_id = %s AND status = 'COMPLETED'
@@ -323,15 +302,14 @@ class SalesManager:
                 
                 cursor.execute("""
                     SELECT 
-                        SUM(vp.montant_da) as total_recette,
-                        SUM(vp.tpe_da) as total_tpe,
-                        SUM(vp.or_casse_g) as total_oc,
-                        SUM(vp.montant_euro) as total_euro,
-                        SUM(vp.montant_dollar) as total_dollar,
+                        SUM(montant_da) as total_recette,
+                        SUM(tpe_da) as total_tpe,
+                        SUM(or_casse_g) as total_oc,
+                        SUM(montant_euro) as total_euro,
+                        SUM(montant_dollar) as total_dollar,
                         0.0 as total_p_s
-                    FROM Versement_Payments vp
-                    JOIN Versements v ON vp.versement_id = v.id
-                    WHERE vp.journee_id = %s AND v.status != 'ANNULE'
+                    FROM Versement_Payments 
+                    WHERE journee_id = %s
                 """, (journee_id,))
                 vp_totals = cursor.fetchone()
 
@@ -339,8 +317,8 @@ class SalesManager:
                     'total_recette': float((sales_totals['total_recette'] or 0) + (vp_totals['total_recette'] or 0)),
                     'total_tpe': float((sales_totals['total_tpe'] or 0) + (vp_totals['total_tpe'] or 0)),
                     'total_oc': float((sales_totals['total_oc'] or 0) + (vp_totals['total_oc'] or 0)),
-                    'total_euro': float((sales_totals['total_euro'] or 0) + (vp_totals['total_euro'] or 0)),
-                    'total_dollar': float((sales_totals['total_dollar'] or 0) + (vp_totals['total_dollar'] or 0)),
+                    'total_euro': float(vp_totals['total_euro'] or 0),
+                    'total_dollar': float(vp_totals['total_dollar'] or 0),
                     'total_p_s': float((weight_totals['total_p_s'] or 0) + (vp_totals['total_p_s'] or 0)),
                     'total_impos': float(sales_totals['total_impos'] or 0)
                 }
@@ -351,16 +329,16 @@ class SalesManager:
     # ============================================================
     # 4. تعديل المبالغ المالية لفاتورة منجزة
     # ============================================================
-    def update_sale_financials(self, sale_id: int, cash: float, tpe: float, oc: float, euro: float = 0.0, dollar: float = 0.0, impos: float = 0.0) -> bool:
+    def update_sale_financials(self, sale_id: int, cash: float, tpe: float, oc: float, impos: float) -> bool:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
                 query = """
                     UPDATE Sales 
-                    SET cash_paid_da = %s, tpe_paid_da = %s, old_gold_weight_g = %s, euro_paid = %s, dollar_paid = %s, impos_weight_g = %s
+                    SET cash_paid_da = %s, tpe_paid_da = %s, old_gold_weight_g = %s, impos_weight_g = %s
                     WHERE id = %s
                 """
-                cursor.execute(query, (cash, tpe, oc, euro, dollar, impos, sale_id))
+                cursor.execute(query, (cash, tpe, oc, impos, sale_id))
                 conn.commit()
                 return True
         except Exception as e:

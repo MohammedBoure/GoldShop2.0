@@ -423,6 +423,20 @@ class POSInterfaceWidget(POSUIBuilder, POSClientManager, POSInventoryLoader, POS
             else:
                 QMessageBox.critical(self, "Erreur", f"Erreur lors de l'enregistrement : {result.get('message')}")
 
+    def open_quick_add_product(self, *args):
+        from ui.dialogs.quick_add_product import QuickAddProductDialog
+        dialog = QuickAddProductDialog(self.manager, self)
+        from PySide6.QtWidgets import QDialog
+        if dialog.exec() == QDialog.Accepted:
+            new_id = getattr(dialog, 'added_item_id', None)
+            if new_id:
+                item = self.manager.inventory.get_item_by_id(new_id)
+                if item:
+                    if hasattr(self, 'add_item_to_cart_logic'):
+                        self.add_item_to_cart_logic(item)
+                    elif hasattr(self, 'refresh_cart'):
+                        self.refresh_cart()
+
     def deduct_from_versements(self, client_id, amount_to_deduct, receipt_number, journee_id):
         try:
             v_list = self.manager.versements.get_versements(status_filter='EN_COURS', client_id=client_id)

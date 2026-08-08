@@ -326,7 +326,7 @@ class NewVersementDialog(QDialog):
         self.lbl_summary_paye = QLabel("0.00 DA")
         self.lbl_summary_paye.setStyleSheet("font-size: 13px; font-weight: bold; color: #27ae60;")
         
-        self.lbl_summary_reste = QLabel("0.00 g (0.00 DA)")
+        self.lbl_summary_reste = QLabel("0.00 g")
         self.lbl_summary_reste.setStyleSheet("font-size: 16px; font-weight: bold; color: #c0392b;")
         
         sum_layout.addRow(self._styled_lbl("Total Brut Initial :"), self.lbl_summary_brut)
@@ -440,10 +440,21 @@ class NewVersementDialog(QDialog):
 
     def _item_total_weight(self, item):
         base_weight = float(item.get("weight") or item.get("remaining_weight") or 0.0)
+        item_type = str(item.get("item_type") or "WEIGHT").upper()
+        if item_type != "PIECE":
+            item_qty = int(item.get("quantity") or 1)
+            if item_qty > 1:
+                return (base_weight / item_qty) * self._item_reserved_quantity(item)
         return base_weight * self._item_reserved_quantity(item)
 
     def _item_total_price(self, item):
-        return float(item.get("selling_price") or 0.0) * self._item_reserved_quantity(item)
+        total_price = float(item.get("selling_price") or 0.0)
+        item_type = str(item.get("item_type") or "WEIGHT").upper()
+        if item_type != "PIECE":
+            item_qty = int(item.get("quantity") or 1)
+            if item_qty > 1:
+                return (total_price / item_qty) * self._item_reserved_quantity(item)
+        return total_price * self._item_reserved_quantity(item)
 
     def _set_item_quantity(self, item, value):
         item["versement_quantity"] = max(1, int(value))
@@ -590,7 +601,7 @@ class NewVersementDialog(QDialog):
         self.lbl_summary_brut.setText(f"{total_brut:,.2f} DA  (Poids: {total_weight:,.2f} g)")
         self.lbl_summary_remise.setText(f"- {remise:,.2f} DA ({remise_pct:.1f}%)" if remise > 0 else "0.00 DA")
         self.lbl_summary_paye.setText(f"{acompte_da:,.2f} DA  (Poids déduit: {poids_deduit:,.2f} g)")
-        self.lbl_summary_reste.setText(f"{reste_g:,.2f} g  (Estimé: {reste_da:,.2f} DA)")
+        self.lbl_summary_reste.setText(f"{reste_g:,.2f} g")
 
     # ========================================================
     # الحسابات الخاصة بطرق الدفع
@@ -709,29 +720,44 @@ class NewVersementDialog(QDialog):
             self._scan_timer.start()
 
     def _on_scan_complete(self):
+        if getattr(self, '_processing_barcode', False): return
         if self._completer_instance: self._completer_instance.setWidget(self.inp_barcode)
         if self.is_processing: return
         text = self.inp_barcode.text().strip()
         if not text: return
         barcode = self._extract_barcode_from_text(text)
         if barcode in self.products_autocomplete_map:
-            self.is_processing = True
-            self.process_barcode(barcode)
-            QTimer.singleShot(300, lambda: setattr(self, 'is_processing', False))
+            self._processing_barcode = True
+            try:
+                self.is_processing = True
+                self.process_barcode(barcode)
+                QTimer.singleShot(300, lambda: setattr(self, 'is_processing', False))
+            finally:
+                self._processing_barcode = False
 
     def on_completer_activated(self, text):
+        if getattr(self, '_processing_barcode', False): return
         if self.is_processing: return
-        self.is_processing = True
-        self.process_barcode(self._extract_barcode_from_text(text))
-        QTimer.singleShot(300, lambda: setattr(self, 'is_processing', False))
+        self._processing_barcode = True
+        try:
+            self.is_processing = True
+            self.process_barcode(self._extract_barcode_from_text(text))
+            QTimer.singleShot(300, lambda: setattr(self, 'is_processing', False))
+        finally:
+            self._processing_barcode = False
 
     def on_barcode_entered(self):
+        if getattr(self, '_processing_barcode', False): return
         if self.is_processing: return
         text = self.inp_barcode.text().strip()
         if not text: return
-        self.is_processing = True
-        self.process_barcode(self._extract_barcode_from_text(text))
-        QTimer.singleShot(300, lambda: setattr(self, 'is_processing', False))
+        self._processing_barcode = True
+        try:
+            self.is_processing = True
+            self.process_barcode(self._extract_barcode_from_text(text))
+            QTimer.singleShot(300, lambda: setattr(self, 'is_processing', False))
+        finally:
+            self._processing_barcode = False
 
     def process_barcode(self, barcode):
         item = self.manager.inventory.get_item_by_barcode(barcode)
@@ -754,11 +780,12 @@ class NewVersementDialog(QDialog):
             item["versement_quantity"] = 1
         else:
             active_count = int(item.get("active_versement_count") or 0)
+            item_qty = int(item.get("quantity") or 1)
             if float(item.get("remaining_weight") or item.get("weight") or 0.0) <= 0:
                 QMessageBox.warning(self, "Stock indisponible", "Cet article pondéré est indisponible car il a été vendu.")
                 self.force_clear_barcode()
                 return
-            if active_count > 0:
+            if active_count >= item_qty:
                 v_ids_str = ""
                 try:
                     with self.manager.db.get_db_connection() as conn:
@@ -768,8 +795,8 @@ class NewVersementDialog(QDialog):
                         v_ids_str = ", ".join(v_ids)
                 except Exception:
                     pass
-                msg = f"Cet article pondéré est déjà réservé dans le(s) dossier(s) N°: {v_ids_str}." if v_ids_str else "Cet article pondéré est déjà réservé dans un autre dossier."
-                msg += "\n\nVeuillez l'annuler de ce dossier d'abord pour pouvoir l'ajouter ici."
+                msg = f"Cet article pondéré est déjà réservé ({active_count}/{item_qty}) dans le(s) dossier(s) N°: {v_ids_str}." if v_ids_str else "Cet article pondéré est déjà réservé dans un autre dossier."
+                msg += "\n\nVeuillez l'annuler d'un dossier d'abord pour pouvoir l'ajouter ici."
                 QMessageBox.warning(self, "Stock indisponible", msg)
                 self.force_clear_barcode()
                 return

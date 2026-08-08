@@ -118,7 +118,7 @@ class ProductEditDialog(QDialog):
             hlay.setSpacing(5)
 
             lbl = QLabel(label_text)
-            lbl.setFixedWidth(110) # 🟢 عرض ثابت للعناوين لتكون جميع الحقول متساوية
+            lbl.setFixedWidth(110)
             lbl.setStyleSheet("font-size: 13px; font-weight: bold; color: #34495e;")
             lbl.setWordWrap(True)
 
@@ -127,6 +127,7 @@ class ProductEditDialog(QDialog):
 
             container = QWidget()
             container.setLayout(hlay)
+            container.lbl = lbl
             return container
 
         # --- 1. Code-barres ---
@@ -221,28 +222,34 @@ class ProductEditDialog(QDialog):
         self.spin_profit_margin.valueChanged.connect(self.calculate_totals)
         self.combo_margin_type.currentIndexChanged.connect(self.update_margin_suffix)
 
-        # 🟢 بناء الشبكة (Grid) بشكل أفقي لتقليل الارتفاع العمودي
+        self.wg_metal = create_hbox("Métal:", self.combo_metal)
+        self.wg_weight = create_hbox("Poids Total:", self.spin_weight)
+        self.wg_remaining_weight = create_hbox("Poids Restant:", self.spin_remaining_weight)
+        self.wg_metal_cost = create_hbox("Coût Métal (g):", self.spin_metal_cost)
+        self.wg_labor_cost = create_hbox("Coût Façon (g):", self.spin_labor_cost)
+        self.wg_margin = create_hbox("Marge Bénéfice:", margin_widget)
+        
         grid.addWidget(create_hbox("Code-barres:", self.inp_barcode), 0, 0)
         grid.addWidget(create_hbox("Désignation:", name_widget), 0, 1)
         grid.addWidget(create_hbox("Type Article:", self.combo_item_type), 0, 2)
 
         grid.addWidget(create_hbox("Catégorie:", cat_widget), 1, 0)
-        grid.addWidget(create_hbox("Métal:", self.combo_metal), 1, 1)
+        grid.addWidget(self.wg_metal, 1, 1)
         grid.addWidget(create_hbox("Emplacement:", self.combo_location), 1, 2)
 
         grid.addWidget(create_hbox("Fournisseur:", supp_widget), 2, 0)
         grid.addWidget(create_hbox("Statut:", self.combo_status), 2, 1)
         grid.addWidget(create_hbox("Réservé Pour:", client_widget), 2, 2)
 
-        grid.addWidget(create_hbox("Poids Total:", self.spin_weight), 3, 0)
-        grid.addWidget(create_hbox("Poids Restant:", self.spin_remaining_weight), 3, 1)
-        grid.addWidget(create_hbox("Coût Métal (g):", self.spin_metal_cost), 3, 2)
+        grid.addWidget(self.wg_weight, 3, 0)
+        grid.addWidget(self.wg_remaining_weight, 3, 1)
+        grid.addWidget(self.wg_metal_cost, 3, 2)
 
         grid.addWidget(create_hbox("Qté Totale:", self.spin_qty), 4, 0)
         grid.addWidget(create_hbox("Qté Restante:", self.spin_remaining_qty), 4, 1)
-        grid.addWidget(create_hbox("Coût Façon (g):", self.spin_labor_cost), 4, 2)
+        grid.addWidget(self.wg_labor_cost, 4, 2)
 
-        grid.addWidget(create_hbox("Marge Bénéfice:", margin_widget), 5, 0)
+        grid.addWidget(self.wg_margin, 5, 0)
         grid.addWidget(create_hbox("Coût Global:", self.spin_total_cost), 5, 1)
         grid.addWidget(create_hbox("Prix de Vente:", self.spin_selling_price), 5, 2)
 
@@ -410,49 +417,58 @@ class ProductEditDialog(QDialog):
         if self.combo_margin_type.currentData() == "PERCENTAGE":
             self.spin_profit_margin.setSuffix(" %")
         else:
-            self.spin_profit_margin.setSuffix(" DA/g")
+            is_weight = self.combo_item_type.currentData() == "WEIGHT"
+            self.spin_profit_margin.setSuffix(" DA/g" if is_weight else " DA")
         self.calculate_totals()
 
     def toggle_type_fields(self):
         is_weight = self.combo_item_type.currentData() == "WEIGHT"
-        self.spin_weight.setEnabled(is_weight)
-        self.spin_remaining_weight.setEnabled(is_weight)
-        self.spin_metal_cost.setEnabled(is_weight)
-        self.spin_labor_cost.setEnabled(is_weight)
-        self.spin_profit_margin.setEnabled(is_weight)
-        self.combo_margin_type.setEnabled(is_weight)
+        
+        self.wg_metal.setVisible(is_weight)
+        self.wg_weight.setVisible(is_weight)
+        self.wg_remaining_weight.setVisible(is_weight)
+        self.wg_labor_cost.setVisible(is_weight)
+
+        if is_weight:
+            self.wg_metal_cost.lbl.setText("Coût Métal (g):")
+            self.spin_metal_cost.setSuffix(" DA/g")
+            self.wg_margin.lbl.setText("Marge Bénéfice:")
+        else:
+            self.wg_metal_cost.lbl.setText("Prix d'Achat:")
+            self.spin_metal_cost.setSuffix(" DA")
+            self.wg_margin.lbl.setText("Marge Bénéfice (Pièce):")
 
         base_style = "font-size: 14px; font-weight: bold; padding: 2px 8px; border-radius: 6px; border: 1px solid #bdc3c7;"
+        self.spin_total_cost.setReadOnly(is_weight)
+        self.spin_selling_price.setReadOnly(is_weight)
+        
         if is_weight:
-            self.spin_total_cost.setReadOnly(True)
-            self.spin_selling_price.setReadOnly(True)
             self.spin_total_cost.setStyleSheet(base_style + "background-color: #ecf0f1; color: #7f8c8d;")
             self.spin_selling_price.setStyleSheet(base_style + "background-color: #d4efdf; color: #1e8449;")
-            self.calculate_totals()
         else:
-            self.spin_total_cost.setReadOnly(False)
-            self.spin_selling_price.setReadOnly(False)
             self.spin_total_cost.setStyleSheet(base_style + "background-color: #ffffff; color: #2c3e50;")
             self.spin_selling_price.setStyleSheet(base_style + "border: 2px solid #27ae60; color: #27ae60; background-color: #eafaf1;")
 
-    def calculate_totals(self):
-        if not hasattr(self, 'combo_item_type') or self.combo_item_type.currentData() == "PIECE":
-            return
+        self.update_margin_suffix()
+        self.calculate_totals()
 
-        w = self.spin_weight.value()
+    def calculate_totals(self):
+        is_weight = (not hasattr(self, 'combo_item_type') or self.combo_item_type.currentData() == "WEIGHT")
+
+        w = self.spin_weight.value() if is_weight else 1.0
         mc = self.spin_metal_cost.value()
-        lc = self.spin_labor_cost.value()
+        lc = self.spin_labor_cost.value() if is_weight else 0.0
         margin = self.spin_profit_margin.value()
         margin_type = self.combo_margin_type.currentData()
 
         total_cost = (mc + lc) * w
 
         if margin_type == 'PERCENTAGE':
-            profit_per_gram = (mc + lc) * (margin / 100.0)
+            profit_per_unit = total_cost * (margin / 100.0)
         else:
-            profit_per_gram = margin
+            profit_per_unit = margin
 
-        selling_price = total_cost + (profit_per_gram * w)
+        selling_price = total_cost + (profit_per_unit * w)
 
         self.spin_total_cost.setValue(total_cost)
         self.spin_selling_price.setValue(selling_price)
@@ -469,18 +485,18 @@ class ProductEditDialog(QDialog):
             name=self.selected_item_name,
             item_type=self.combo_item_type.currentData(),
             category_id=self.selected_category_id,
-            metal_type_id=self.combo_metal.currentData(),
-            weight=self.spin_weight.value(),
+            metal_type_id=self.combo_metal.currentData() if self.combo_item_type.currentData() == "WEIGHT" else None,
+            weight=self.spin_weight.value() if self.combo_item_type.currentData() == "WEIGHT" else 1.0,
             quantity=self.spin_qty.value(),
             metal_cost_per_gram=self.spin_metal_cost.value(),
-            labor_cost_per_gram=self.spin_labor_cost.value(),
+            labor_cost_per_gram=self.spin_labor_cost.value() if self.combo_item_type.currentData() == "WEIGHT" else 0.0,
             profit_margin=self.spin_profit_margin.value(),
             margin_type=self.combo_margin_type.currentData(),
             total_cost=self.spin_total_cost.value(),
             selling_price=self.spin_selling_price.value(),
             location_id=self.combo_location.currentData(),
             supplier_id=self.selected_supplier_id,
-            remaining_weight=self.spin_remaining_weight.value(),
+            remaining_weight=self.spin_remaining_weight.value() if self.combo_item_type.currentData() == "WEIGHT" else 1.0,
             remaining_quantity=self.spin_remaining_qty.value(),
             status=self.combo_status.currentData(),
             reserved_for_client_id=self.selected_client_id

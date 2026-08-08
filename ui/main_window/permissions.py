@@ -228,7 +228,7 @@ class MainWindowPermissionsMixin:
             13: "Inventaire Physique",
             15: "Gestion Personnel & RH",
             16: "Coffre Magasin",
-            17: "Atelier & Travaux",
+            17: "Réparation",
             19: "Fournisseurs",
         }.get(page_id)
 

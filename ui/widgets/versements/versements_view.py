@@ -397,14 +397,14 @@ class EditPaymentDialog(QDialog):
         sum_layout.setContentsMargins(10, 10, 10, 10)
         sum_layout.setSpacing(6)
         
-        self.lbl_summary_reste = QLabel("0.00 g (0.00 DA)")
-        self.lbl_summary_reste.setStyleSheet("font-size: 13px; font-weight: bold; color: #c0392b;")
+        self.lbl_summary_reste = QLabel("0.00 g")
+        self.lbl_summary_reste.setStyleSheet("font-size: 16px; font-weight: bold; color: #7f8c8d;")
         
         self.lbl_summary_current = QLabel("0.00 DA")
-        self.lbl_summary_current.setStyleSheet("font-size: 13px; font-weight: bold; color: #27ae60;")
+        self.lbl_summary_current.setStyleSheet("font-size: 16px; font-weight: bold; color: #27ae60;")
         
         self.lbl_summary_nouveau = QLabel("0.00 g")
-        self.lbl_summary_nouveau.setStyleSheet("font-size: 16px; font-weight: bold; color: #c0392b;")
+        self.lbl_summary_nouveau.setStyleSheet("font-size: 18px; font-weight: bold; color: #e74c3c;")
         
         sum_layout.addRow(QLabel("Reste Initial (Sans ce paiement) :"), self.lbl_summary_reste)
         sum_layout.addRow(QLabel("Paiement + Remise Modifiés :"), self.lbl_summary_current)
@@ -598,11 +598,6 @@ class EditPaymentDialog(QDialog):
             QMessageBox.warning(self, "Erreur", "Aucun article actif avec prix et poids restants n'est disponible pour calculer la remise.")
             return
 
-        payment_value_da = max(0.0, self.inp_da.value() + self.inp_tpe.value())
-        if payment_value_da <= 0:
-            QMessageBox.warning(self, "Erreur", "Veuillez saisir d'abord la valeur du versement à calculer.")
-            return
-
         from ui.tools.virtual_numpad import VirtualNumpad
         pad = VirtualNumpad(
             title=f"Saisir le prix/g (actuel: {current_ppg:,.2f} DA/g)",
@@ -616,8 +611,7 @@ class EditPaymentDialog(QDialog):
             value = pad.get_value()
             if value:
                 target_ppg = min(max(0.0, float(value)), current_ppg)
-                payment_weight = min(available_weight, payment_value_da / current_ppg)
-                remise_value = max(0.0, (current_ppg - target_ppg) * payment_weight)
+                remise_value = max(0.0, (current_ppg - target_ppg) * available_weight)
                 self.inp_remise.setValue(remise_value)
     def auto_calculate_poids_deduit(self):
         """مساعد في الحساب: يكتب تلقائياً الوزن المقتنى بالجرام ويسمح للمستخدم بالتعديل اليدوي كأداة مساعدة"""
@@ -656,9 +650,9 @@ class EditPaymentDialog(QDialog):
         nouveau_reste_da = max(0.0, base_amount - (current_pay + remise))
         nouveau_reste_g = max(0.0, base_weight - poids_deduit)
         
-        self.lbl_summary_reste.setText(f"{base_weight:,.2f} g  (Estimé: {base_amount:,.2f} DA)")
+        self.lbl_summary_reste.setText(f"{base_weight:,.2f} g")
         self.lbl_summary_current.setText(f"{(current_pay + remise):,.2f} DA  [Remise: {remise:,.2f} DA ({remise_pct:.1f}%)]")
-        self.lbl_summary_nouveau.setText(f"{nouveau_reste_g:,.2f} g  (Estimé: {nouveau_reste_da:,.2f} DA)")
+        self.lbl_summary_nouveau.setText(f"{nouveau_reste_g:,.2f} g")
 
 
     def _populate_target_combo(self):
@@ -1398,17 +1392,27 @@ class VersementsView(QWidget):
             return
 
         item_type = str(data.get("item_type") or "WEIGHT").upper()
-        reserved_quantity = (
-            max(1, int(data.get("reserved_quantity") or 1))
-            if item_type == "PIECE" else 1
-        )
-        item_weight = float(data.get("weight") or 0)
+        item_qty = int(data.get("quantity") or 1)
+        
+        if item_type == "PIECE":
+            reserved_quantity = max(1, int(data.get("reserved_quantity") or 1))
+            cart_sold_weight = 0.0
+        else:
+            reserved_quantity = 1
+            original_weight = float(data.get("weight") or 0)
+            if item_qty > 1:
+                cart_sold_weight = round(original_weight / item_qty, 3)
+                remaining_w = float(data.get("remaining_weight") if data.get("remaining_weight") is not None else original_weight)
+                cart_sold_weight = min(cart_sold_weight, remaining_w)
+            else:
+                cart_sold_weight = float(data.get("remaining_weight") if data.get("remaining_weight") is not None else original_weight)
+                
         cart_items = [{
             'id': data.get("inventory_id"),
             'item_type': item_type,
             'barcode': data.get("barcode", ""),
             'name': data.get("designation", "Article Versement"),
-            'cart_sold_weight': item_weight if item_type == "WEIGHT" else 0.0,
+            'cart_sold_weight': cart_sold_weight,
             'cart_sold_qty': reserved_quantity,
             'cart_unit_price': price / reserved_quantity if item_type == "PIECE" else price,
             'cart_line_total': price,

@@ -203,7 +203,7 @@ class MainWindowAppearanceMixin:
         }
         atelier_item = {
             "key": "nav_atelier",
-            "label": "Atelier & Travaux",
+            "label": "Réparation",
             "icon": "fa5s.tools",
             "page_id": 17
         }

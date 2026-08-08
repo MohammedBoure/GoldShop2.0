@@ -8,7 +8,7 @@ except ImportError:
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, 
     QPushButton, QLineEdit, QSizePolicy, QApplication,
-    QTextEdit, QPlainTextEdit, QAbstractSpinBox, QWidget, QComboBox
+    QTextEdit, QPlainTextEdit, QAbstractSpinBox, QWidget, QComboBox, QStackedWidget
 )
 from PySide6.QtCore import Qt, QTimer, QEvent, QObject
 from PySide6.QtGui import QKeyEvent
@@ -332,46 +332,69 @@ class VirtualKeyboardDialog(QDialog):
 
         layout.addLayout(top_row)
 
-        keys_layout = QVBoxLayout(); keys_layout.setSpacing(4)
-        rows = [
-            ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '_'],
-            ['A', 'Z', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
-            ['Q', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'M'],
-            ['W', 'X', 'C', 'V', 'B', 'N', '.', ',', '?', '!']
-        ]
+        self.stacked_widget = QStackedWidget()
+        layout.addWidget(self.stacked_widget, stretch=1)
 
         btn_style = "QPushButton { background-color: white; border: 1px solid #dcdde1; border-radius: 6px; font-size: 18px; font-weight: bold; color: #2c3e50; } QPushButton:pressed { background-color: #bdc3c7; }"
 
-        for row_chars in rows:
-            row_layout = QHBoxLayout(); row_layout.setSpacing(4)
-            if row_chars[0] == 'A': row_layout.addSpacing(20)
-            elif row_chars[0] == 'Q': row_layout.addSpacing(40)
-            elif row_chars[0] == 'W': row_layout.addSpacing(60)
-
-            for char in row_chars:
-                btn = QPushButton(char.lower() if char.isalpha() else char)
-                btn.setProperty("is_vkb", True)
-                btn.setFocusPolicy(Qt.NoFocus) 
-                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-                
-                # Add a minimum width to prevent horizontal squishing
-                btn.setMinimumHeight(38) 
-                btn.setMinimumWidth(35) 
-                
-                btn.setStyleSheet(btn_style)
-                btn.clicked.connect(lambda checked, c=char: self.add_char(c))
-                if char.isalpha(): self.letter_buttons.append((btn, char)) 
-                row_layout.addWidget(btn)
+        def create_page(rows, is_letters=False):
+            page = QWidget()
+            page_layout = QVBoxLayout(page)
+            page_layout.setSpacing(4)
+            page_layout.setContentsMargins(0, 0, 0, 0)
             
-            # row_layout.addStretch()  <--- REMOVE OR COMMENT THIS OUT
-            keys_layout.addLayout(row_layout)
+            for row_chars in rows:
+                row_layout = QHBoxLayout(); row_layout.setSpacing(4)
+                if row_chars[0] in ('Q', '÷'): row_layout.addSpacing(20)
+                elif row_chars[0] in ('A', '€'): row_layout.addSpacing(40)
+                elif row_chars[0] in ('Z', '°'): row_layout.addSpacing(60)
+
+                for char in row_chars:
+                    btn = QPushButton(char.lower() if char.isalpha() and is_letters else char)
+                    btn.setProperty("is_vkb", True)
+                    btn.setFocusPolicy(Qt.NoFocus) 
+                    btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                    btn.setMinimumHeight(38) 
+                    btn.setMinimumWidth(35) 
+                    btn.setStyleSheet(btn_style)
+                    btn.clicked.connect(lambda checked, c=char: self.add_char(c))
+                    if is_letters and char.isalpha(): self.letter_buttons.append((btn, char)) 
+                    row_layout.addWidget(btn)
+                page_layout.addLayout(row_layout)
+            return page
+
+        rows_letters = [
+            ['`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='],
+            ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '[', ']', '\\'],
+            ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';', '\''],
+            ['Z', 'X', 'C', 'V', 'B', 'N', 'M', ',', '.', '/']
+        ]
+
+        rows_symbols = [
+            ['~', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+'],
+            ['÷', '×', '−', '+', '=', '≠', '≈', '∞', '√', 'µ', '{', '}', '|'],
+            ['€', '£', '¥', '¢', '©', '®', '™', '✓', '✗', ':', '"'],
+            ['°', '•', '·', '¿', '¡', '§', '¶', '<', '>', '?']
+        ]
+
+        page_letters = create_page(rows_letters, is_letters=True)
+        page_symbols = create_page(rows_symbols, is_letters=False)
+        self.stacked_widget.addWidget(page_letters)
+        self.stacked_widget.addWidget(page_symbols)
+
         bottom_row = QHBoxLayout(); bottom_row.setSpacing(4)
 
-        self.btn_shift = QPushButton(" Maj")
+        self.btn_toggle_symb = QPushButton(" &%#")
+        self.btn_toggle_symb.setProperty("is_vkb", True); self.btn_toggle_symb.setFocusPolicy(Qt.NoFocus); self.btn_toggle_symb.setMinimumHeight(40)
+        self.btn_toggle_symb.setStyleSheet("background-color: #34495e; color: white; font-weight: bold; border-radius: 6px;")
+        self.btn_toggle_symb.clicked.connect(self.toggle_symbols)
+        bottom_row.addWidget(self.btn_toggle_symb, stretch=1)
+
+        self.btn_shift = QPushButton(" Caps")
         self.btn_shift.setProperty("is_vkb", True); self.btn_shift.setFocusPolicy(Qt.NoFocus); self.btn_shift.setMinimumHeight(40)
         self.btn_shift.setStyleSheet("background-color: #34495e; color: white; font-weight: bold; border-radius: 6px;")
         self.btn_shift.clicked.connect(self.toggle_shift)
-        bottom_row.addWidget(self.btn_shift, stretch=2)
+        bottom_row.addWidget(self.btn_shift, stretch=1)
 
         btn_left = QPushButton(" ←")
         btn_left.setProperty("is_vkb", True); btn_left.setFocusPolicy(Qt.NoFocus); btn_left.setMinimumHeight(40)
@@ -382,7 +405,7 @@ class VirtualKeyboardDialog(QDialog):
         btn_space = QPushButton("Espace")
         btn_space.setProperty("is_vkb", True); btn_space.setFocusPolicy(Qt.NoFocus); btn_space.setMinimumHeight(40)
         btn_space.setStyleSheet(btn_style); btn_space.clicked.connect(lambda: self.add_char(" "))
-        bottom_row.addWidget(btn_space, stretch=4)
+        bottom_row.addWidget(btn_space, stretch=3)
 
         btn_right = QPushButton(" →")
         btn_right.setProperty("is_vkb", True); btn_right.setFocusPolicy(Qt.NoFocus); btn_right.setMinimumHeight(40)
@@ -404,8 +427,7 @@ class VirtualKeyboardDialog(QDialog):
         btn_enter.clicked.connect(self.simulate_enter)
         bottom_row.addWidget(btn_enter, stretch=2)
 
-        keys_layout.addLayout(bottom_row)
-        layout.addLayout(keys_layout, stretch=1)
+        layout.addLayout(bottom_row)
 
         self.action_row = QHBoxLayout()
         self.btn_cancel = QPushButton(" Fermer")
@@ -421,6 +443,17 @@ class VirtualKeyboardDialog(QDialog):
         self.action_row.addWidget(self.btn_cancel)
         self.action_row.addWidget(self.btn_accept)
         layout.addLayout(self.action_row)
+
+    def toggle_symbols(self):
+        idx = self.stacked_widget.currentIndex()
+        if idx == 0:
+            self.stacked_widget.setCurrentIndex(1)
+            self.btn_toggle_symb.setText(" ABC")
+            self.btn_shift.setEnabled(False)
+        else:
+            self.stacked_widget.setCurrentIndex(0)
+            self.btn_toggle_symb.setText(" &%#")
+            self.btn_shift.setEnabled(True)
 
     def move_left(self):
         target = self.get_target()

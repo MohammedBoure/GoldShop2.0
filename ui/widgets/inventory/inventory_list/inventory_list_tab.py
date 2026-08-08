@@ -93,8 +93,13 @@ class InventoryListTab(QWidget):
                 self.btn_weight_filter.setStyleSheet("background-color: #8e44ad; color: white; font-weight: bold; padding: 5px 10px; border-radius: 4px;")
             self.reset_and_load()
 
-    def _build_toolbar(self) -> QHBoxLayout:
-        toolbar = QHBoxLayout()
+    def _build_toolbar(self) -> QVBoxLayout:
+        main_toolbar = QVBoxLayout()
+        main_toolbar.setContentsMargins(0, 0, 0, 0)
+        main_toolbar.setSpacing(10)
+        
+        row1 = QHBoxLayout()
+        row2 = QHBoxLayout()
 
         # حاوية البحث التي تجمع حقل البحث مع زر الكيبورد
         search_container = QWidget()
@@ -123,7 +128,7 @@ class InventoryListTab(QWidget):
         search_layout.addWidget(self.search_input)
         search_layout.addWidget(self.btn_keyboard)
         
-        toolbar.addWidget(search_container, 2)
+        row1.addWidget(search_container, 2)
 
         # فلتر الحالات (متاح، محجوز...)
         self.combo_status_filter = QComboBox()
@@ -133,13 +138,13 @@ class InventoryListTab(QWidget):
         self.combo_status_filter.addItem("Partiellement Vendu (محجوز جزئياً)", "Partially_Sold")
         self.combo_status_filter.addItem("Réservé (محجوز كلياً)", "Reserved")
         self.combo_status_filter.currentIndexChanged.connect(self.reset_and_load)
-        toolbar.addWidget(self.combo_status_filter, 1)
+        row1.addWidget(self.combo_status_filter, 1)
 
         self.filter_category = QComboBox()
         self.filter_category.setFixedHeight(35)
         self.filter_category.addItem("Toutes Catégories", None)
         self.filter_category.currentIndexChanged.connect(self.reset_and_load)
-        toolbar.addWidget(self.filter_category, 1)
+        row1.addWidget(self.filter_category, 1)
 
         # 🟢 إضافة زر فلتر الوزن الجديد
         self.btn_weight_filter = QPushButton(" Filtre Poids")
@@ -147,21 +152,21 @@ class InventoryListTab(QWidget):
         self.btn_weight_filter.setIcon(qta.icon("fa5s.balance-scale", color="#8e44ad"))
         self.btn_weight_filter.setStyleSheet("color: #8e44ad; font-weight: bold; border: 1px solid #8e44ad; padding: 5px 10px; border-radius: 4px;")
         self.btn_weight_filter.clicked.connect(self._open_weight_filter_dialog)
-        toolbar.addWidget(self.btn_weight_filter)
+        row1.addWidget(self.btn_weight_filter)
 
         self.btn_select_visible = QPushButton("Tout selectionner")
         self.btn_select_visible.setFixedHeight(35)
         self.btn_select_visible.setIcon(qta.icon("fa5s.check-square", color="#16a085"))
         self.btn_select_visible.setStyleSheet("color: #16a085; font-weight: bold; border: 1px solid #16a085; padding: 5px 10px; border-radius: 4px;")
         self.btn_select_visible.clicked.connect(self.toggle_visible_selection)
-        toolbar.addWidget(self.btn_select_visible)
+        row2.addWidget(self.btn_select_visible)
 
         self.btn_bulk_print = QPushButton("Imprimer selection")
         self.btn_bulk_print.setFixedHeight(35)
         self.btn_bulk_print.setIcon(qta.icon("fa5s.print", color="#2c3e50"))
         self.btn_bulk_print.setEnabled(False)
         self.btn_bulk_print.clicked.connect(self.print_selected_items)
-        toolbar.addWidget(self.btn_bulk_print)
+        row2.addWidget(self.btn_bulk_print)
 
         self.btn_bulk_delete = QPushButton("Supprimer selection")
         self.btn_bulk_delete.setFixedHeight(35)
@@ -169,38 +174,43 @@ class InventoryListTab(QWidget):
         self.btn_bulk_delete.setEnabled(False)
         self.btn_bulk_delete.setStyleSheet("color: #c0392b; font-weight: bold; border: 1px solid #c0392b; padding: 5px 10px; border-radius: 4px;")
         self.btn_bulk_delete.clicked.connect(self.delete_selected_items)
-        toolbar.addWidget(self.btn_bulk_delete)
+        row2.addWidget(self.btn_bulk_delete)
 
         self.lbl_bulk_count = QLabel("0 selection")
         self.lbl_bulk_count.setStyleSheet("color: #16a085; font-size: 12px; font-weight: bold;")
-        toolbar.addWidget(self.lbl_bulk_count)
+        row2.addWidget(self.lbl_bulk_count)
+        
+        row2.addStretch()
 
         self.btn_update_price = QPushButton("Maj Cours Or")
         self.btn_update_price.setFixedHeight(35)
         self.btn_update_price.setIcon(qta.icon("fa5s.chart-line", color="#d35400"))
         self.btn_update_price.setStyleSheet("color: #d35400; font-weight: bold; border: 1px solid #d35400; padding: 5px 10px; border-radius: 4px;")
         self.btn_update_price.clicked.connect(self._open_price_update_dialog)
-        toolbar.addWidget(self.btn_update_price)
+        row2.addWidget(self.btn_update_price)
 
         self.btn_update_margin = QPushButton("Marge Poids")
         self.btn_update_margin.setFixedHeight(35)
         self.btn_update_margin.setIcon(qta.icon("fa5s.percent", color="#2980b9"))
         self.btn_update_margin.setStyleSheet("color: #2980b9; font-weight: bold; border: 1px solid #2980b9; padding: 5px 10px; border-radius: 4px;")
         self.btn_update_margin.clicked.connect(self._open_margin_update_dialog)
-        toolbar.addWidget(self.btn_update_margin)
+        row2.addWidget(self.btn_update_margin)
 
         self.chk_show_zero = QCheckBox("Afficher Stock Épuisé")
         self.chk_show_zero.setStyleSheet("font-weight: bold; color: #c0392b;")
         self.chk_show_zero.stateChanged.connect(self.reset_and_load)
-        toolbar.addWidget(self.chk_show_zero)
+        row1.addWidget(self.chk_show_zero)
 
         btn_refresh = QPushButton()
         btn_refresh.setFixedHeight(35)
         btn_refresh.setIcon(qta.icon("fa5s.sync-alt", color="#2c3e50"))
         btn_refresh.clicked.connect(self.refresh_data)
-        toolbar.addWidget(btn_refresh)
+        row1.addWidget(btn_refresh)
+        
+        main_toolbar.addLayout(row1)
+        main_toolbar.addLayout(row2)
 
-        return toolbar
+        return main_toolbar
 
     def _build_table(self) -> QTableWidget:
         self.table = QTableWidget()
@@ -379,24 +389,28 @@ class InventoryListTab(QWidget):
             self.table.setItem(row, self.COL_METAL,
                 QTableWidgetItem(str(item.get('metal_type_name') or "-")))
 
-            # Poids U.
+            # Poids / Qté Init
             w_val = float(item.get('weight') or 0)
-            w_item = SortableTableWidgetItem(
-                f"{w_val:.2f} g" if i_type == 'WEIGHT' else "-", w_val
-            )
+            q_val = int(item.get('quantity') or 1)
+            init_str = f"{w_val:.2f} g" if i_type == 'WEIGHT' else f"{q_val} pcs"
+            init_sort_val = w_val if i_type == 'WEIGHT' else float(q_val)
+            w_item = SortableTableWidgetItem(init_str, init_sort_val)
             w_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, self.COL_WEIGHT, w_item)
 
-            # Pds Reste
+            # Pds / Qté Reste
             rw_val = float(item.get('remaining_weight') or 0)
-            rw_item = SortableTableWidgetItem(
-                f"{rw_val:.2f} g" if i_type == 'WEIGHT' else "-", rw_val
-            )
+            rq_val = int(item.get('remaining_quantity') if item.get('remaining_quantity') is not None else q_val)
+            rem_str = f"{rw_val:.2f} g" if i_type == 'WEIGHT' else f"{rq_val} pcs"
+            rem_sort_val = rw_val if i_type == 'WEIGHT' else float(rq_val)
+            
+            rw_item = SortableTableWidgetItem(rem_str, rem_sort_val)
             rw_item.setTextAlignment(Qt.AlignCenter)
-            if i_type == 'WEIGHT' and rw_val <= 0:
+            
+            if (rw_val <= 0 if i_type == 'WEIGHT' else rq_val <= 0):
                 rw_item.setBackground(QColor("#ffebee"))
                 rw_item.setForeground(QColor("#c0392b"))
-            elif i_type == 'WEIGHT':
+            else:
                 rw_item.setForeground(QColor("#27ae60"))
                 rw_item.setFont(QFont("Arial", 10, QFont.Bold))
             self.table.setItem(row, self.COL_REM_W, rw_item)
@@ -439,13 +453,21 @@ class InventoryListTab(QWidget):
 
             # Statut
             status = str(item.get('status') or 'Available')
-            st_item = QTableWidgetItem(status)
-            if status == 'Partially_Sold':
+            st_item = QTableWidgetItem()
+            st_item.setTextAlignment(Qt.AlignCenter)
+            st_item.setFont(QFont("Arial", 10, QFont.Bold))
+            
+            has_stock = (rw_val > 0) if i_type == 'WEIGHT' else (rq_val > 0)
+            
+            if status == 'Partially_Sold' or (status == 'Available' and ((i_type == 'WEIGHT' and rw_val < w_val) or (i_type == 'PIECE' and rq_val < q_val)) and has_stock):
+                st_item.setText("Partiellement Vendu")
                 st_item.setForeground(QColor("#d35400"))
-            elif status == 'Available' and rw_val > 0:
-                st_item.setForeground(QColor("green"))
+            elif (status == 'Available' or status == 'Reserved') and has_stock:
+                st_item.setText("Disponible" if status == 'Available' else "Réservé")
+                st_item.setForeground(QColor("green") if status == 'Available' else QColor("#8e44ad"))
             else:
-                st_item.setForeground(QColor("red"))
+                st_item.setText("Vendu")
+                st_item.setForeground(QColor("#c0392b"))
             self.table.setItem(row, self.COL_STATUS, st_item)
 
             # زر طباعة

@@ -543,63 +543,71 @@ class OrderDialog(QDialog):
             if idx_art >= 0: self.combo_artisan_dlg.setCurrentIndex(idx_art)
         grid.addWidget(self.combo_artisan_dlg, 1, 3)
 
-        # Ligne 2 : Poid (Poids en g) & date remis (avec Raccourcis UX Date)
-        lbl_poid = QLabel("Poid (g) :"); lbl_poid.setStyleSheet(LBL_STYLE); lbl_poid.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # Ligne 2 : Poid Aller & Poids Retour
+        lbl_poid = QLabel("Poid Aller (g) :"); lbl_poid.setStyleSheet(LBL_STYLE); lbl_poid.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(lbl_poid, 2, 0)
         
         self.inp_poids = QLineEdit(); self.inp_poids.setStyleSheet(STYLE_NUM); self.inp_poids.setAlignment(Qt.AlignCenter)
-        self.inp_poids.setPlaceholderText("Ex: 1.21 ou 7,11+3,87")
+        self.inp_poids.setPlaceholderText("Ex: 1.21")
         if self.record: self.inp_poids.setText(str(self.record.get('poid') or self.record.get('poids_entre_g') or ''))
         grid.addWidget(self._wrap_num(self.inp_poids), 2, 1)
 
-        lbl_date_remis = QLabel("date remis :"); lbl_date_remis.setStyleSheet(LBL_STYLE); lbl_date_remis.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        grid.addWidget(lbl_date_remis, 2, 2)
+        lbl_poids_retour = QLabel("Poids Retour (g) :"); lbl_poids_retour.setStyleSheet(LBL_STYLE); lbl_poids_retour.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(lbl_poids_retour, 2, 2)
+        
+        self.inp_poids_retour = QLineEdit(); self.inp_poids_retour.setStyleSheet(STYLE_NUM); self.inp_poids_retour.setAlignment(Qt.AlignCenter)
+        self.inp_poids_retour.setPlaceholderText("Ex: 1.15")
+        if self.record: self.inp_poids_retour.setText(str(self.record.get('poids_retour_g') or ''))
+        grid.addWidget(self._wrap_num(self.inp_poids_retour), 2, 3)
+
+        # Ligne 3 : Date Remis & Date Reçue
+        lbl_date_remis = QLabel("Date Remis :"); lbl_date_remis.setStyleSheet(LBL_STYLE); lbl_date_remis.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(lbl_date_remis, 3, 0)
         
         self.inp_date_remis = QLineEdit(); self.inp_date_remis.setStyleSheet(STYLE_DATE); self.inp_date_remis.setAlignment(Qt.AlignCenter)
         if self.record and self.record.get('date_remis'):
             self.inp_date_remis.setText(str(self.record.get('date_remis')))
         else:
             self.inp_date_remis.setText(QDate.currentDate().toString("yyyy-MM-dd"))
-        grid.addWidget(self._wrap_date_input(self.inp_date_remis), 2, 3)
+        grid.addWidget(self._wrap_date_input(self.inp_date_remis), 3, 1)
 
-        # Ligne 3 : Date Reçue & Date Sortie (avec Raccourcis UX Date)
         lbl_date_recue = QLabel("Date Reçue :"); lbl_date_recue.setStyleSheet(LBL_STYLE); lbl_date_recue.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        grid.addWidget(lbl_date_recue, 3, 0)
+        grid.addWidget(lbl_date_recue, 3, 2)
         
         self.inp_date_recue = QLineEdit(); self.inp_date_recue.setStyleSheet(STYLE_DATE); self.inp_date_recue.setAlignment(Qt.AlignCenter)
         if self.record and self.record.get('date_recue'): self.inp_date_recue.setText(str(self.record.get('date_recue')))
-        grid.addWidget(self._wrap_date_input(self.inp_date_recue), 3, 1)
+        grid.addWidget(self._wrap_date_input(self.inp_date_recue), 3, 3)
 
+        # Ligne 4 : Date Sortie & Prix (Façon)
         lbl_date_sortie = QLabel("Date Sortie :"); lbl_date_sortie.setStyleSheet(LBL_STYLE); lbl_date_sortie.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        grid.addWidget(lbl_date_sortie, 3, 2)
+        grid.addWidget(lbl_date_sortie, 4, 0)
         
         self.inp_date_sortie = QLineEdit(); self.inp_date_sortie.setStyleSheet(STYLE_DATE); self.inp_date_sortie.setAlignment(Qt.AlignCenter)
         if self.record and self.record.get('date_sortie'): self.inp_date_sortie.setText(str(self.record.get('date_sortie')))
-        grid.addWidget(self._wrap_date_input(self.inp_date_sortie), 3, 3)
+        grid.addWidget(self._wrap_date_input(self.inp_date_sortie), 4, 1)
 
-        # Ligne 4 : Prix (Façon Artisan) & Prix (Vente Client)
         lbl_prix = QLabel("Prix (Façon) :"); lbl_prix.setStyleSheet(LBL_STYLE); lbl_prix.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        grid.addWidget(lbl_prix, 4, 0)
+        grid.addWidget(lbl_prix, 4, 2)
         
         self.inp_prix = QLineEdit(); self.inp_prix.setStyleSheet(STYLE_NUM); self.inp_prix.setAlignment(Qt.AlignCenter)
         if self.record: self.inp_prix.setText(str(self.record.get('cout_artisan_da') or self.record.get('prix', '')))
-        grid.addWidget(self._wrap_num(self.inp_prix), 4, 1)
+        grid.addWidget(self._wrap_num(self.inp_prix), 4, 3)
 
+        # Ligne 5 : Prix (Client) & Diff (Bénéfice)
         lbl_vente = QLabel("Prix (Client) :"); lbl_vente.setStyleSheet(LBL_STYLE); lbl_vente.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        grid.addWidget(lbl_vente, 4, 2)
+        grid.addWidget(lbl_vente, 5, 0)
         
         self.inp_vente = QLineEdit(); self.inp_vente.setStyleSheet(STYLE_NUM); self.inp_vente.setAlignment(Qt.AlignCenter)
         if self.record: self.inp_vente.setText(str(self.record.get('prix_vente_da') or self.record.get('vente', '')))
-        grid.addWidget(self._wrap_num(self.inp_vente), 4, 3)
+        grid.addWidget(self._wrap_num(self.inp_vente), 5, 1)
 
-        # Ligne 5 : Diff (Bénéfice)
         lbl_diff = QLabel("Diff (Bénéfice) :"); lbl_diff.setStyleSheet("font-size: 15px; font-weight: bold; color: #1e8449;"); lbl_diff.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        grid.addWidget(lbl_diff, 5, 0, 1, 2)
+        grid.addWidget(lbl_diff, 5, 2)
         
         self.inp_diff = QLineEdit(); self.inp_diff.setStyleSheet(STYLE_RESULT); self.inp_diff.setAlignment(Qt.AlignCenter)
         self.inp_diff.setReadOnly(True)
         if self.record: self.inp_diff.setText(str(self.record.get('diff', '')))
-        grid.addWidget(self._wrap_num(self.inp_diff), 5, 2, 1, 2)
+        grid.addWidget(self._wrap_num(self.inp_diff), 5, 3)
 
         # Ligne 6 : Observations
         lbl_obs = QLabel("Observation :"); lbl_obs.setStyleSheet(LBL_STYLE); lbl_obs.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -662,7 +670,7 @@ class OrderDialog(QDialog):
             "obj": self.inp_obj.text().strip(),
             "poid": self.inp_poids.text().strip(),
             "poids_entre_g": self.inp_poids.text().strip(),
-            "poids_retour_g": "",
+            "poids_retour_g": self.inp_poids_retour.text().strip(),
             "date_remis": self.inp_date_remis.text().strip(),
             "date_recue": self.inp_date_recue.text().strip(),
             "date_sortie": self.inp_date_sortie.text().strip(),
@@ -710,12 +718,12 @@ class ArtisanWorkView(QWidget):
         # Onglet 1 : Suivi Réception & Atelier
         self.tab_atelier = QWidget()
         self.setup_atelier_tab()
-        self.tabs.addTab(self.tab_atelier, "📋 Suivi Général de l'Atelier (Tableau Production)")
+        self.tabs.addTab(self.tab_atelier, "📋 Réparations")
 
         # Onglet 2 : Répertoire des Artisans
         self.tab_artisans = QWidget()
         self.setup_artisans_tab()
-        self.tabs.addTab(self.tab_artisans, "👨‍د Répertoire Artisans & Feuilles de Production")
+        self.tabs.addTab(self.tab_artisans, "👨‍🔧 Artisans")
 
         self.tabs.currentChanged.connect(self.on_tab_changed)
         main_layout.addWidget(self.tabs)
@@ -765,10 +773,10 @@ class ArtisanWorkView(QWidget):
 
         layout.addLayout(tools_lay)
 
-        # Tableau Général de Production (13 Colonnes Conformes au Modèle Réel)
-        self.table_atelier = QTableWidget(0, 13)
+        # Tableau Général de Production (14 Colonnes Conformes au Modèle Réel)
+        self.table_atelier = QTableWidget(0, 14)
         self.table_atelier.setHorizontalHeaderLabels([
-            "numero", "Nom", "Tel :", "date remis", "Obj", "Poid", 
+            "numero", "Nom", "Tel :", "date remis", "Obj", "Poids", "Poids R.",
             "Date Reçue", "Date Sortie", "Prix (Façon)", "Prix (Client)", "Diff", "Statut", "Artisan"
         ])
         self.table_atelier.setStyleSheet(EXCEL_STYLE)
@@ -786,14 +794,15 @@ class ArtisanWorkView(QWidget):
         hh.setSectionResizeMode(2, QHeaderView.ResizeToContents) # Tel :
         hh.setSectionResizeMode(3, QHeaderView.ResizeToContents) # date remis
         hh.setSectionResizeMode(4, QHeaderView.Stretch)          # Obj
-        hh.setSectionResizeMode(5, QHeaderView.ResizeToContents) # Poid
-        hh.setSectionResizeMode(6, QHeaderView.ResizeToContents) # Date Reçue
-        hh.setSectionResizeMode(7, QHeaderView.ResizeToContents) # Date Sortie
-        hh.setSectionResizeMode(8, QHeaderView.ResizeToContents) # Prix Artisan
-        hh.setSectionResizeMode(9, QHeaderView.ResizeToContents) # Prix Client
-        hh.setSectionResizeMode(10, QHeaderView.ResizeToContents)# Diff
-        hh.setSectionResizeMode(11, QHeaderView.ResizeToContents)# Statut
-        hh.setSectionResizeMode(12, QHeaderView.ResizeToContents)# Artisan
+        hh.setSectionResizeMode(5, QHeaderView.ResizeToContents) # Poids
+        hh.setSectionResizeMode(6, QHeaderView.ResizeToContents) # Poids R.
+        hh.setSectionResizeMode(7, QHeaderView.ResizeToContents) # Date Reçue
+        hh.setSectionResizeMode(8, QHeaderView.ResizeToContents) # Date Sortie
+        hh.setSectionResizeMode(9, QHeaderView.ResizeToContents) # Prix Artisan
+        hh.setSectionResizeMode(10, QHeaderView.ResizeToContents) # Prix Client
+        hh.setSectionResizeMode(11, QHeaderView.ResizeToContents)# Diff
+        hh.setSectionResizeMode(12, QHeaderView.ResizeToContents)# Statut
+        hh.setSectionResizeMode(13, QHeaderView.ResizeToContents)# Artisan
 
         layout.addWidget(self.table_atelier)
 
@@ -913,6 +922,7 @@ class ArtisanWorkView(QWidget):
             date_remis = r.get('date_remis') or ""
             obj = r.get('obj') or ""
             poid = str(r.get('poid') or r.get('poids_entre_g') or '')
+            poids_r = str(r.get('poids_retour_g') or '')
             date_recue = r.get('date_recue') or ""
             date_sortie = r.get('date_sortie') or ""
 
@@ -925,7 +935,7 @@ class ArtisanWorkView(QWidget):
             artisan_name = r.get('artisan_name') or "Non assigné"
 
             values = [
-                numero, client_name, client_phone, date_remis, obj, poid,
+                numero, client_name, client_phone, date_remis, obj, poid, poids_r,
                 date_recue, date_sortie,
                 f"{prix_artisan:,.2f}" if prix_artisan else "",
                 f"{prix_client:,.2f}" if prix_client else "",
@@ -935,14 +945,14 @@ class ArtisanWorkView(QWidget):
 
             for col, val in enumerate(values):
                 item = QTableWidgetItem(str(val))
-                if col in [0, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12]:
+                if col in [0, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
                     item.setTextAlignment(Qt.AlignCenter)
                 
                 # Badges Couleur
-                if col == 10 and diff != 0:
+                if col == 11 and diff != 0:
                     item.setForeground(QBrush(QColor("#27ae60" if diff >= 0 else "#e74c3c")))
                     item.setFont(QFont("", 10, QFont.Bold))
-                elif col == 11:
+                elif col == 12:
                     item.setBackground(QBrush(QColor(st_bg)))
                     item.setForeground(QBrush(QColor(st_fg)))
                     item.setFont(QFont("", 10, QFont.Bold))

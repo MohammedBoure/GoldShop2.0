@@ -171,27 +171,33 @@ class InventoryWriteMixin:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT item_type, remaining_weight, remaining_quantity FROM Inventory WHERE id = %s", (item_id,))
+                cursor.execute("SELECT item_type, weight, remaining_weight, quantity, remaining_quantity FROM Inventory WHERE id = %s", (item_id,))
                 res = cursor.fetchone()
                 if not res: return False
 
-                item_type, rem_w, rem_q = res
-                new_status = 'Partially_Sold'
+                item_type, w, rem_w, q, rem_q = res
+                initial_q = int(q or 1)
                 
-                if item_type == 'WEIGHT':
-                    new_rem_w = float(rem_w or 0.0) - sold_weight
-                    if new_rem_w <= 0:
-                        new_rem_w = 0
-                        new_status = 'Sold'
-                    cursor.execute("UPDATE Inventory SET remaining_weight = %s, status = %s WHERE id = %s", 
-                                 (new_rem_w, new_status, item_id))
-                else:
-                    new_rem_q = int(rem_q or 0) - sold_qty
+                if item_type in ('PIECE', 'UNIT'):
+                    new_rem_q = int(rem_q if rem_q is not None else initial_q) - sold_qty
                     if new_rem_q <= 0:
                         new_rem_q = 0
                         new_status = 'Sold'
-                    cursor.execute("UPDATE Inventory SET remaining_quantity = %s, status = %s WHERE id = %s", 
-                                 (new_rem_q, new_status, item_id))
+                    elif new_rem_q < initial_q:
+                        new_status = 'Partially_Sold'
+                    else:
+                        new_status = 'Available'
+                    cursor.execute("UPDATE Inventory SET status = %s, remaining_quantity = %s WHERE id = %s", 
+                                 (new_status, new_rem_q, item_id))
+                else:
+                    new_rem_w = float(rem_w or 0.0) - sold_weight
+                    if new_rem_w <= 0.005:
+                        new_rem_w = 0.0
+                        new_status = 'Sold'
+                    else:
+                        new_status = 'Partially_Sold'
+                    cursor.execute("UPDATE Inventory SET status = %s, remaining_weight = %s WHERE id = %s", 
+                                 (new_status, new_rem_w, item_id))
                 
                 conn.commit()
                 return True
@@ -203,17 +209,20 @@ class InventoryWriteMixin:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT COUNT(*) FROM SupplierOperationLines WHERE inventory_id = %s",
-                    (item_id,),
-                )
-                linked = cursor.fetchone()
-                if linked and int(linked[0] or 0) > 0:
-                    logging.warning(
-                        "Rejected deletion of inventory item %s linked to a supplier receipt.",
-                        item_id,
+                try:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM SupplierOperationLines WHERE inventory_id = %s",
+                        (item_id,),
                     )
-                    return False
+                    linked = cursor.fetchone()
+                    if linked and int(linked[0] or 0) > 0:
+                        logging.warning(
+                            "Rejected deletion of inventory item %s linked to a supplier receipt.",
+                            item_id,
+                        )
+                        return False
+                except Exception:
+                    pass
                 cursor.execute(
                     "UPDATE InventoryCountItems SET inventory_id = NULL WHERE inventory_id = %s",
                     (item_id,),

@@ -299,11 +299,16 @@ class SuppliersView(QWidget):
 
             # Check for color highlight
             is_red = False
+            is_blue = False
+            
             if "[COLOR:RED]" in description:
                 is_red = True
                 description = description.replace("[COLOR:RED]", "").strip()
-            elif signed_weight < 0 or signed_amount < 0 or "régler" in description.lower() or "regler" in description.lower():
+            elif "régler" in description.lower() or "regler" in description.lower():
                 is_red = True
+                
+            if "alliage" in description.lower():
+                is_blue = True
 
             # Items
             item_date = QTableWidgetItem(str(op_date))
@@ -319,13 +324,21 @@ class SuppliersView(QWidget):
             item_montant.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             item_obs.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-            # Standard dark color for non-number columns
+            # Standard colors
             normal_dark = QColor("#1e293b")
             red_color = QColor("#dc2626")
             green_color = QColor("#16a34a")
+            blue_color = QColor("#0284c7")
 
+            # Row text coloring for Date, Afaçon, Obs
+            row_color = normal_dark
+            if is_red:
+                row_color = red_color
+            elif is_blue:
+                row_color = blue_color
+                
             for item in (item_date, item_afacon, item_obs):
-                item.setForeground(red_color if is_red else normal_dark)
+                item.setForeground(row_color)
 
             # Poids number coloring: Green (+), Red (-)
             if signed_weight < 0:

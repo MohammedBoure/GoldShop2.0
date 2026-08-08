@@ -166,7 +166,7 @@ class InventoryQueryMixin:
                 if not show_zero_stock:
                     base_query += f" AND {self._real_stock_condition('i')}"
 
-                if normalized_status == 'SELLABLE':
+                if normalized_status in ('SELLABLE', 'AVAILABLE'):
                     base_query += f" AND {sellable_stock_condition_sql('i')}"
                 elif normalized_status == 'IN_STOCK':
                     base_query += " AND i.status IN ('Available', 'Partially_Sold', 'Reserved')"

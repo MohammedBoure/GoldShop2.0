@@ -37,7 +37,7 @@ class MonthlySummaryView(QWidget):
         row1.addSpacing(20)
         self.btn_search = QPushButton(" Afficher le Tableau")
         self.btn_search.setIcon(qta.icon("fa5s.calendar-alt", color="white"))
-        self.btn_search.setStyleSheet("background-color: #6a1b9a; color: white; padding: 6px 15px; border-radius: 4px; font-weight: bold; font-size: 14px;")
+        self.btn_search.setStyleSheet("background-color: #0f8f83; color: white; padding: 6px 15px; border-radius: 4px; font-weight: bold; font-size: 14px;")
         self.btn_search.clicked.connect(self.load_data)
         row1.addWidget(self.btn_search)
         row1.addStretch()
@@ -46,7 +46,7 @@ class MonthlySummaryView(QWidget):
 
         # --- عنوان الصفحة ---
         self.lbl_main_title = QLabel("Recettes Du Mois")
-        self.lbl_main_title.setStyleSheet("font-size: 20px; font-weight: bold; color: white; background-color: #6a1b9a; padding: 10px; border-radius: 5px;")
+        self.lbl_main_title.setStyleSheet("font-size: 20px; font-weight: bold; color: white; background-color: #0f8f83; padding: 10px; border-radius: 5px;")
         self.lbl_main_title.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.lbl_main_title)
 
@@ -62,7 +62,7 @@ class MonthlySummaryView(QWidget):
                 background-color: white; gridline-color: black; font-size: 14px; font-weight: bold;
             }
             QHeaderView::section {
-                background-color: #6a1b9a; color: white; font-weight: bold; font-size: 14px; padding: 8px; border: 1px solid #4a148c;
+                background-color: #0f8f83; color: white; font-weight: bold; font-size: 14px; padding: 8px; border: 1px solid #0d7a70;
             }
             QTableWidget::item {
                 border-bottom: 1px solid #bdc3c7;
@@ -214,30 +214,32 @@ class MonthlySummaryView(QWidget):
                         sum_benefice += benefice
 
                         cols = [
-                            f"{ps:.2f}" if ps else "0",
-                            f"{recette:,.0f}" if recette else "0",
-                            f"{oc:.2f}" if oc else "0",
-                            f"{tpe:,.0f}" if tpe else "0",
-                            f"{euro:,.0f}" if euro else "0",
-                            f"{dollar:,.0f}" if dollar else "0",
-                            "Multi",
-                            f"{impos:.2f}" if impos else "0",
-                            f"{benefice:,.2f}" # الفائدة (Bénéfice)
+                            f"{ps:.2f}" if ps else "●",
+                            f"{recette:,.0f}" if recette else "●",
+                            f"{oc:.2f}" if oc else "●",
+                            f"{tpe:,.0f}" if tpe else "●",
+                            f"{euro:,.0f}" if euro else "●",
+                            f"{dollar:,.0f}" if dollar else "●",
+                            "Multi" if sum([ps, recette, oc, tpe, euro, dollar]) > 0 else "●",
+                            f"{impos:.2f}" if impos else "●",
+                            f"{benefice:,.2f}" if benefice != 0 else "●"
                         ]
                         
                         for col_idx, val in enumerate(cols, start=2):
                             item = QTableWidgetItem(val)
                             item.setTextAlignment(Qt.AlignCenter)
-                            if col_idx == 10:
-                                item.setForeground(QBrush(QColor("#27ae60" if benefice >= 0 else "#c0392b")))
+                            if val == "●":
+                                item.setForeground(QBrush(QColor("#e74c3c")))
+                            elif col_idx == 10:
+                                item.setForeground(QBrush(QColor("#27ae60" if benefice > 0 else "#c0392b")))
                             self.table.setItem(row_idx, col_idx, item)
 
                     else:
                         # حالة عدم وجود مبيعات في هذا اليوم (Repot)
                         for col_idx in range(2, 11):
-                            item = QTableWidgetItem("Repot" if col_idx != 10 else "-")
+                            item = QTableWidgetItem("●")
                             item.setTextAlignment(Qt.AlignCenter)
-                            item.setForeground(QBrush(QColor("red")))
+                            item.setForeground(QBrush(QColor("#e74c3c")))
                             self.table.setItem(row_idx, col_idx, item)
 
                 # --- إضافة السطر الأخير للمجاميع (Totals) ---

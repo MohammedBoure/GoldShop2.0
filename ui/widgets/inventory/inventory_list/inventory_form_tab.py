@@ -114,7 +114,11 @@ class InventoryFormTab(QWidget):
             lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #34495e;")
             vl.addWidget(lbl)
             vl.addWidget(widget)
-            return vl
+            
+            w = QWidget()
+            w.setLayout(vl)
+            w.lbl = lbl
+            return w
 
         # Barcode
         self.inp_barcode = QLineEdit()
@@ -237,30 +241,28 @@ class InventoryFormTab(QWidget):
         grid.addLayout(vbox("Désignation:", name_widget),       0, 1)
         grid.addLayout(vbox("Type d'Article:", self.combo_item_type), 0, 2)
         grid.addLayout(vbox("Catégorie:", self.combo_category), 1, 0)
-        grid.addLayout(vbox("Métal:", self.combo_metal),        1, 1)
-        grid.addLayout(vbox("Emplacement:", self.combo_location), 1, 2)
-        grid.addLayout(vbox("Fournisseur:", self.combo_supplier), 2, 0)
-        grid.addLayout(
-            vbox("Poids (g):", wrap_with_numpad(self, self.spin_weight, "Poids", allow_decimal=True)),
-            2,
-            1,
-        )
-        grid.addLayout(
+        self.wg_metal = vbox("Métal:", self.combo_metal)
+        grid.addWidget(self.wg_metal, 1, 1)
+        grid.addWidget(vbox("Emplacement:", self.combo_location), 1, 2)
+        grid.addWidget(vbox("Fournisseur:", self.combo_supplier), 2, 0)
+        
+        self.wg_weight = vbox("Poids (g):", wrap_with_numpad(self, self.spin_weight, "Poids", allow_decimal=True))
+        grid.addWidget(self.wg_weight, 2, 1)
+        
+        grid.addWidget(
             vbox("Quantité (pcs):", wrap_with_numpad(self, self.spin_qty, "Quantite", allow_decimal=False)),
             2,
             2,
         )
-        grid.addLayout(
-            vbox("Coût Métal (par g):", wrap_with_numpad(self, self.spin_metal_cost, "Cout metal", allow_decimal=True)),
-            3,
-            0,
-        )
-        grid.addLayout(
-            vbox("Coût Façon (par g):", wrap_with_numpad(self, self.spin_labor_cost, "Cout facon", allow_decimal=True)),
-            3,
-            1,
-        )
-        grid.addLayout(vbox("Marge Bénéfice:", margin_widget),  3, 2)
+        
+        self.wg_metal_cost = vbox("Coût Métal (par g):", wrap_with_numpad(self, self.spin_metal_cost, "Cout metal", allow_decimal=True))
+        grid.addWidget(self.wg_metal_cost, 3, 0)
+        
+        self.wg_labor_cost = vbox("Coût Façon (par g):", wrap_with_numpad(self, self.spin_labor_cost, "Cout facon", allow_decimal=True))
+        grid.addWidget(self.wg_labor_cost, 3, 1)
+        
+        self.wg_margin = vbox("Marge Bénéfice:", margin_widget)
+        grid.addWidget(self.wg_margin,  3, 2)
         grid.addLayout(
             vbox("Coût Total / Achat:", wrap_with_numpad(self, self.spin_total_cost, "Cout total", allow_decimal=True)),
             4,
@@ -412,9 +414,21 @@ class InventoryFormTab(QWidget):
 
     def toggle_type_fields(self):
         is_weight = self.combo_item_type.currentData() == "WEIGHT"
-        for w in (self.spin_weight, self.spin_metal_cost, self.spin_labor_cost,
-                  self.spin_profit_margin, self.combo_margin_type):
-            w.setEnabled(is_weight)
+        
+        # Hide or show specific blocks
+        self.wg_weight.setVisible(is_weight)
+        self.wg_labor_cost.setVisible(is_weight)
+        self.wg_metal.setVisible(is_weight)
+
+        if is_weight:
+            self.wg_metal_cost.lbl.setText("Coût Métal (par g):")
+            self.spin_metal_cost.setSuffix(" DA/g")
+            self.wg_margin.lbl.setText("Marge Bénéfice:")
+        else:
+            self.wg_metal_cost.lbl.setText("Prix d'Achat (Pièce):")
+            self.spin_metal_cost.setSuffix(" DA")
+            self.wg_margin.lbl.setText("Marge Bénéfice (Pièce):")
+
         self.spin_total_cost.setReadOnly(is_weight)
         self.spin_selling_price.setReadOnly(is_weight)
 
@@ -422,31 +436,33 @@ class InventoryFormTab(QWidget):
         if is_weight:
             self.spin_total_cost.setStyleSheet(base + "background-color: #ecf0f1; color: #7f8c8d;")
             self.spin_selling_price.setStyleSheet(base + "background-color: #d4efdf; color: #1e8449;")
-            self.calculate_totals()
         else:
             self.spin_total_cost.setStyleSheet(base + "background-color: #ffffff; color: #2c3e50;")
             self.spin_selling_price.setStyleSheet(base + "background-color: #ffffff; color: #27ae60;")
+        
+        self._update_margin_suffix()
+        self.calculate_totals()
 
     def _update_margin_suffix(self):
         if self.combo_margin_type.currentData() == "PERCENTAGE":
             self.spin_profit_margin.setSuffix(" %")
         else:
-            self.spin_profit_margin.setSuffix(" DA/g")
+            is_weight = self.combo_item_type.currentData() == "WEIGHT"
+            self.spin_profit_margin.setSuffix(" DA/g" if is_weight else " DA")
         self.calculate_totals()
 
     def calculate_totals(self):
-        if not hasattr(self, 'combo_item_type') or self.combo_item_type.currentData() == "PIECE":
-            return
-        w  = self.spin_weight.value()
+        is_weight = (not hasattr(self, 'combo_item_type') or self.combo_item_type.currentData() == "WEIGHT")
+        w  = self.spin_weight.value() if is_weight else 1.0
         mc = self.spin_metal_cost.value()
-        lc = self.spin_labor_cost.value()
+        lc = self.spin_labor_cost.value() if is_weight else 0.0
         margin = self.spin_profit_margin.value()
         margin_type = self.combo_margin_type.currentData()
 
         total_cost = (mc + lc) * w
-        profit_per_gram = (mc + lc) * (margin / 100.0) if margin_type == 'PERCENTAGE' else margin
+        profit_per_unit = total_cost * (margin / 100.0) if margin_type == 'PERCENTAGE' else margin
         self.spin_total_cost.setValue(total_cost)
-        self.spin_selling_price.setValue(total_cost + profit_per_gram * w)
+        self.spin_selling_price.setValue(total_cost + profit_per_unit * w)
 
     def generate_barcode(self):
         now = datetime.datetime.now()
@@ -496,16 +512,17 @@ class InventoryFormTab(QWidget):
             QMessageBox.warning(self, "Erreur", "Indiquez une quantite superieure a 0.")
             return
 
+        is_weight = self.combo_item_type.currentData() == "WEIGHT"
         data = {
             "barcode":            self.inp_barcode.text().strip() or None,
             "name":               name,
-            "item_type":          self.combo_item_type.currentData(),
             "category_id":        self.combo_category.currentData(),
-            "metal_type_id":      self.combo_metal.currentData(),
-            "weight":             self.spin_weight.value(),
+            "metal_type_id":      self.combo_metal.currentData() if is_weight else None,
+            "item_type":          self.combo_item_type.currentData(),
+            "weight":             self.spin_weight.value() if is_weight else 1.0,
             "quantity":           self.spin_qty.value(),
-            "metal_cost_per_gram": self.spin_metal_cost.value(),
-            "labor_cost_per_gram": self.spin_labor_cost.value(),
+            "metal_cost_per_gram":self.spin_metal_cost.value(),
+            "labor_cost_per_gram":self.spin_labor_cost.value() if is_weight else 0.0,
             "profit_margin":      self.spin_profit_margin.value(),
             "margin_type":        self.combo_margin_type.currentData(),
             "total_cost":         self.spin_total_cost.value(),

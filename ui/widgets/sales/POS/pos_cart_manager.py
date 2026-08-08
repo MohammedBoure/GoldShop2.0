@@ -68,15 +68,21 @@ class POSCartManager:
             unit_price_per_gram = metal_cost + labor + profit_per_gram
             price_per_piece = unit_price_per_gram * unit_weight
             
+            rem_q = int(cart_item.get('remaining_quantity') or cart_item.get('quantity') or 1)
+            if rem_q > 1:
+                default_sold_weight = round(rem_weight / rem_q, 3)
+            else:
+                default_sold_weight = rem_weight
+                
             # حساب الإجمالي باستخدام السعر الحالي
-            cart_item['cart_line_total'] = unit_price_per_gram * rem_weight
+            cart_item['cart_line_total'] = unit_price_per_gram * default_sold_weight
             
-            cart_item['cart_max_qty'] = 1
+            cart_item['cart_max_qty'] = rem_q
             cart_item['cart_max_weight'] = rem_weight
             cart_item['cart_sold_qty'] = 1
             cart_item['cart_unit_weight'] = unit_weight
             cart_item['cart_original_weight'] = original_weight
-            cart_item['cart_sold_weight'] = rem_weight
+            cart_item['cart_sold_weight'] = default_sold_weight
             cart_item['cart_unit_price'] = price_per_piece
             
             # إزالة أي أثر للسعر القديم

@@ -57,7 +57,7 @@ DEFAULT_SIDEBAR_ITEMS = [
     {"page_id": 0, "key": "nav_dashboard", "label": "Tableau de Bord", "icon": "fa5s.tachometer-alt"},
     {"page_id": 1, "key": "nav_inventory", "label": "Stock", "icon": "fa5s.ring"},
     {"page_id": 2, "key": "nav_sales", "label": "Point de Vente (POS)", "icon": "fa5s.cash-register"},
-    {"page_id": 17, "key": "nav_atelier", "label": "Atelier & Travaux", "icon": "fa5s.tools"},
+    {"page_id": 17, "key": "nav_atelier", "label": "Réparation", "icon": "fa5s.tools"},
     {"page_id": 19, "key": "nav_official_suppliers", "label": "Fournisseurs", "icon": "fa5s.truck"},
     {"page_id": 6, "key": "nav_data", "label": "Donnees de Base", "icon": "fa5s.database"},
     {"page_id": 7, "key": "nav_settings", "label": "Parametres", "icon": "fa5s.cog"},

@@ -181,7 +181,7 @@ class MainWindowPagesMixin:
 
         elif page_id == 17:
             from ui.widgets.artisan_work.artisan_work_view import ArtisanWorkView
-            widget = self._scope_widget(ArtisanWorkView(self.data_manager), "nav_atelier", "Atelier & Travaux")
+            widget = self._scope_widget(ArtisanWorkView(self.data_manager), "nav_atelier", "Réparation")
 
         elif page_id == 19:
             from ui.widgets.suppliers.suppliers_view import SuppliersView
