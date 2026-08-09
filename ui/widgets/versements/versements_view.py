@@ -4,7 +4,7 @@ import os
 import json
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget,
-    QTableWidgetItem, QHeaderView, QLabel, QLineEdit, QComboBox,
+    QTableWidgetItem, QHeaderView, QStyledItemDelegate, QLabel, QLineEdit, QComboBox,
     QMenu, QMessageBox, QDialog, QAbstractScrollArea, QFormLayout,
     QDoubleSpinBox, QApplication, QGroupBox, QCompleter
 )
@@ -29,6 +29,19 @@ from ui.widgets.versements.invoice_note_selector import (
     selected_custom_note,
 )
 
+
+
+class VersementTableDelegate(QStyledItemDelegate):
+    """Paint separator rows as a solid full-width band."""
+
+    def paint(self, painter, option, index):
+        data = index.data(Qt.UserRole)
+        if isinstance(data, dict) and data.get("type") == "SEPARATOR":
+            painter.save()
+            painter.fillRect(option.rect, QColor("#b0bec5"))
+            painter.restore()
+            return
+        super().paint(painter, option, index)
 
 
 def _open_numpad(widget, allow_decimal=True, parent=None):
@@ -985,6 +998,7 @@ class VersementsView(QWidget):
         layout.addLayout(tools_layout)
 
         self.table = QTableWidget(0, 9)
+        self.table.setItemDelegate(VersementTableDelegate(self.table))
         self.table.setHorizontalHeaderLabels([
             "Date / Opération", "Cash (DA)", "TPE (DA)", "Montant (€/$)", "Taux (DA/€/$)", "Or Cassé (g)", "Poids Déduit", "Statut", "Observation"
         ])
@@ -1980,10 +1994,13 @@ class VersementsView(QWidget):
                 row_space = self.table.rowCount()
                 self.table.insertRow(row_space)
                 self.table.setRowHeight(row_space, 14)
-                empty_item = QTableWidgetItem("")
-                empty_item.setFlags(Qt.NoItemFlags)
-                empty_item.setBackground(QBrush(QColor("#b0bec5")))
-                self.table.setItem(row_space, 0, empty_item)
+                separator_data = {"type": "SEPARATOR"}
+                for col in range(9):
+                    empty_item = QTableWidgetItem("")
+                    empty_item.setFlags(Qt.NoItemFlags)
+                    empty_item.setBackground(QBrush(QColor("#b0bec5")))
+                    empty_item.setData(Qt.UserRole, separator_data)
+                    self.table.setItem(row_space, col, empty_item)
                 self.table.setSpan(row_space, 0, 1, 9)
 
 
