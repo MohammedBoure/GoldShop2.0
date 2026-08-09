@@ -17,7 +17,6 @@ from ui.widgets.versements.invoice_note_selector import (
     normalize_custom_note,
     selected_custom_note,
 )
-from database.versement import discount_for_target_price
 
 import qtawesome as qta
 from ui.dialogs.client_selection_dialog import ClientSelectionDialog
@@ -595,7 +594,6 @@ class NewVersementDialog(QDialog):
             try: acompte_da = float(self.inp_dollar_da.text() or 0)
             except: acompte_da = 0.0
 
-        reste_da = max(0.0, net - acompte_da)
         reste_g = max(0.0, total_weight - poids_deduit)
         
         self.lbl_summary_brut.setText(f"{total_brut:,.2f} DA  (Poids: {total_weight:,.2f} g)")

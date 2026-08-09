@@ -71,7 +71,7 @@ class SalesManager:
 
                 if inv_id:
                     cursor.execute("""
-                        SELECT item_type, weight, remaining_weight, quantity, remaining_quantity,
+                        SELECT id, item_type, weight, remaining_weight, quantity, remaining_quantity,
                                status, reserved_for_client_id
                         FROM Inventory WHERE id = %s FOR UPDATE
                     """, (inv_id,))
@@ -79,15 +79,38 @@ class SalesManager:
                     if not inventory:
                         raise ValueError("Article d'inventaire introuvable.")
 
+                    cursor.execute("""
+                        SELECT
+                            COALESCE(SUM(COALESCE(reserved_quantity, 1)), 0) AS active_reserved_quantity,
+                            COUNT(*) AS active_versement_count
+                        FROM Versement_Items
+                        WHERE inventory_id = %s AND item_status = 'EN_COURS'
+                    """, (inv_id,))
+                    reservation = cursor.fetchone() or {}
+                    active_reserved_quantity = int(reservation.get("active_reserved_quantity") or 0)
+                    active_versement_count = int(reservation.get("active_versement_count") or 0)
+
                     db_item_type = str(inventory.get("item_type") or item_type).upper()
                     status = inventory.get("status")
+                    reserved_for_client_id = inventory.get("reserved_for_client_id")
+                    if reserved_for_client_id and str(reserved_for_client_id) != str(client_id):
+                        raise ValueError("Cet article est réservé à un autre client.")
 
                     if db_item_type in ("PIECE", "UNIT"):
                         remaining_quantity = int(inventory.get("remaining_quantity") if inventory.get("remaining_quantity") is not None else inventory.get("quantity") or 1)
+                        sellable_quantity = max(0, remaining_quantity - active_reserved_quantity)
+                        if sold_q <= 0 or sold_q > sellable_quantity:
+                            raise ValueError(
+                                f"Quantité demandée ({sold_q}) supérieure à la quantité disponible ({sellable_quantity})."
+                            )
                         if status == 'Sold' and remaining_quantity <= 0:
                             raise ValueError("Cet article est déjà totalement vendu.")
                     else:
                         remaining_weight = float(inventory.get("remaining_weight") if inventory.get("remaining_weight") is not None else inventory.get("weight") or 0.0)
+                        if active_versement_count > 0:
+                            raise ValueError("Cet article pondéré est actuellement réservé dans un versement.")
+                        if sold_w <= 0 or sold_w > remaining_weight + 0.005:
+                            raise ValueError("Le poids demandé dépasse le poids disponible.")
                         if status == 'Sold' and remaining_weight <= 0.005:
                             raise ValueError("Cet article est déjà totalement vendu.")
 

@@ -51,9 +51,9 @@ class MonthlySummaryView(QWidget):
         layout.addWidget(self.lbl_main_title)
 
         # --- إعداد الجدول ---
-        self.table = QTableWidget(0, 11) # 11 أعمدة
+        self.table = QTableWidget(0, 10) # 10 أعمدة
         self.table.setHorizontalHeaderLabels([
-            "Jours", "Dates", "P.S", "Recettes DA", "O.c", "TPE", "Euro", "Dollar", "Vendeur", "Impos", "Bénéfice (Faaida)"
+            "Jours", "Dates", "P.S", "Recettes DA", "O.c", "TPE", "Euro", "Dollar", "Vendeur", "Bénéfice (Faaida)"
         ])
         
         # تنسيق الجدول ليشبه الصورة (اللون البنفسجي)
@@ -73,8 +73,8 @@ class MonthlySummaryView(QWidget):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         
         header = self.table.horizontalHeader()
-        for i in range(11):
-            header.setSectionResizeMode(i, QHeaderView.Stretch if i in [3, 10] else QHeaderView.ResizeToContents)
+        for i in range(self.table.columnCount()):
+            header.setSectionResizeMode(i, QHeaderView.Stretch if i in [3, 9] else QHeaderView.ResizeToContents)
             
         layout.addWidget(self.table)
 
@@ -121,9 +121,6 @@ class MonthlySummaryView(QWidget):
                 SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%'
                               AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id
                          THEN s.dollar_paid ELSE 0 END) as total_dollar,
-                SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%'
-                              AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id
-                         THEN s.impos_weight_g ELSE 0 END) as total_impos,
                 
                 -- حساب الفائدة الصافية (سعر البيع ناقص التكلفة الأصلية)
                 SUM(
@@ -172,7 +169,7 @@ class MonthlySummaryView(QWidget):
                 
                 num_days = calendar.monthrange(year, month)[1]
                 
-                sum_ps = sum_recettes = sum_oc = sum_tpe = sum_euro = sum_dollar = sum_impos = sum_benefice = 0.0
+                sum_ps = sum_recettes = sum_oc = sum_tpe = sum_euro = sum_dollar = sum_benefice = 0.0
 
                 for day in range(1, num_days + 1):
                     current_date = date(year, month, day)
@@ -200,7 +197,6 @@ class MonthlySummaryView(QWidget):
                         tpe = float(s_data.get('total_tpe') or 0) + float(vp_data.get('total_vp_tpe') or 0)
                         euro = float(s_data.get('total_euro') or 0) + float(vp_data.get('total_vp_euro') or 0)
                         dollar = float(s_data.get('total_dollar') or 0) + float(vp_data.get('total_vp_dollar') or 0)
-                        impos = float(s_data.get('total_impos') or 0)
                         benefice = float(profit_by_date.get(current_date, {}).get('profit_da') or 0)
                         
                         # تجميع الإجماليات
@@ -210,7 +206,6 @@ class MonthlySummaryView(QWidget):
                         sum_tpe += tpe
                         sum_euro += euro
                         sum_dollar += dollar
-                        sum_impos += impos
                         sum_benefice += benefice
 
                         cols = [
@@ -221,7 +216,6 @@ class MonthlySummaryView(QWidget):
                             f"{euro:,.0f}" if euro else "●",
                             f"{dollar:,.0f}" if dollar else "●",
                             "Multi" if sum([ps, recette, oc, tpe, euro, dollar]) > 0 else "●",
-                            f"{impos:.2f}" if impos else "●",
                             f"{benefice:,.2f}" if benefice != 0 else "●"
                         ]
                         
@@ -230,13 +224,13 @@ class MonthlySummaryView(QWidget):
                             item.setTextAlignment(Qt.AlignCenter)
                             if val == "●":
                                 item.setForeground(QBrush(QColor("#e74c3c")))
-                            elif col_idx == 10:
+                            elif col_idx == 9:
                                 item.setForeground(QBrush(QColor("#27ae60" if benefice > 0 else "#c0392b")))
                             self.table.setItem(row_idx, col_idx, item)
 
                     else:
                         # حالة عدم وجود مبيعات في هذا اليوم (Repot)
-                        for col_idx in range(2, 11):
+                        for col_idx in range(2, self.table.columnCount()):
                             item = QTableWidgetItem("●")
                             item.setTextAlignment(Qt.AlignCenter)
                             item.setForeground(QBrush(QColor("#e74c3c")))
@@ -247,10 +241,15 @@ class MonthlySummaryView(QWidget):
                 self.table.insertRow(total_row_idx)
                 
                 totals = [
-                    "", "", 
-                    f"{sum_ps:.2f}", f"{sum_recettes:,.0f}", f"{sum_oc:.2f}", 
-                    f"{sum_tpe:,.0f}", f"{sum_euro:,.0f}", f"{sum_dollar:,.0f}", "", 
-                    f"{sum_impos:.2f}", f"{sum_benefice:,.2f}"
+                    "", "",
+                    f"{sum_ps:.2f}" if sum_ps else "●",
+                    f"{sum_recettes:,.0f}" if sum_recettes else "●",
+                    f"{sum_oc:.2f}" if sum_oc else "●",
+                    f"{sum_tpe:,.0f}" if sum_tpe else "●",
+                    f"{sum_euro:,.0f}" if sum_euro else "●",
+                    f"{sum_dollar:,.0f}" if sum_dollar else "●",
+                    "",
+                    f"{sum_benefice:,.2f}" if sum_benefice else "●"
                 ]
                 
                 for col_idx, val in enumerate(totals):
@@ -258,7 +257,7 @@ class MonthlySummaryView(QWidget):
                     item.setTextAlignment(Qt.AlignCenter)
                     item.setFont(QFont("", 14, QFont.Bold))
                     item.setBackground(QBrush(QColor("#6a1b9a"))) # لون بنفسجي
-                    item.setForeground(QBrush(QColor("white")))
+                    item.setForeground(QBrush(QColor("#e74c3c" if val == "●" else "white")))
                     self.table.setItem(total_row_idx, col_idx, item)
 
         except Exception as e:

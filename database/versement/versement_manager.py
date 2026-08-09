@@ -161,7 +161,7 @@ class VersementManager:
                     remise_da: float = 0.0, tpe_da: float = 0.0) -> bool:
         try:
             with self.db.get_db_connection() as conn:
-                cursor = conn.cursor()
+                cursor = conn.cursor(dictionary=True)
                 cursor.execute("""
                     INSERT INTO Versement_Payments 
                     (versement_id, versement_item_id, journee_id, montant_da, tpe_da, montant_euro, taux_change_euro, montant_dollar, taux_change_dollar, remise_da, or_casse_g, poids_deduit_g, prix_gramme_jour_da, notes)
@@ -176,7 +176,7 @@ class VersementManager:
     def delete_payment(self, payment_id: int) -> bool:
         try:
             with self.db.get_db_connection() as conn:
-                cursor = conn.cursor()
+                cursor = conn.cursor(dictionary=True)
                 cursor.execute("DELETE FROM Versement_Payments WHERE id = %s", (payment_id,))
                 conn.commit()
                 return True
@@ -187,7 +187,7 @@ class VersementManager:
     def update_payment_notes(self, payment_id: int, notes: str) -> bool:
         try:
             with self.db.get_db_connection() as conn:
-                cursor = conn.cursor()
+                cursor = conn.cursor(dictionary=True)
                 cursor.execute("UPDATE Versement_Payments SET notes = %s WHERE id = %s", (str(notes or '').strip(), payment_id))
                 conn.commit()
                 return True
@@ -224,7 +224,7 @@ class VersementManager:
         """تأكيد سحب قطعة معينة (الزبون استلمها)"""
         try:
             with self.db.get_db_connection() as conn:
-                cursor = conn.cursor()
+                cursor = conn.cursor(dictionary=True)
                 
                 # SalesManager dÃ©duira le stock aprÃ¨s la crÃ©ation de la facture.
                 # Ne pas mettre toute la ligne Ã  Sold ici : une piÃ¨ce peut Ãªtre partiellement livrÃ©e.
@@ -649,7 +649,7 @@ class VersementManager:
         """تحديث بيانات دفعة مالية تم إدخالها بالخطأ أو إعادة توجيهها لمنتج محدد"""
         try:
             with self.db.get_db_connection() as conn:
-                cursor = conn.cursor()
+                cursor = conn.cursor(dictionary=True)
                 cursor.execute("""
                     UPDATE Versement_Payments 
                     SET montant_da = %s, tpe_da = %s, montant_euro = %s, taux_change_euro = %s,
@@ -666,7 +666,7 @@ class VersementManager:
     def update_versement_item_notes(self, item_id: int, notes: str) -> bool:
         try:
             with self.db.get_db_connection() as conn:
-                cursor = conn.cursor()
+                cursor = conn.cursor(dictionary=True)
                 custom_note = str(notes or '').strip()[:MAX_CUSTOM_NOTE_LENGTH]
                 cursor.execute("UPDATE Versement_Items SET notes = %s WHERE id = %s", (custom_note, item_id))
                 conn.commit()
@@ -773,14 +773,18 @@ class VersementManager:
 
             conn.commit()
             return True, "SuccÃ¨s"
+        except ValueError as e:
+            if conn:
+                conn.rollback()
+            # A sold/foreign-reserved item is an expected business rejection,
+            # not an application crash.  Return it to the UI as a warning.
+            logging.warning(f"Réactivation du versement refusée: {e}")
+            return False, str(e)
         except Exception as e:
             if conn:
                 conn.rollback()
-            try:
-                import traceback
-                logging.error(f"Erreur revert_versement_item_status: {e}\n{traceback.format_exc()}")
-            except:
-                logging.error(f"Erreur revert_versement_item_status: {e}")
+            import traceback
+            logging.error(f"Erreur technique revert_versement_item_status: {e}\n{traceback.format_exc()}")
             return False, str(e)
         finally:
             if cursor:

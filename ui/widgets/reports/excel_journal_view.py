@@ -26,6 +26,7 @@ class ColorOverrideDelegate(QStyledItemDelegate):
 
         if isinstance(bg, QBrush) and bg.style() != Qt.NoBrush:
             option.backgroundBrush = bg
+            painter.fillRect(option.rect, bg)
 
         if isinstance(fg, QBrush) and fg.style() != Qt.NoBrush:
             color = fg.color()
@@ -492,9 +493,9 @@ class ExcelJournalView(QWidget):
         self.lbl_main_title.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.lbl_main_title)
 
-        self.table = QTableWidget(0, 10)
+        self.table = QTableWidget(0, 9)
         self.table.setItemDelegate(ColorOverrideDelegate(self.table)) 
-        self.table.setHorizontalHeaderLabels(["Désignation", "P.S", "Recette", "O.C", "TPE", "Euro", "Dollar", "Vendeur", "Observation", "Impos"])
+        self.table.setHorizontalHeaderLabels(["Désignation", "P.S", "Recette", "O.C", "TPE", "Euro", "Dollar", "Vendeur", "Observation"])
         self.table.setStyleSheet("""
             QHeaderView::section { background-color: #0f8f83; color: white; font-weight: bold; border: 1px solid #0b776d; padding: 5px; font-size: 14px; }
             QTableWidget::item:selected { background-color: #d1d8e0; color: black; }
@@ -534,10 +535,10 @@ class ExcelJournalView(QWidget):
         if viewport_w <= 0:
             return
 
-        for i in range(10):
+        for i in range(self.table.columnCount()):
             header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
         
-        content_w = sum(self.table.columnWidth(i) for i in range(10))
+        content_w = sum(self.table.columnWidth(i) for i in range(self.table.columnCount()))
 
         if content_w < viewport_w:
             header.setSectionResizeMode(0, QHeaderView.Stretch)       # Désignation
@@ -545,9 +546,8 @@ class ExcelJournalView(QWidget):
                 if i != 8:
                     header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
             header.setSectionResizeMode(8, QHeaderView.Stretch)       # Observation
-            header.setSectionResizeMode(9, QHeaderView.ResizeToContents)
         else:
-            for i in range(10):
+            for i in range(self.table.columnCount()):
                 header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
 
     # ──────────────────────────────────────────────────────────────
@@ -1066,7 +1066,7 @@ class ExcelJournalView(QWidget):
                 while cursor.nextset(): pass
                 
                 if not sessions:
-                    self.add_merged_row("Aucune donnée trouvée pour cette période.", 10, bg_color="#ecf0f1", text_color="#7f8c8d")
+                    self.add_merged_row("Aucune donnée trouvée pour cette période.", 9, bg_color="#ecf0f1", text_color="#7f8c8d")
                     return
                     
                 for session in sessions:
@@ -1087,7 +1087,7 @@ class ExcelJournalView(QWidget):
                         
                     if not filtered_receipts and (client_search or seller_filter_id != 0): continue
                         
-                    self.add_merged_row(self.get_french_date_string(date_obj), 3, f"Fc : {fc_amount:,.0f} Da", 7, bg_color="#dfe8ef", text_color="#17212b", bg_color2="#e8eef3")
+                    self.add_merged_row(self.get_french_date_string(date_obj), 3, f"Fc : {fc_amount:,.0f} Da", 6, bg_color="#dfe8ef", text_color="#17212b", bg_color2="#e8eef3")
                     
                     if not filtered_receipts:
                         row = self.table.rowCount()
@@ -1127,13 +1127,12 @@ class ExcelJournalView(QWidget):
                             f"{float(r.get('Euro') or 0):.0f}" if float(r.get('Euro') or 0) != 0 else "0",
                             f"{float(r.get('Dollar') or 0):.0f}" if float(r.get('Dollar') or 0) != 0 else "0",
                             str(r.get('Vendeur_Name') or r.get('Vendeur_Sofiane', '')),
-                            str(r.get('Observation', '')),
-                            f"{float(r.get('Impos') or 0):.2f}" if float(r.get('Impos') or 0) != 0 else "0"
+                            str(r.get('Observation', ''))
                         ]
                         
                         for col_idx, val in enumerate(cols_data):
                             item = QTableWidgetItem(val)
-                            item.setTextAlignment(Qt.AlignCenter if col_idx in [1,2,3,4,5,6,9] else Qt.AlignLeft | Qt.AlignVCenter)
+                            item.setTextAlignment(Qt.AlignCenter if col_idx in [1,2,3,4,5,6] else Qt.AlignLeft | Qt.AlignVCenter)
                             item.setBackground(QBrush(QColor(current_bg)))
                             if val == ";" or (val.startswith("-") and val not in ["-0", "-0.0", "-0.00"]):
                                 item.setForeground(QBrush(QColor("#c0392b")))
@@ -1160,8 +1159,8 @@ class ExcelJournalView(QWidget):
                     empty_item = QTableWidgetItem("Total Journée")
                     empty_item.setFont(QFont("", 11, QFont.Bold))
                     empty_item.setTextAlignment(Qt.AlignCenter)
-                    empty_item.setBackground(QBrush(QColor("#e1e8ef")))
-                    empty_item.setForeground(QBrush(QColor("#17212b")))
+                    empty_item.setBackground(QBrush(QColor("#d4edda")))
+                    empty_item.setForeground(QBrush(QColor("#155724")))
                     self.table.setItem(row, 0, empty_item)
                     
                     for idx, t_val in enumerate([t_ps, t_rec, t_oc, t_tpe, t_euro, t_dollar], start=1):
@@ -1169,21 +1168,14 @@ class ExcelJournalView(QWidget):
                         t_item = QTableWidgetItem(fmt)
                         t_item.setFont(QFont("", 11, QFont.Bold))
                         t_item.setTextAlignment(Qt.AlignCenter)
-                        t_item.setBackground(QBrush(QColor("#e1e8ef")))
-                        t_item.setForeground(QBrush(QColor("#17212b")))
+                        t_item.setBackground(QBrush(QColor("#d4edda")))
+                        t_item.setForeground(QBrush(QColor("#155724")))
                         self.table.setItem(row, idx, t_item)
                         
                     for col_idx in [7, 8]:
                         item = QTableWidgetItem("")
-                        item.setBackground(QBrush(QColor("#e1e8ef")))
+                        item.setBackground(QBrush(QColor("#d4edda")))
                         self.table.setItem(row, col_idx, item)
-                        
-                    t_impos = QTableWidgetItem(f"{totals.get('total_impos', 0):.2f}")
-                    t_impos.setFont(QFont("", 11, QFont.Bold))
-                    t_impos.setTextAlignment(Qt.AlignCenter)
-                    t_impos.setBackground(QBrush(QColor("#e1e8ef")))
-                    t_impos.setForeground(QBrush(QColor("#17212b")))
-                    self.table.setItem(row, 9, t_impos)
 
             self._adjust_table_columns()
         except Exception as e:

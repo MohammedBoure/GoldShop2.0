@@ -505,14 +505,14 @@ class EditPaymentDialog(QDialog):
     def open_discount_arrondi(self):
         base_amount = self._get_active_base_amount()
         if base_amount <= 0:
-            QMessageBox.warning(self, "Erreur", "Aucun reste estimé disponible à solder ou arrondir.")
+            QMessageBox.warning(self, "Erreur", "Aucun montant estimé disponible à solder ou arrondir.")
             return
         
         current_pay = self.inp_da.value() + self.inp_tpe.value()
-        reste_actuel = max(0.0, base_amount - current_pay)
+        montant_actuel = max(0.0, base_amount - current_pay)
         
         from ui.tools.virtual_numpad import VirtualNumpad
-        pad = VirtualNumpad(title="Saisir le Nouveau Reste Cible (DA)", mode="dialog", allow_decimal=True, allow_negative=False, initial_value=reste_actuel, parent=self)
+        pad = VirtualNumpad(title="Saisir le montant cible en DA", mode="dialog", allow_decimal=True, allow_negative=False, initial_value=montant_actuel, parent=self)
         if pad.exec() == QDialog.Accepted:
             val = pad.get_value()
             if val:
@@ -524,40 +524,7 @@ class EditPaymentDialog(QDialog):
                     else:
                         QMessageBox.warning(self, "Erreur", "Le paiement actuel dépasse déjà le montant cible.")
                 else:
-                    QMessageBox.warning(self, "Erreur", f"Le reste cible doit être entre 0 et {base_amount:,.2f} DA.")
-
-    def _get_price_per_gram_context(self):
-        selected_item_id = self.combo_target.currentData()
-        if selected_item_id is None:
-            selected_item_id = getattr(self, "preselected_item_id", None)
-        if selected_item_id is None:
-            selected_item_id = getattr(self, "p_data", {}).get("versement_item_id")
-
-        current_payment = getattr(self, "p_data", {})
-        current_payment_id = current_payment.get("payment_id")
-        if selected_item_id in self.item_prices and selected_item_id in self.item_weights:
-            item_amount = float(self.item_prices[selected_item_id] or 0)
-            item_weight = float(self.item_weights[selected_item_id] or 0)
-            if item_amount > 0 and item_weight > 0:
-                deducted_weight = sum(
-                    float(p.get("poids_deduit_g") or 0)
-                    for p in (self.v_data.get("payments", []) if self.v_data else [])
-                    if p.get("versement_item_id") == selected_item_id
-                )
-                if current_payment_id and current_payment.get("versement_item_id") == selected_item_id:
-                    deducted_weight -= float(current_payment.get("poids_deduit_g") or 0)
-                return item_amount / item_weight, max(0.0, item_weight - deducted_weight)
-
-        if self.v_data:
-            total_amount = float(self.v_data.get("total_estimated_price_da") or 0)
-            total_weight = float(self.v_data.get("total_weight_g") or 0)
-            if total_amount > 0 and total_weight > 0:
-                remaining_weight = float(self.v_data.get("reste_poids_g") or 0)
-                if current_payment_id:
-                    remaining_weight += float(current_payment.get("poids_deduit_g") or 0)
-                return total_amount / total_weight, max(0.0, remaining_weight)
-
-        return 0.0, 0.0
+                    QMessageBox.warning(self, "Erreur", f"Le montant cible doit être entre 0 et {base_amount:,.2f} DA.")
 
     def _get_price_per_gram_context(self):
         selected_item_id = self.combo_target.currentData()
@@ -647,7 +614,6 @@ class EditPaymentDialog(QDialog):
         poids_deduit = self.inp_deduit.value()
         
         remise_pct = (remise / base_amount * 100.0) if base_amount > 0 else 0.0
-        nouveau_reste_da = max(0.0, base_amount - (current_pay + remise))
         nouveau_reste_g = max(0.0, base_weight - poids_deduit)
         
         self.lbl_summary_reste.setText(f"{base_weight:,.2f} g")
@@ -963,8 +929,8 @@ class VersementsView(QWidget):
         else:
             rows += len(payments)
 
-        if not is_annule:
-            rows += 2  # Summary row + empty separator row
+        rows += 1  # Summary row for every versement
+        rows += 1  # Separator row for all versements
         return rows
 
     def init_ui(self):
@@ -1025,7 +991,7 @@ class VersementsView(QWidget):
         
         self.table.setAlternatingRowColors(False)
         self.table.setStyleSheet("""
-            QTableWidget { background-color: #ffffff; font-size: 14px; gridline-color: #dcdde1; border: 1px solid #cbd5df; }
+            QTableWidget { background-color: #ffffff; gridline-color: #dcdde1; border: 1px solid #cbd5df; }
             QHeaderView::section { background-color: #0f8f83; color: white; font-weight: bold; font-size: 14px; padding: 6px; border: 1px solid #0b776d; }
             QTableWidget::item { padding: 6px 10px; }
             QTableWidget::item:selected { background-color: #d1d8e0; color: #1f2937; }
@@ -1034,6 +1000,7 @@ class VersementsView(QWidget):
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setMinimumSectionSize(14)
         self.table.setWordWrap(True)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -1710,7 +1677,10 @@ class VersementsView(QWidget):
         self.table.insertRow(row)
         item1 = QTableWidgetItem(text1)
         item1.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        item1.setFont(QFont("", 11, QFont.Bold))
+        font1 = QFont()
+        font1.setPointSize(12)
+        font1.setWeight(QFont.Bold)
+        item1.setFont(font1)
         item1.setBackground(QBrush(QColor(bg_color)))
         item1.setForeground(QBrush(QColor(text_color)))
         item1.setData(Qt.UserRole, data_dict)
@@ -1720,17 +1690,23 @@ class VersementsView(QWidget):
         if text2 and span2:
             item2 = QTableWidgetItem(text2)
             item2.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            item2.setFont(QFont("", 11, QFont.Bold))
+            font2 = QFont()
+            font2.setPointSize(12)
+            font2.setWeight(QFont.Bold)
+            item2.setFont(font2)
             item2.setBackground(QBrush(QColor(bg_color)))
             item2.setForeground(QBrush(QColor(text_color2 or text_color)))
             item2.setData(Qt.UserRole, data_dict)
             self.table.setItem(row, span1, item2)
             self.table.setSpan(row, span1, 1, span2)
-        self.table.setRowHeight(row, 35)
+        self.table.setRowHeight(row, 32)
 
     def create_and_set_item(self, row, col, text, data_dict, bold=False, align_center=True, color_red=False, bg_color=None, text_color=None):
         item = QTableWidgetItem(text)
-        item.setFont(QFont("", 11, QFont.Bold if bold else QFont.Normal))
+        f = QFont()
+        f.setPointSize(11)
+        f.setWeight(QFont.Bold if bold else QFont.Normal)
+        item.setFont(f)
         item.setData(Qt.UserRole, data_dict)
         item.setTextAlignment((Qt.AlignCenter if align_center else Qt.AlignLeft) | Qt.AlignVCenter)
         if color_red: item.setForeground(QBrush(QColor("#c0392b")))
@@ -1980,33 +1956,35 @@ class VersementsView(QWidget):
                         self.create_and_set_item(row, 8, obs_str if obs_str.strip() else "-", p_data, align_center=False, bg_color="#fff8e8", text_color="#7a4d08")
                         self.table.setRowHeight(row, 28)
 
-                if not is_annule:
-                    total_paid_da = v.get('total_paid_money_da', 0)
-                    total_tpe = v.get('total_tpe_da', 0)
-                    total_dollar = v.get('total_dollar', 0)
-                    total_remise = v.get('total_remise_da', 0)
-                    total_deducted = v.get('total_paid_weight_g', 0)
-                    reste_poids = v.get('reste_poids_g', 0)
-                    
-                    sum_text_1 = f"💰 Payé: {total_paid_da:,.0f} DA"
-                    if total_tpe != 0: sum_text_1 += f"  |  TPE: {total_tpe:,.0f} DA"
-                    if total_dollar > 0: sum_text_1 += f"  |  💵 {total_dollar:,.0f} $"
-                    if total_remise > 0: sum_text_1 += f"  |  🎁 Remise: {total_remise:,.0f} DA"
-                    sum_text_1 += f"  |  ⚖️ Déduit: - {total_deducted:.2f} g"
-                    
-                    sum_text_2 = f"STATUT: {statut}  |  ⚖️ RESTE: {reste_poids:.3f} g"
-                    is_complete = (reste_poids <= 0) or (statut == 'CLOTURE')
-                    bg_summary = "#dff5f1" if is_complete else "#ffedea"
-                    payment_summary_color = "#27ae60" if total_paid_da >= 0 else "#c0392b"
-                    self.add_group_header_row({"type": "SUMMARY"}, sum_text_1, 4, sum_text_2, 5, bg_color=bg_summary, text_color=payment_summary_color, text_color2="#c0392b")
-                    
-                    row_space = self.table.rowCount()
-                    self.table.insertRow(row_space)
-                    self.table.setRowHeight(row_space, 8)
-                    for col in range(9):
-                        empty_item = QTableWidgetItem("")
-                        empty_item.setFlags(Qt.NoItemFlags)
-                        self.table.setItem(row_space, col, empty_item)
+                total_paid_da = v.get('total_paid_money_da', 0)
+                total_tpe = v.get('total_tpe_da', 0)
+                total_dollar = v.get('total_dollar', 0)
+                total_remise = v.get('total_remise_da', 0)
+                total_deducted = v.get('total_paid_weight_g', 0)
+                reste_poids = v.get('reste_poids_g', 0)
+
+                sum_text_1 = f"💰 Payé: {total_paid_da:,.0f} DA"
+                if total_tpe != 0: sum_text_1 += f"  |  TPE: {total_tpe:,.0f} DA"
+                if total_dollar > 0: sum_text_1 += f"  |  💵 {total_dollar:,.0f} $"
+                if total_remise > 0: sum_text_1 += f"  |  🎁 Remise: {total_remise:,.0f} DA"
+                sum_text_1 += f"  |  ⚖️ Déduit: - {total_deducted:.2f} g"
+
+                sum_text_2 = f"STATUT: {statut}  |  ⚖️ RESTE: {reste_poids:.3f} g"
+                is_complete = (reste_poids <= 0) or (statut == 'CLOTURE')
+                bg_summary = "#d1e7dd"  # خلفية خضراء فاتحة مريحة دائماً للسطر الأخير
+                payment_summary_color = "#0f5132"
+                text_color_reste = "#0f5132" if is_complete else "#c0392b"
+                self.add_group_header_row({"type": "SUMMARY"}, sum_text_1, 4, sum_text_2, 5, bg_color=bg_summary, text_color=payment_summary_color, text_color2=text_color_reste)
+
+                # الشريط الفاصل الرمادي بين كل ملف versement وآخر (طابق صورة العميل تماماً)
+                row_space = self.table.rowCount()
+                self.table.insertRow(row_space)
+                self.table.setRowHeight(row_space, 14)
+                empty_item = QTableWidgetItem("")
+                empty_item.setFlags(Qt.NoItemFlags)
+                empty_item.setBackground(QBrush(QColor("#b0bec5")))
+                self.table.setItem(row_space, 0, empty_item)
+                self.table.setSpan(row_space, 0, 1, 9)
 
 
 

@@ -386,13 +386,13 @@ class AddPaymentDialog(QDialog):
     def open_discount_arrondi(self):
         base_amount = self._get_active_base_amount()
         if base_amount <= 0:
-            QMessageBox.warning(self, "Erreur", "Aucun reste estimé disponible à solder ou arrondir.")
+            QMessageBox.warning(self, "Erreur", "Aucun montant estimé disponible à solder ou arrondir.")
             return
         
         current_pay = self.inp_montant_da.value() + self.inp_tpe.value()
-        reste_actuel = max(0.0, base_amount - current_pay)
+        montant_actuel = max(0.0, base_amount - current_pay)
         
-        pad = VirtualNumpad(title="Saisir le Nouveau Reste Cible (DA)", mode="dialog", allow_decimal=True, allow_negative=False, initial_value=reste_actuel, parent=self)
+        pad = VirtualNumpad(title="Saisir le montant cible en DA", mode="dialog", allow_decimal=True, allow_negative=False, initial_value=montant_actuel, parent=self)
         if pad.exec() == QDialog.Accepted:
             val = pad.get_value()
             if val:
@@ -404,7 +404,7 @@ class AddPaymentDialog(QDialog):
                     else:
                         QMessageBox.warning(self, "Erreur", "Le paiement actuel dépasse déjà le montant cible.")
                 else:
-                    QMessageBox.warning(self, "Erreur", f"Le reste cible doit être entre 0 et {base_amount:,.2f} DA.")
+                    QMessageBox.warning(self, "Erreur", f"Le montant cible doit être entre 0 et {base_amount:,.2f} DA.")
 
     def _get_price_per_gram_context(self):
         selected_item_id = self.combo_target.currentData()
@@ -555,7 +555,6 @@ class AddPaymentDialog(QDialog):
         poids_deduit = self.inp_poids_deduit.value()
         
         remise_pct = (remise / base_amount * 100.0) if base_amount > 0 else 0.0
-        nouveau_reste_da = max(0.0, base_amount - (current_pay + remise))
         nouveau_reste_g = max(0.0, base_weight - poids_deduit)
         
         self.lbl_summary_reste.setText(f"{base_weight:,.2f} g")

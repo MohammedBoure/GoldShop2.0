@@ -15,12 +15,36 @@ class POSInventoryLoader:
 
     @staticmethod
     def _has_real_stock(item):
+        """Return whether the item has stock that is sellable by this POS.
+
+        A versement reserves only the requested PIECE units.  WEIGHT items
+        remain indivisible while a versement is active.  A client-level
+        reservation is never treated as ordinary POS stock.
+        """
         if not item:
             return False
-        status = item.get('status')
-        if status in ('Scrap', 'Repair', 'Lost'):
+
+        status = str(item.get('status') or '')
+        if status in ('Scrap', 'Repair', 'Lost', 'Sold'):
             return False
-        return True
+
+        item_type = str(item.get('item_type') or 'WEIGHT').upper()
+        reserved_for_client = item.get('reserved_for_client_id')
+        if reserved_for_client:
+            return False
+        if status not in ('Available', 'Partially_Sold', 'Reserved'):
+            return False
+        if status == 'Reserved' and item_type != 'PIECE':
+            return False
+
+        if item_type == 'PIECE':
+            remaining_quantity = int(item.get('remaining_quantity') or 0)
+            active_reserved_quantity = int(item.get('active_reserved_quantity') or 0)
+            return remaining_quantity - active_reserved_quantity > 0
+
+        remaining_weight = float(item.get('remaining_weight') or 0.0)
+        active_reservation_count = int(item.get('active_versement_count') or 0)
+        return remaining_weight > 0 and active_reservation_count == 0
 
     # ------------------------------------------------------------------ cache
     def load_inventory_cache(self):
@@ -204,8 +228,18 @@ class POSInventoryLoader:
                 item['remaining_weight'] = item.get('weight', 0.0)
             if item.get('remaining_quantity') is None:
                 item['remaining_quantity'] = item.get('quantity', 1)
-            
-            # 🟢 إضافة المنتج للسلة مباشرة بدون عوائق
+
+            if not self._has_real_stock(item):
+                QMessageBox.warning(
+                    self,
+                    "Article indisponible",
+                    "Cet article est vendu, réservé à un client ou déjà engagé dans un versement.",
+                )
+                self.inp_barcode.setFocus()
+                self.inp_barcode.selectAll()
+                return
+
+            # 🟢 إضافة المنتج للسلة بعد التحقق من الكمية القابلة للبيع
             self.add_item_to_cart_logic(item)
             
             if hasattr(self, 'product_completer') and self.product_completer.popup().isVisible():
