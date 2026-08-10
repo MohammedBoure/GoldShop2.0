@@ -2,18 +2,123 @@ import calendar
 from datetime import date, datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton,
-    QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QFrame
+    QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QFrame, QStyledItemDelegate,
+    QInputDialog, QMessageBox, QLineEdit, QApplication
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QBrush
+from PySide6.QtGui import QColor, QFont, QBrush, QPalette
 import qtawesome as qta
 
+class ColorOverrideDelegate(QStyledItemDelegate):
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        fg = index.data(Qt.ForegroundRole)
+        if isinstance(fg, QBrush) and fg.style() != Qt.NoBrush:
+            color = fg.color()
+            option.palette.setColor(QPalette.Text, color)
+            option.palette.setColor(QPalette.WindowText, color)
+            option.palette.setColor(QPalette.HighlightedText, color)
+            option.palette.setColor(QPalette.ButtonText, color)
+
+    def paint(self, painter, option, index):
+        bg = index.data(Qt.BackgroundRole)
+        fg = index.data(Qt.ForegroundRole)
+
+        if isinstance(bg, QBrush) and bg.style() != Qt.NoBrush:
+            option.backgroundBrush = bg
+            painter.fillRect(option.rect, bg)
+
+        if isinstance(fg, QBrush) and fg.style() != Qt.NoBrush:
+            color = fg.color()
+            option.palette.setColor(QPalette.Text, color)
+            option.palette.setColor(QPalette.WindowText, color)
+            option.palette.setColor(QPalette.PlaceholderText, color)
+            option.palette.setColor(QPalette.HighlightedText, color)
+            option.palette.setColor(QPalette.ButtonText, color)
+
+        super().paint(painter, option, index)
+
 class MonthlySummaryView(QWidget):
-    def __init__(self, manager):
+    def __init__(self, manager, current_user=None):
         super().__init__()
         self.manager = manager
+        self.current_user = current_user or {}
+        self._is_authenticated = False
         self.init_ui()
         self.populate_filters()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._is_authenticated:
+            if self._prompt_admin_password():
+                self.load_data()
+            else:
+                self.table.setRowCount(0)
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._is_authenticated = False
+
+    def _get_current_user(self):
+        if hasattr(self, 'current_user') and self.current_user:
+            return self.current_user
+        
+        app = QApplication.instance()
+        if app:
+            main_win = getattr(app, 'current_main_window', None)
+            if not main_win and hasattr(app, 'activeWindow'):
+                main_win = app.activeWindow()
+            if main_win and hasattr(main_win, 'current_user'):
+                return main_win.current_user
+                
+        if hasattr(self.manager, 'current_user'):
+            return self.manager.current_user
+            
+        return {}
+
+    def _prompt_admin_password(self):
+        user = self._get_current_user()
+        username = user.get('username') if user else None
+        
+        if username:
+            prompt_label = f"Veuillez entrer le mot de passe de l'administrateur ({username}) :"
+        else:
+            prompt_label = "Veuillez entrer le mot de passe Administrateur :"
+
+        from ui.tools.virtual_keyboard import VirtualPasswordInputDialog
+        pwd, ok = VirtualPasswordInputDialog.getText(
+            self,
+            "Protection Administrateur",
+            prompt_label,
+            QLineEdit.Password
+        )
+        
+        if not ok or not pwd:
+            return False
+            
+        is_valid = False
+        if username and hasattr(self.manager, 'users') and hasattr(self.manager.users, 'authenticate'):
+            try:
+                auth_res = self.manager.users.authenticate(username, pwd)
+                if auth_res:
+                    is_valid = True
+            except Exception:
+                pass
+                
+        if not is_valid and hasattr(self.manager, 'users') and hasattr(self.manager.users, 'verify_admin_password'):
+            try:
+                if self.manager.users.verify_admin_password(pwd):
+                    is_valid = True
+            except Exception:
+                pass
+
+        if is_valid:
+            self._is_authenticated = True
+            return True
+        else:
+            QMessageBox.warning(self, "Accès Refusé", "Mot de passe Administrateur incorrect.")
+            self._is_authenticated = False
+            return False
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -38,6 +143,7 @@ class MonthlySummaryView(QWidget):
         self.btn_search = QPushButton(" Afficher le Tableau")
         self.btn_search.setIcon(qta.icon("fa5s.calendar-alt", color="white"))
         self.btn_search.setStyleSheet("background-color: #0f8f83; color: white; padding: 6px 15px; border-radius: 4px; font-weight: bold; font-size: 14px;")
+        self.btn_search.setCursor(Qt.PointingHandCursor)
         self.btn_search.clicked.connect(self.load_data)
         row1.addWidget(self.btn_search)
         row1.addStretch()
@@ -52,6 +158,7 @@ class MonthlySummaryView(QWidget):
 
         # --- إعداد الجدول ---
         self.table = QTableWidget(0, 10) # 10 أعمدة
+        self.table.setItemDelegate(ColorOverrideDelegate(self.table))
         self.table.setHorizontalHeaderLabels([
             "Jours", "Dates", "P.S", "Recettes DA", "O.c", "TPE", "Euro", "Dollar", "Vendeur", "Bénéfice (Faaida)"
         ])
@@ -94,6 +201,10 @@ class MonthlySummaryView(QWidget):
         return days[date_obj.weekday()]
 
     def load_data(self):
+        if not self._is_authenticated:
+            if not self._prompt_admin_password():
+                self.table.setRowCount(0)
+                return
         self.table.setRowCount(0)
         year = self.combo_year.currentData()
         month = self.combo_month.currentData()
@@ -241,7 +352,7 @@ class MonthlySummaryView(QWidget):
                 self.table.insertRow(total_row_idx)
                 
                 totals = [
-                    "", "",
+                    "TOTAL", "",
                     f"{sum_ps:.2f}" if sum_ps else "●",
                     f"{sum_recettes:,.0f}" if sum_recettes else "●",
                     f"{sum_oc:.2f}" if sum_oc else "●",
@@ -256,7 +367,7 @@ class MonthlySummaryView(QWidget):
                     item = QTableWidgetItem(val)
                     item.setTextAlignment(Qt.AlignCenter)
                     item.setFont(QFont("", 14, QFont.Bold))
-                    item.setBackground(QBrush(QColor("#6a1b9a"))) # لون بنفسجي
+                    item.setBackground(QBrush(QColor("#0f8f83"))) # لون أخضر (نفس لون الهيدر)
                     item.setForeground(QBrush(QColor("#e74c3c" if val == "●" else "white")))
                     self.table.setItem(total_row_idx, col_idx, item)
 

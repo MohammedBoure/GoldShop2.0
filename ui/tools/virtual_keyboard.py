@@ -7,7 +7,7 @@ except ImportError:
     pyautogui = None
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, 
-    QPushButton, QLineEdit, QSizePolicy, QApplication,
+    QPushButton, QLineEdit, QSizePolicy, QApplication, QLabel,
     QTextEdit, QPlainTextEdit, QAbstractSpinBox, QWidget, QComboBox, QStackedWidget
 )
 from PySide6.QtCore import Qt, QTimer, QEvent, QObject
@@ -242,15 +242,20 @@ class VirtualKeyboardDialog(QDialog):
         self.move(x, y)
 
     def show(self):
-        active_window = QApplication.activeModalWidget() or QApplication.activeWindow()
-        if active_window and active_window != self: 
-            self.set_active_parent(active_window)
-        
-        # 🟢 إظهار النافذة أولاً لكي يحسب Qt أبعادها بشكل سليم
-        super().show()
-        
-        # 🟢 السحر هنا: نأمر النظام بنقل النافذة بعد 10 مللي ثانية (بعد أن يكتمل رسمها وحساب أبعادها)
-        QTimer.singleShot(10, self.move_to_bottom)
+        try:
+            import shiboken6
+            if not shiboken6.isValid(self):
+                return
+        except Exception: pass
+
+        try:
+            active_window = QApplication.activeModalWidget() or QApplication.activeWindow()
+            if active_window and active_window != self: 
+                self.set_active_parent(active_window)
+            
+            super().show()
+            QTimer.singleShot(10, self.move_to_bottom)
+        except RuntimeError: pass
 
     def set_active_parent(self, new_parent):
         try:
@@ -561,3 +566,131 @@ class VirtualKeyboardDialog(QDialog):
             pyautogui.write(text_to_type, interval=0.005)
             pyautogui.press('enter')
         QTimer.singleShot(150, simulate_typing)
+
+
+class VirtualPasswordInputDialog(QDialog):
+    """
+    نافذة إدخال كلمة المرور المخصصة لشاشات اللمس مع دعم الكيبورد الافتراضي.
+    """
+    def __init__(self, parent=None, title="Mot de passe", label="Veuillez entrer le mot de passe :", echo_mode=QLineEdit.Password):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(450)
+        self.setStyleSheet("""
+            QDialog { background-color: #f8f9fa; border-radius: 8px; }
+            QLabel { font-size: 14px; font-weight: bold; color: #2c3e50; }
+            QLineEdit { font-size: 16px; padding: 8px 12px; border: 2px solid #0f8f83; border-radius: 6px; background-color: white; }
+            QPushButton { font-size: 14px; font-weight: bold; padding: 8px 16px; border-radius: 6px; }
+        """)
+        
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        self.lbl_prompt = QLabel(label)
+        self.lbl_prompt.setWordWrap(True)
+        layout.addWidget(self.lbl_prompt)
+
+        input_layout = QHBoxLayout()
+        self.inp_password = QLineEdit()
+        self.inp_password.setEchoMode(echo_mode)
+        input_layout.addWidget(self.inp_password)
+
+        self.btn_toggle_eye = QPushButton()
+        try:
+            self.btn_toggle_eye.setIcon(qta.icon("fa5s.eye", color="#7f8c8d"))
+        except Exception:
+            self.btn_toggle_eye.setText("👁")
+        self.btn_toggle_eye.setToolTip("Afficher / Masquer le mot de passe")
+        self.btn_toggle_eye.setStyleSheet("QPushButton { background-color: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; }")
+        self.btn_toggle_eye.clicked.connect(self._toggle_password_visibility)
+        input_layout.addWidget(self.btn_toggle_eye)
+
+        self.btn_kb = QPushButton()
+        try:
+            self.btn_kb.setIcon(qta.icon("fa5s.keyboard", color="#0f8f83"))
+        except Exception:
+            self.btn_kb.setText("⌨")
+        self.btn_kb.setToolTip("Ouvrir le clavier virtuel")
+        self.btn_kb.setStyleSheet("QPushButton { background-color: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; }")
+        self.btn_kb.clicked.connect(self._open_virtual_keyboard)
+        input_layout.addWidget(self.btn_kb)
+
+        layout.addLayout(input_layout)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        self.btn_cancel = QPushButton("Annuler")
+        self.btn_cancel.setCursor(Qt.PointingHandCursor)
+        self.btn_cancel.setStyleSheet("background-color: #95a5a6; color: white;")
+        self.btn_cancel.clicked.connect(self.reject)
+        btn_layout.addWidget(self.btn_cancel)
+
+        self.btn_ok = QPushButton("Valider")
+        self.btn_ok.setCursor(Qt.PointingHandCursor)
+        self.btn_ok.setStyleSheet("background-color: #0f8f83; color: white;")
+        self.btn_ok.clicked.connect(self.accept)
+        btn_layout.addWidget(self.btn_ok)
+
+        layout.addLayout(btn_layout)
+
+        self.inp_password.returnPressed.connect(self.accept)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.inp_password.setFocus()
+        QTimer.singleShot(100, self._open_virtual_keyboard)
+
+    def _toggle_password_visibility(self):
+        if self.inp_password.echoMode() == QLineEdit.Password:
+            self.inp_password.setEchoMode(QLineEdit.Normal)
+            try:
+                self.btn_toggle_eye.setIcon(qta.icon("fa5s.eye-slash", color="#e74c3c"))
+            except Exception: pass
+        else:
+            self.inp_password.setEchoMode(QLineEdit.Password)
+            try:
+                self.btn_toggle_eye.setIcon(qta.icon("fa5s.eye", color="#7f8c8d"))
+            except Exception: pass
+
+    def _open_virtual_keyboard(self):
+        self.inp_password.setFocus()
+        kb = VirtualKeyboardDialog._instance
+        try:
+            import shiboken6
+            if kb and not shiboken6.isValid(kb):
+                kb = None
+        except Exception: pass
+
+        if kb is None:
+            kb = VirtualKeyboardDialog(self)
+        else:
+            try:
+                kb.set_active_parent(self)
+            except Exception:
+                kb = VirtualKeyboardDialog(self)
+
+        try:
+            kb.show()
+            kb.raise_()
+        except RuntimeError:
+            kb = VirtualKeyboardDialog(self)
+            kb.show()
+            kb.raise_()
+
+    def get_value(self):
+        return self.inp_password.text()
+
+    @classmethod
+    def getText(cls, parent=None, title="Mot de passe", label="Entrez le mot de passe :", mode=QLineEdit.Password, default=""):
+        dlg = cls(parent=parent, title=title, label=label, echo_mode=mode)
+        if default:
+            dlg.inp_password.setText(default)
+        if dlg.exec() == QDialog.Accepted:
+            return dlg.get_value(), True
+        return "", False
+
+    @classmethod
+    def get_password(cls, parent=None, title="Mot de passe", label="Entrez le mot de passe :"):
+        return cls.getText(parent=parent, title=title, label=label, mode=QLineEdit.Password)

@@ -989,7 +989,8 @@ class SettingsTab(QWidget):
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         
         if reply == QMessageBox.Yes:
-            password, ok = QInputDialog.getText(self, "Autorisation Requise",
+            from ui.tools.virtual_keyboard import VirtualPasswordInputDialog
+            password, ok = VirtualPasswordInputDialog.getText(self, "Autorisation Requise",
                                                 "Veuillez entrer le mot de passe administrateur pour confirmer le formatage :",
                                                 QLineEdit.Password)
             if ok:

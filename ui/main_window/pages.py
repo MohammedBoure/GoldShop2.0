@@ -162,7 +162,7 @@ class MainWindowPagesMixin:
             if self.has_permission("nav_reports"):
                 def make_monthly_summary():
                     from ui.widgets.reports.monthly_summary_view import MonthlySummaryView
-                    return MonthlySummaryView(self.data_manager)
+                    return MonthlySummaryView(self.data_manager, current_user=self.current_user)
                 self._add_lazy_scoped_tab(tabs, make_monthly_summary, "tab_monthly_summary", "Résumé Mensuel", qta.icon("fa5s.calendar-alt"))
 
             widget = tabs if tabs.count() > 0 else None

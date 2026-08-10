@@ -183,15 +183,15 @@ class SupplierOperationDialog(QDialog):
 
         layout.addWidget(form_box)
 
-        # 4. Horizontal Helper Converter Section (Calculateur de Conversion de Titre)
-        helper_box = QGroupBox("💡 Outil d'aide : Titre du Fournisseur & Conversion (Optionnel)")
+        # 4. Horizontal Helper Converter Section (Calculateur de Conversion de Titre & Valeur)
+        helper_box = QGroupBox("💡 Outil d'aide : Conversion Titre & Achat/Vente en Valeur (Optionnel)")
         helper_box.setStyleSheet(
             "QGroupBox { font-weight: bold; color: #0284c7; border: 1px solid #7dd3fc; background: #f0f9ff; border-radius: 6px; margin-top: 4px; padding: 6px; }"
         )
         h_layout = QVBoxLayout(helper_box)
         h_layout.setSpacing(6)
 
-        # Horizontal Converter inputs
+        # Row 1: Conversion par Titre
         h_row = QHBoxLayout()
         h_row.setSpacing(8)
 
@@ -221,7 +221,45 @@ class SupplierOperationDialog(QDialog):
         h_row.addWidget(self.inp_raw_weight, stretch=1)
         h_layout.addLayout(h_row)
 
-        self.lbl_converted_res = QLabel("Saisissez le poids brut et le titre de la pièce pour la conversion automatique")
+        # Row 2: Conversion Montant DA -> Poids (g) avec Titre Référence (750) et Titre Fournisseur
+        h_row2 = QHBoxLayout()
+        h_row2.setSpacing(6)
+
+        lbl_conv_amt = QLabel("Montant DA :")
+        self.inp_conv_amount = QDoubleSpinBox()
+        self.inp_conv_amount.setRange(-999999999.00, 999999999.00)
+        self.inp_conv_amount.setDecimals(0)
+        self.inp_conv_amount.setSuffix(" DA")
+
+        lbl_ref_p = QLabel("Titre Réf :")
+        self.inp_ref_purity = QLineEdit()
+        self.inp_ref_purity.setPlaceholderText("ex: 730")
+        self.inp_ref_purity.setText("730")
+        self.inp_ref_purity.setMaximumWidth(70)
+
+        lbl_p_ref = QLabel("Prix/g (Réf) :")
+        self.inp_price_ref = QDoubleSpinBox()
+        self.inp_price_ref.setRange(0.00, 999999.99)
+        self.inp_price_ref.setDecimals(2)
+        self.inp_price_ref.setSuffix(" DA/g")
+
+        lbl_p_sup = QLabel("Prix/g (Titre) :")
+        self.inp_price_supplier_purity = QDoubleSpinBox()
+        self.inp_price_supplier_purity.setRange(0.00, 999999.99)
+        self.inp_price_supplier_purity.setDecimals(2)
+        self.inp_price_supplier_purity.setSuffix(" DA/g")
+
+        h_row2.addWidget(lbl_conv_amt)
+        h_row2.addWidget(self.inp_conv_amount, stretch=1)
+        h_row2.addWidget(lbl_ref_p)
+        h_row2.addWidget(self.inp_ref_purity)
+        h_row2.addWidget(lbl_p_ref)
+        h_row2.addWidget(self.inp_price_ref, stretch=1)
+        h_row2.addWidget(lbl_p_sup)
+        h_row2.addWidget(self.inp_price_supplier_purity, stretch=1)
+        h_layout.addLayout(h_row2)
+
+        self.lbl_converted_res = QLabel("Saisissez le poids/titre ou le montant (DA) & prix/g pour la conversion automatique")
         self.lbl_converted_res.setStyleSheet("font-weight: bold; color: #0369a1; font-size: 12px;")
         h_layout.addWidget(self.lbl_converted_res)
 
@@ -238,6 +276,10 @@ class SupplierOperationDialog(QDialog):
             self.inp_base_purity,
             self.inp_op_purity,
             self.inp_raw_weight,
+            self.inp_conv_amount,
+            self.inp_ref_purity,
+            self.inp_price_ref,
+            self.inp_price_supplier_purity,
         ):
             apply_touch_input_defaults(widget)
 
@@ -259,9 +301,77 @@ class SupplierOperationDialog(QDialog):
         self.poids_spin.valueChanged.connect(self._on_poids_manual_change)
         self.afacon_edit.textChanged.connect(self._auto_calc_montant)
 
-        self.inp_base_purity.textChanged.connect(self._recalc_converted_weight)
+        self.inp_ref_purity.textChanged.connect(self._on_ref_purity_changed)
+        self.inp_base_purity.textChanged.connect(self._on_base_purity_changed)
         self.inp_op_purity.textChanged.connect(self._recalc_converted_weight)
         self.inp_raw_weight.valueChanged.connect(self._recalc_converted_weight)
+
+        self.inp_conv_amount.valueChanged.connect(self._recalc_da_to_weight)
+        self.inp_price_ref.valueChanged.connect(self._on_price_ref_changed)
+        self.inp_price_supplier_purity.valueChanged.connect(self._on_price_supplier_changed)
+
+    def _get_ref_purity(self) -> float:
+        ref_purity_str = self.inp_ref_purity.text().strip().replace(",", ".")
+        try:
+            val = float(ref_purity_str)
+            return val if val > 0 else 730.0
+        except ValueError:
+            return 730.0
+
+    def _get_base_purity(self) -> float:
+        base_purity_str = self.inp_base_purity.text().strip().replace(",", ".")
+        try:
+            val = float(base_purity_str)
+            return val if val > 0 else 750.0
+        except ValueError:
+            return 750.0
+
+    def _on_ref_purity_changed(self):
+        p_ref = self.inp_price_ref.value()
+        if p_ref > 0:
+            ref_purity = self._get_ref_purity()
+            base_purity = self._get_base_purity()
+            p_sup = p_ref * (base_purity / ref_purity)
+            self.inp_price_supplier_purity.blockSignals(True)
+            self.inp_price_supplier_purity.setValue(p_sup)
+            self.inp_price_supplier_purity.blockSignals(False)
+            self._recalc_da_to_weight()
+
+    def _on_base_purity_changed(self):
+        self._recalc_converted_weight()
+        p_ref = self.inp_price_ref.value()
+        if p_ref > 0:
+            ref_purity = self._get_ref_purity()
+            base_purity = self._get_base_purity()
+            p_sup = p_ref * (base_purity / ref_purity)
+            self.inp_price_supplier_purity.blockSignals(True)
+            self.inp_price_supplier_purity.setValue(p_sup)
+            self.inp_price_supplier_purity.blockSignals(False)
+            self._recalc_da_to_weight()
+
+    def _on_price_ref_changed(self):
+        p_ref = self.inp_price_ref.value()
+        ref_purity = self._get_ref_purity()
+        base_purity = self._get_base_purity()
+        p_sup = p_ref * (base_purity / ref_purity) if p_ref > 0 else 0.0
+
+        self.inp_price_supplier_purity.blockSignals(True)
+        self.inp_price_supplier_purity.setValue(p_sup)
+        self.inp_price_supplier_purity.blockSignals(False)
+
+        self._recalc_da_to_weight()
+
+    def _on_price_supplier_changed(self):
+        p_sup = self.inp_price_supplier_purity.value()
+        ref_purity = self._get_ref_purity()
+        base_purity = self._get_base_purity()
+        p_ref = p_sup * (ref_purity / base_purity) if (p_sup > 0 and base_purity > 0) else 0.0
+
+        self.inp_price_ref.blockSignals(True)
+        self.inp_price_ref.setValue(p_ref)
+        self.inp_price_ref.blockSignals(False)
+
+        self._recalc_da_to_weight()
 
     def _on_poids_manual_change(self):
         if not self.is_auto_updating:
@@ -281,6 +391,50 @@ class SupplierOperationDialog(QDialog):
             self.montant_spin.blockSignals(True)
             self.montant_spin.setValue(montant)
             self.montant_spin.blockSignals(False)
+
+    def _recalc_da_to_weight(self):
+        amount = self.inp_conv_amount.value()
+        price_sup = self.inp_price_supplier_purity.value()
+        price_ref = self.inp_price_ref.value()
+        ref_purity = self._get_ref_purity()
+        base_purity = self._get_base_purity()
+
+        if abs(amount) > 0.0001 and (price_sup > 0 or price_ref > 0):
+            if price_sup <= 0 and price_ref > 0:
+                price_sup = price_ref * (base_purity / ref_purity)
+
+            weight_g = amount / price_sup
+
+            self.is_auto_updating = True
+            self.poids_spin.setValue(weight_g)
+
+            # Auto-generate observation text with Versement
+            price_for_obs = price_ref if price_ref > 0 else price_sup
+            unit_obs = f"{ref_purity:g}" if price_ref > 0 else f"Titre {base_purity:g}"
+            
+            price_formatted = f"{price_for_obs:,.2f}".replace(",", " ").replace(".", ",").replace(" ,", ",")
+            if price_formatted.endswith(",00"):
+                price_formatted = price_formatted[:-3]
+            
+            amount_formatted = f"{abs(amount):,.0f}".replace(",", " ")
+            obs_text = f"Versement {amount_formatted} DA @ {price_formatted} DA/g ({unit_obs})"
+            
+            current_obs = self.obs_edit.text().strip()
+            if not current_obs or current_obs.startswith("Versement") or current_obs.startswith("Achat Or") or current_obs.startswith("Vente Or") or current_obs == "Régler" or "DA @" in current_obs:
+                self.obs_edit.setText(obs_text)
+
+            if amount < 0:
+                self.color_combo.setCurrentIndex(1)
+
+            self.is_auto_updating = False
+            self._auto_calc_montant()
+
+            self.lbl_converted_res.setText(
+                f"✅ Conversion DA → Poids (Versement) : {weight_g:+.2f} g ({amount:,.0f} DA / {price_sup:,.2f} DA/g au titre {base_purity:g})"
+            )
+        elif abs(amount) <= 0.0001 and price_sup <= 0 and price_ref <= 0:
+            if abs(self.inp_raw_weight.value()) <= 0.0001:
+                self.lbl_converted_res.setText("Saisissez le poids/titre ou le montant (DA) & prix/g pour la conversion automatique")
 
     def _recalc_converted_weight(self):
         raw_w = self.inp_raw_weight.value()
@@ -323,7 +477,8 @@ class SupplierOperationDialog(QDialog):
                 f"✅ Poids équivalent automatique (Titre {base_purity:g}) : {converted_w:.2f} g"
             )
         else:
-            self.lbl_converted_res.setText("Saisissez le poids brut et le titre de la pièce pour la conversion automatique")
+            if abs(self.inp_conv_amount.value()) <= 0.0001:
+                self.lbl_converted_res.setText("Saisissez le poids/titre ou le montant (DA) & prix/g pour la conversion automatique")
 
     def _apply_regler_preset(self):
         if not self.obs_edit.text():

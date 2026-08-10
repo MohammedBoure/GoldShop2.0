@@ -19,6 +19,16 @@ class ColorOverrideDelegate(QStyledItemDelegate):
     Delegate يقرأ الألوان من البيانات ويرسمها مباشرة، 
     متجاوزاً تأثير QSS على لون النص والخلفية.
     """
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        fg = index.data(Qt.ForegroundRole)
+        if isinstance(fg, QBrush) and fg.style() != Qt.NoBrush:
+            color = fg.color()
+            option.palette.setColor(QPalette.Text, color)
+            option.palette.setColor(QPalette.WindowText, color)
+            option.palette.setColor(QPalette.HighlightedText, color)
+            option.palette.setColor(QPalette.ButtonText, color)
+
     def paint(self, painter, option, index):
         # قراءة الألوان المحددة برمجياً
         bg = index.data(Qt.BackgroundRole)
@@ -31,8 +41,10 @@ class ColorOverrideDelegate(QStyledItemDelegate):
         if isinstance(fg, QBrush) and fg.style() != Qt.NoBrush:
             color = fg.color()
             option.palette.setColor(QPalette.Text, color)
+            option.palette.setColor(QPalette.WindowText, color)
             option.palette.setColor(QPalette.PlaceholderText, color)
             option.palette.setColor(QPalette.HighlightedText, color)
+            option.palette.setColor(QPalette.ButtonText, color)
 
         super().paint(painter, option, index)
 
@@ -915,7 +927,8 @@ class ExcelJournalView(QWidget):
     # باقي الدوال (بدون تغيير)
     # ──────────────────────────────────────────────────────────────
     def show_sale_details(self, sale_id):
-        pwd, ok = QInputDialog.getText(
+        from ui.tools.virtual_keyboard import VirtualPasswordInputDialog
+        pwd, ok = VirtualPasswordInputDialog.getText(
             self, "Protection Admin", 
             "Veuillez entrer le mot de passe Administrateur pour afficher les bénéfices (Faaida) :", 
             QLineEdit.Password
@@ -1175,6 +1188,7 @@ class ExcelJournalView(QWidget):
                     for col_idx in [7, 8]:
                         item = QTableWidgetItem("")
                         item.setBackground(QBrush(QColor("#d4edda")))
+                        item.setForeground(QBrush(QColor("#155724")))
                         self.table.setItem(row, col_idx, item)
 
             self._adjust_table_columns()

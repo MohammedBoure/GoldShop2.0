@@ -547,15 +547,9 @@ class NewVersementDialog(QDialog):
             except: acompte_da = 0.0
 
         if total_brut > 0 and total_weight > 0:
-            net = max(0.0, total_brut - remise)
-            if net > 0:
-                # سعر الغرام بالمساعدة F = net / total_weight
-                prix_g_mida = net / total_weight
-                # غرامات تصفية العربون L = acompte_da / prix_g_mida
-                poids_auto = acompte_da / prix_g_mida if prix_g_mida > 0 else 0.0
-            else:
-                prix_g_moyen = total_brut / total_weight
-                poids_auto = acompte_da / prix_g_moyen if prix_g_moyen > 0 else 0.0
+            prix_g_moyen = total_brut / total_weight
+            total_payment_value = acompte_da + remise
+            poids_auto = (total_payment_value / prix_g_moyen) if prix_g_moyen > 0 else 0.0
                 
             if poids_auto > total_weight: poids_auto = total_weight
             
@@ -595,11 +589,13 @@ class NewVersementDialog(QDialog):
             except: acompte_da = 0.0
 
         reste_g = max(0.0, total_weight - poids_deduit)
+        prix_g_moyen = total_brut / total_weight if total_weight > 0 else 0.0
+        montant_reste = reste_g * prix_g_moyen
         
         self.lbl_summary_brut.setText(f"{total_brut:,.2f} DA  (Poids: {total_weight:,.2f} g)")
         self.lbl_summary_remise.setText(f"- {remise:,.2f} DA ({remise_pct:.1f}%)" if remise > 0 else "0.00 DA")
         self.lbl_summary_paye.setText(f"{acompte_da:,.2f} DA  (Poids déduit: {poids_deduit:,.2f} g)")
-        self.lbl_summary_reste.setText(f"{reste_g:,.2f} g")
+        self.lbl_summary_reste.setText(f"{reste_g:,.2f} g  (≈ {montant_reste:,.0f} DA)")
 
     # ========================================================
     # الحسابات الخاصة بطرق الدفع

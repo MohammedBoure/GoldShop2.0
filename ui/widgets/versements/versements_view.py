@@ -5,7 +5,7 @@ import json
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget,
     QTableWidgetItem, QHeaderView, QStyledItemDelegate, QLabel, QLineEdit, QComboBox,
-    QMenu, QMessageBox, QDialog, QAbstractScrollArea, QFormLayout,
+    QMenu, QMessageBox, QDialog, QAbstractScrollArea, QFormLayout, QFrame,
     QDoubleSpinBox, QApplication, QGroupBox, QCompleter
 )
 from PySide6.QtCore import Qt, QUrl, QSize, QStringListModel, QTimer
@@ -602,13 +602,9 @@ class EditPaymentDialog(QDialog):
         remise = self.inp_remise.value()
         
         if base_amount > 0 and base_weight > 0:
-            net = max(0.0, base_amount - remise)
-            if net > 0:
-                prix_g_mida = net / base_weight
-                poids_auto = current_pay / prix_g_mida if prix_g_mida > 0 else 0.0
-            else:
-                prix_g_moyen = base_amount / base_weight
-                poids_auto = current_pay / prix_g_moyen if prix_g_moyen > 0 else 0.0
+            prix_g_moyen = base_amount / base_weight
+            total_payment_value = current_pay + remise
+            poids_auto = (total_payment_value / prix_g_moyen) if prix_g_moyen > 0 else 0.0
                 
             if poids_auto > base_weight: poids_auto = base_weight
             
@@ -1027,6 +1023,7 @@ class VersementsView(QWidget):
 
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_context_menu)
+        self.table.doubleClicked.connect(self._on_table_double_clicked)
         self.table.itemSelectionChanged.connect(self.on_table_selection_changed)
         layout.addWidget(self.table)
 
@@ -1531,6 +1528,7 @@ class VersementsView(QWidget):
         v_statut = data.get("statut")
 
         if row_type == "HEADER":
+            self._add_action_btn("fa5s.search-plus", "🔍 Afficher tout en détails (Sans coupures)", "#0f8f83", "#0b776d", lambda: self.open_full_details_dialog(v_id))
             self._add_action_btn("fa5s.info-circle", "Spécifications détaillées", "#3498db", "#2980b9", lambda: self.show_product_specs(data))
             self._add_action_btn("fa5s.file-pdf", "Télécharger Bon (PDF)", "#e74c3c", "#c0392b", lambda: self.print_versement_pdf(v_id, open_pdf=True, direct=False))
             pdf_printer = self._get_pdf_printer_name()
@@ -1683,6 +1681,18 @@ class VersementsView(QWidget):
             traceback.print_exc()
             QMessageBox.critical(self, "Erreur thermique", f"Erreur lors de l'impression thermique :\n{e}")
 
+    def _on_table_double_clicked(self, index):
+        if not index.isValid(): return
+        item = self.table.item(index.row(), 0)
+        if not item: return
+        data = item.data(Qt.UserRole)
+        if isinstance(data, dict) and data.get("v_id"):
+            self.open_full_details_dialog(data.get("v_id"))
+
+    def open_full_details_dialog(self, versement_id):
+        dlg = VersementFullDetailsDialog(versement_id, self.manager, self)
+        dlg.exec()
+
     # ──────────────────────────────────────────────────────────────
     # باقي الدوال
     # ──────────────────────────────────────────────────────────────
@@ -1722,6 +1732,7 @@ class VersementsView(QWidget):
         f.setWeight(QFont.Bold if bold else QFont.Normal)
         item.setFont(f)
         item.setData(Qt.UserRole, data_dict)
+        item.setToolTip(text)
         item.setTextAlignment((Qt.AlignCenter if align_center else Qt.AlignLeft) | Qt.AlignVCenter)
         if color_red: item.setForeground(QBrush(QColor("#c0392b")))
         if bg_color: item.setBackground(QBrush(QColor(bg_color)))
@@ -2045,3 +2056,177 @@ class VersementsView(QWidget):
         dlg = AddItemToVersementDialog(self.manager, versement_id, self)
         if dlg.exec() == QDialog.Accepted:
             self.load_data()
+
+
+class VersementFullDetailsDialog(QDialog):
+    """
+    نافذة عرض كافة تفاصيل الملف والدفعات والمنتجات في جداول مستقلة ونظيفة بدون أي تقطيع (...).
+    """
+    def __init__(self, versement_id, manager, parent=None):
+        super().__init__(parent)
+        self.versement_id = versement_id
+        self.manager = manager
+        self.setWindowTitle(f"📋 Détails complets du Versement N° VRS-{versement_id:05d}")
+        self.setMinimumSize(1050, 700)
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        versements = getattr(self.manager.versements, 'get_versements', lambda **k: [])(status_filter=None)
+        v = next((item for item in versements if item['id'] == self.versement_id), None)
+        
+        if not v:
+            layout.addWidget(QLabel("Erreur: Données du versement introuvables."))
+            return
+
+        client_name = v.get('client_name', 'Inconnu')
+        client_phone = str(v.get('phone') or 'Non renseigné')
+        statut = v.get('status', 'EN_COURS')
+        created_at = str(v.get('created_at', ''))
+
+        info_frame = QFrame()
+        info_frame.setStyleSheet("background-color: #f0f9ff; border: 1px solid #7dd3fc; border-radius: 8px; padding: 12px;")
+        info_layout = QHBoxLayout(info_frame)
+        
+        lbl_info = QLabel(
+            f"<b>📦 Dossier VRS-{self.versement_id:05d}</b> &nbsp;|&nbsp; "
+            f"<b>Client :</b> {client_name} &nbsp;|&nbsp; "
+            f"<b>Téléphone :</b> {client_phone} &nbsp;|&nbsp; "
+            f"<b>Date :</b> {created_at[:10]} &nbsp;|&nbsp; "
+            f"<b>Statut :</b> <span style='color: {'#27ae60' if statut=='CLOTURE' else ('#c0392b' if statut=='ANNULE' else '#0284c7')}'>{statut}</span>"
+        )
+        lbl_info.setStyleSheet("font-size: 14px; color: #1e293b;")
+        info_layout.addWidget(lbl_info)
+        layout.addWidget(info_frame)
+
+        # Section 1: Tableau des Articles (Produits)
+        lbl_articles = QLabel("💍 Articles et Bijoux dans ce Versement (Tableau complet) :")
+        lbl_articles.setStyleSheet("font-size: 15px; font-weight: bold; color: #0f8f83; margin-top: 5px;")
+        layout.addWidget(lbl_articles)
+
+        table_articles = QTableWidget()
+        table_articles.setColumnCount(7)
+        table_articles.setHorizontalHeaderLabels([
+            "Code-barres", "Désignation Produit", "Poids Initial (g)", "Poids Déduit (g)", "Poids Restant (g)", "Statut", "Observation / À Vendre"
+        ])
+        table_articles.setStyleSheet("""
+            QTableWidget { background-color: white; gridline-color: #cbd5e1; font-size: 13px; }
+            QHeaderView::section { background-color: #0f8f83; color: white; font-weight: bold; font-size: 13px; padding: 6px; }
+            QTableWidget::item { padding: 6px; }
+        """)
+        table_articles.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table_articles.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        table_articles.horizontalHeader().setSectionResizeMode(6, QHeaderView.Stretch)
+
+        items = v.get('items', [])
+        payments = v.get('payments', [])
+        active_items = [it for it in items if it.get('item_status') != 'ANNULE']
+        total_active_weight = sum(float(it.get('display_weight') or it.get('weight') or 0) for it in active_items)
+
+        table_articles.setRowCount(len(items))
+        for row_idx, item in enumerate(items):
+            item_weight = float(item.get('display_weight') or item.get('weight') or 0)
+            item_id = item.get('item_id') or item.get('id')
+            
+            direct_payments = [p for p in payments if p.get('versement_item_id') == item_id]
+            global_payments = [p for p in payments if p.get('versement_item_id') is None]
+            direct_deducted_g = sum(float(p.get('poids_deduit_g') or 0) for p in direct_payments)
+            global_deducted_g = sum(float(p.get('poids_deduit_g') or 0) for p in global_payments)
+            shared_deducted_g = global_deducted_g * (item_weight / total_active_weight) if total_active_weight > 0 else 0.0
+            deducted_g = direct_deducted_g + shared_deducted_g
+            remaining_g = max(0.0, item_weight - deducted_g)
+
+            barcode = item.get("barcode", "N/A")
+            desig = item.get("designation", "Article Inconnu")
+            i_statut = item.get("item_status", "EN_COURS")
+            custom_note = item.get("custom_note") or item.get("notes") or ""
+
+            it_bc = QTableWidgetItem(str(barcode)); it_bc.setToolTip(str(barcode))
+            it_desig = QTableWidgetItem(str(desig)); it_desig.setToolTip(str(desig))
+            it_w = QTableWidgetItem(f"{item_weight:.2f} g")
+            it_ded = QTableWidgetItem(f"{deducted_g:.3f} g")
+            it_rem = QTableWidgetItem(f"{remaining_g:.3f} g")
+            it_st = QTableWidgetItem(str(i_statut))
+            it_note = QTableWidgetItem(str(custom_note)); it_note.setToolTip(str(custom_note))
+
+            table_articles.setItem(row_idx, 0, it_bc)
+            table_articles.setItem(row_idx, 1, it_desig)
+            table_articles.setItem(row_idx, 2, it_w)
+            table_articles.setItem(row_idx, 3, it_ded)
+            table_articles.setItem(row_idx, 4, it_rem)
+            table_articles.setItem(row_idx, 5, it_st)
+            table_articles.setItem(row_idx, 6, it_note)
+
+        layout.addWidget(table_articles)
+
+        # Section 2: Tableau des Paiements (Versements)
+        lbl_payments = QLabel("💵 Historique des Paiements et Versements :")
+        lbl_payments.setStyleSheet("font-size: 15px; font-weight: bold; color: #0284c7; margin-top: 5px;")
+        layout.addWidget(lbl_payments)
+
+        table_payments = QTableWidget()
+        table_payments.setColumnCount(9)
+        table_payments.setHorizontalHeaderLabels([
+            "Date", "Cash (DA)", "TPE (DA)", "Montant (€/$)", "Taux", "Or Cassé (g)", "Poids Déduit (g)", "Remise (DA)", "Notes / Description"
+        ])
+        table_payments.setStyleSheet("""
+            QTableWidget { background-color: white; gridline-color: #cbd5e1; font-size: 13px; }
+            QHeaderView::section { background-color: #0284c7; color: white; font-weight: bold; font-size: 13px; padding: 6px; }
+            QTableWidget::item { padding: 6px; }
+        """)
+        table_payments.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table_payments.horizontalHeader().setSectionResizeMode(8, QHeaderView.Stretch)
+
+        table_payments.setRowCount(len(payments))
+        for row_idx, p in enumerate(payments):
+            d = p.get('payment_date', '')
+            date_str = d.strftime("%d/%m/%Y %H:%M") if hasattr(d, 'strftime') else str(d)
+            m_da = float(p.get('montant_da') or 0)
+            m_tpe = float(p.get('tpe_da') or 0)
+            m_eu = float(p.get('montant_euro') or 0)
+            m_dl = float(p.get('montant_dollar') or 0)
+            taux = float(p.get('taux_change_euro') or p.get('taux_change_dollar') or 0)
+            o_c = float(p.get('or_casse_g') or 0)
+            deduit = float(p.get('poids_deduit_g') or 0)
+            remise = float(p.get('remise_da') or 0)
+            p_notes = p.get('notes') or ""
+
+            devise_str = []
+            if m_eu != 0: devise_str.append(f"{m_eu:,.2f} €")
+            if m_dl != 0: devise_str.append(f"{m_dl:,.2f} $")
+
+            it_date = QTableWidgetItem(date_str)
+            it_da = QTableWidgetItem(f"{m_da:,.0f} DA" if m_da != 0 else "-")
+            it_tpe = QTableWidgetItem(f"{m_tpe:,.0f} DA" if m_tpe != 0 else "-")
+            it_dev = QTableWidgetItem(" / ".join(devise_str) if devise_str else "-")
+            it_taux = QTableWidgetItem(f"{taux:.2f}" if taux > 0 else "-")
+            it_oc = QTableWidgetItem(f"{o_c:.2f} g" if o_c != 0 else "-")
+            it_ded = QTableWidgetItem(f"{deduit:.3f} g" if deduit != 0 else "-")
+            it_rem = QTableWidgetItem(f"{remise:,.0f} DA" if remise != 0 else "-")
+            it_notes = QTableWidgetItem(str(p_notes)); it_notes.setToolTip(str(p_notes))
+
+            table_payments.setItem(row_idx, 0, it_date)
+            table_payments.setItem(row_idx, 1, it_da)
+            table_payments.setItem(row_idx, 2, it_tpe)
+            table_payments.setItem(row_idx, 3, it_dev)
+            table_payments.setItem(row_idx, 4, it_taux)
+            table_payments.setItem(row_idx, 5, it_oc)
+            table_payments.setItem(row_idx, 6, it_ded)
+            table_payments.setItem(row_idx, 7, it_rem)
+            table_payments.setItem(row_idx, 8, it_notes)
+
+        layout.addWidget(table_payments)
+
+        # Action bar
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn_close = QPushButton("Fermer")
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.setStyleSheet("background-color: #64748b; color: white; font-weight: bold; padding: 8px 24px; border-radius: 6px;")
+        btn_close.clicked.connect(self.accept)
+        btn_layout.addWidget(btn_close)
+
+        layout.addLayout(btn_layout)
