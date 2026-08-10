@@ -331,26 +331,25 @@ class AddPaymentDialog(QDialog):
         except Exception:
             pass
 
-    def _get_active_base_amount(self):
+    def _get_active_unit_price_per_gram(self):
         selected_item_id = self.combo_target.currentData()
-        if selected_item_id and selected_item_id in self.item_prices:
+        if selected_item_id and selected_item_id in self.item_prices and selected_item_id in self.item_weights:
             item_amount = float(self.item_prices[selected_item_id] or 0)
-            item_paid = sum(
-                float(p.get('montant_da') or 0) +
-                float(p.get('tpe_da') or 0) +
-                float(p.get('remise_da') or 0)
-                for p in (self.v_data.get('payments', []) if self.v_data else [])
-                if p.get('versement_item_id') == selected_item_id
-            )
-            return max(0.0, item_amount - item_paid)
-        elif self.v_data:
-            total_est = self.v_data.get('total_estimated_price_da', 0)
-            total_paid = self.v_data.get('total_paid_money_da', 0) + self.v_data.get('total_remise_da', 0)
-            return max(0.0, total_est - total_paid)
+            item_weight = float(self.item_weights[selected_item_id] or 0)
+            if item_amount > 0 and item_weight > 0:
+                return item_amount / item_weight
+        if self.v_data:
+            total_est = float(self.v_data.get('total_estimated_price_da') or 0)
+            total_weight = float(self.v_data.get('total_weight_g') or 0)
+            if total_est > 0 and total_weight > 0:
+                return total_est / total_weight
         return 0.0
 
+    def _get_active_base_amount(self):
+        return self._get_active_base_weight() * self._get_active_unit_price_per_gram()
+
     def _get_active_base_weight(self):
-        selected_item_id = self.combo_target.currentData()
+        selected_item_id = self.combo_target.currentData() 
         if selected_item_id and selected_item_id in self.item_weights:
             w = self.item_weights[selected_item_id]
             # خصم الدفعات السابقة الموجهة لهذه القطعة
@@ -407,70 +406,9 @@ class AddPaymentDialog(QDialog):
                     QMessageBox.warning(self, "Erreur", f"Le montant cible doit être entre 0 et {base_amount:,.2f} DA.")
 
     def _get_price_per_gram_context(self):
-        selected_item_id = self.combo_target.currentData()
-        if selected_item_id is None:
-            selected_item_id = getattr(self, "preselected_item_id", None)
-        if selected_item_id is None:
-            selected_item_id = getattr(self, "p_data", {}).get("versement_item_id")
-
-        current_payment = getattr(self, "p_data", {})
-        current_payment_id = current_payment.get("payment_id")
-        if selected_item_id in self.item_prices and selected_item_id in self.item_weights:
-            item_amount = float(self.item_prices[selected_item_id] or 0)
-            item_weight = float(self.item_weights[selected_item_id] or 0)
-            if item_amount > 0 and item_weight > 0:
-                deducted_weight = sum(
-                    float(p.get("poids_deduit_g") or 0)
-                    for p in (self.v_data.get("payments", []) if self.v_data else [])
-                    if p.get("versement_item_id") == selected_item_id
-                )
-                if current_payment_id and current_payment.get("versement_item_id") == selected_item_id:
-                    deducted_weight -= float(current_payment.get("poids_deduit_g") or 0)
-                return item_amount / item_weight, max(0.0, item_weight - deducted_weight)
-
-        if self.v_data:
-            total_amount = float(self.v_data.get("total_estimated_price_da") or 0)
-            total_weight = float(self.v_data.get("total_weight_g") or 0)
-            if total_amount > 0 and total_weight > 0:
-                remaining_weight = float(self.v_data.get("reste_poids_g") or 0)
-                if current_payment_id:
-                    remaining_weight += float(current_payment.get("poids_deduit_g") or 0)
-                return total_amount / total_weight, max(0.0, remaining_weight)
-
-        return 0.0, 0.0
-
-    def _get_price_per_gram_context(self):
-        selected_item_id = self.combo_target.currentData()
-        if selected_item_id is None:
-            selected_item_id = getattr(self, "preselected_item_id", None)
-        if selected_item_id is None:
-            selected_item_id = getattr(self, "p_data", {}).get("versement_item_id")
-
-        current_payment = getattr(self, "p_data", {})
-        current_payment_id = current_payment.get("payment_id")
-        if selected_item_id in self.item_prices and selected_item_id in self.item_weights:
-            item_amount = float(self.item_prices[selected_item_id] or 0)
-            item_weight = float(self.item_weights[selected_item_id] or 0)
-            if item_amount > 0 and item_weight > 0:
-                deducted_weight = sum(
-                    float(p.get("poids_deduit_g") or 0)
-                    for p in (self.v_data.get("payments", []) if self.v_data else [])
-                    if p.get("versement_item_id") == selected_item_id
-                )
-                if current_payment_id and current_payment.get("versement_item_id") == selected_item_id:
-                    deducted_weight -= float(current_payment.get("poids_deduit_g") or 0)
-                return item_amount / item_weight, max(0.0, item_weight - deducted_weight)
-
-        if self.v_data:
-            total_amount = float(self.v_data.get("total_estimated_price_da") or 0)
-            total_weight = float(self.v_data.get("total_weight_g") or 0)
-            if total_amount > 0 and total_weight > 0:
-                remaining_weight = float(self.v_data.get("reste_poids_g") or 0)
-                if current_payment_id:
-                    remaining_weight += float(current_payment.get("poids_deduit_g") or 0)
-                return total_amount / total_weight, max(0.0, remaining_weight)
-
-        return 0.0, 0.0
+        unit_ppg = self._get_active_unit_price_per_gram()
+        rem_weight = self._get_active_base_weight()
+        return unit_ppg, rem_weight
 
     def open_discount_price_per_gram(self):
         current_ppg, available_weight = self._get_price_per_gram_context()
@@ -495,24 +433,23 @@ class AddPaymentDialog(QDialog):
                     QMessageBox.warning(self, "Erreur", "Le prix/g cible doit etre superieur a 0.")
                     return
                 target_ppg = min(target_ppg, current_ppg)
-                remise_value = max(0.0, (current_ppg - target_ppg) * available_weight)
+                current_pay = self.inp_montant_da.value() + self.inp_tpe.value()
+                weight_target = (current_pay / target_ppg) if current_pay > 0 and target_ppg > 0 else available_weight
+                weight_target = min(weight_target, available_weight)
+                remise_value = max(0.0, (current_ppg - target_ppg) * weight_target)
                 self.inp_remise_da.setValue(remise_value)
 
     def _calculate_poids_suggestion(self):
-        base_amount = self._get_active_base_amount()
+        unit_ppg = self._get_active_unit_price_per_gram()
         base_weight = self._get_active_base_weight()
-        if base_amount <= 0 or base_weight <= 0:
+        if unit_ppg <= 0 or base_weight <= 0:
             return 0.0
 
         current_pay = self.inp_montant_da.value() + self.inp_tpe.value()
         remise = self.inp_remise_da.value()
-        net = max(0.0, base_amount - remise)
-        if net > 0:
-            prix_g_mida = net / base_weight
-            poids_suggested = current_pay / prix_g_mida if prix_g_mida > 0 else 0.0
-        else:
-            prix_g_moyen = base_amount / base_weight
-            poids_suggested = current_pay / prix_g_moyen if prix_g_moyen > 0 else 0.0
+        
+        total_payment_value = current_pay + remise
+        poids_suggested = total_payment_value / unit_ppg
 
         if poids_suggested > base_weight:
             return base_weight
@@ -547,19 +484,21 @@ class AddPaymentDialog(QDialog):
         self.update_dynamic_summary()
 
     def update_dynamic_summary(self):
-        base_amount = self._get_active_base_amount()
+        unit_ppg = self._get_active_unit_price_per_gram()
         base_weight = self._get_active_base_weight()
         
         current_pay = self.inp_montant_da.value() + self.inp_tpe.value()
         remise = self.inp_remise_da.value()
         poids_deduit = self.inp_poids_deduit.value()
         
-        remise_pct = (remise / base_amount * 100.0) if base_amount > 0 else 0.0
+        montant_reste_avant = base_weight * unit_ppg
+        remise_pct = (remise / montant_reste_avant * 100.0) if montant_reste_avant > 0 else 0.0
         nouveau_reste_g = max(0.0, base_weight - poids_deduit)
+        montant_nouveau_reste = nouveau_reste_g * unit_ppg
         
-        self.lbl_summary_reste.setText(f"{base_weight:,.2f} g")
+        self.lbl_summary_reste.setText(f"{base_weight:,.2f} g  (≈ {montant_reste_avant:,.0f} DA)")
         self.lbl_summary_current.setText(f"{(current_pay + remise):,.2f} DA  [Remise: {remise:,.2f} DA ({remise_pct:.1f}%)]")
-        self.lbl_summary_nouveau.setText(f"{nouveau_reste_g:,.2f} g")
+        self.lbl_summary_nouveau.setText(f"{nouveau_reste_g:,.2f} g  (≈ {montant_nouveau_reste:,.0f} DA)")
 
     def _populate_target_combo(self):
         try:
