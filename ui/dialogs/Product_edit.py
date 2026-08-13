@@ -464,11 +464,12 @@ class ProductEditDialog(QDialog):
         total_cost = (mc + lc) * w
 
         if margin_type == 'PERCENTAGE':
-            profit_per_unit = total_cost * (margin / 100.0)
+            profit_per_unit = (mc + lc) * (margin / 100.0)
         else:
             profit_per_unit = margin
 
-        selling_price = total_cost + (profit_per_unit * w)
+        total_profit = profit_per_unit * w
+        selling_price = total_cost + total_profit
 
         self.spin_total_cost.setValue(total_cost)
         self.spin_selling_price.setValue(selling_price)
@@ -478,28 +479,48 @@ class ProductEditDialog(QDialog):
             QMessageBox.warning(self, "Erreur", "Veuillez choisir un nom d'article.")
             return
 
-        # 🟢 استدعاء الدالة المدمجة الجديدة من الـ Backend
+        status_val = str(self.combo_status.currentData() or 'Available')
+        item_type_val = str(self.combo_item_type.currentData() or 'WEIGHT')
+
+        client_id_val = self.selected_client_id
+        if status_val != 'Reserved':
+            client_id_val = None
+
+        if item_type_val == "WEIGHT":
+            w_val = self.spin_weight.value()
+            rem_w = self.spin_remaining_weight.value()
+            if status_val == 'Available' and rem_w <= 0:
+                rem_w = w_val
+            rem_q = 1
+        else:
+            w_val = 1.0
+            rem_w = 1.0
+            q_val = self.spin_qty.value()
+            rem_q = self.spin_remaining_qty.value()
+            if status_val == 'Available' and rem_q <= 0:
+                rem_q = q_val
+
         ok = self.manager.inventory.update_item_extended(
             item_id=self.current_edit_id,
             barcode=self.inp_barcode.text().strip() or None,
             name=self.selected_item_name,
-            item_type=self.combo_item_type.currentData(),
+            item_type=item_type_val,
             category_id=self.selected_category_id,
-            metal_type_id=self.combo_metal.currentData() if self.combo_item_type.currentData() == "WEIGHT" else None,
-            weight=self.spin_weight.value() if self.combo_item_type.currentData() == "WEIGHT" else 1.0,
+            metal_type_id=self.combo_metal.currentData() if item_type_val == "WEIGHT" else None,
+            weight=w_val,
             quantity=self.spin_qty.value(),
             metal_cost_per_gram=self.spin_metal_cost.value(),
-            labor_cost_per_gram=self.spin_labor_cost.value() if self.combo_item_type.currentData() == "WEIGHT" else 0.0,
+            labor_cost_per_gram=self.spin_labor_cost.value() if item_type_val == "WEIGHT" else 0.0,
             profit_margin=self.spin_profit_margin.value(),
             margin_type=self.combo_margin_type.currentData(),
             total_cost=self.spin_total_cost.value(),
             selling_price=self.spin_selling_price.value(),
             location_id=self.combo_location.currentData(),
             supplier_id=self.selected_supplier_id,
-            remaining_weight=self.spin_remaining_weight.value() if self.combo_item_type.currentData() == "WEIGHT" else 1.0,
-            remaining_quantity=self.spin_remaining_qty.value(),
-            status=self.combo_status.currentData(),
-            reserved_for_client_id=self.selected_client_id
+            remaining_weight=rem_w,
+            remaining_quantity=rem_q,
+            status=status_val,
+            reserved_for_client_id=client_id_val
         )
 
         if ok:

@@ -352,7 +352,6 @@ class AddPaymentDialog(QDialog):
         selected_item_id = self.combo_target.currentData() 
         if selected_item_id and selected_item_id in self.item_weights:
             w = self.item_weights[selected_item_id]
-            # خصم الدفعات السابقة الموجهة لهذه القطعة
             deductions = sum(float(p.get('poids_deduit_g') or 0) for p in (self.v_data.get('payments', []) if self.v_data else []) if p.get('versement_item_id') == selected_item_id)
             return max(0.0, w - deductions)
         elif self.v_data:

@@ -460,9 +460,15 @@ class InventoryFormTab(QWidget):
         margin_type = self.combo_margin_type.currentData()
 
         total_cost = (mc + lc) * w
-        profit_per_unit = total_cost * (margin / 100.0) if margin_type == 'PERCENTAGE' else margin
+        if margin_type == 'PERCENTAGE':
+            profit_per_unit = (mc + lc) * (margin / 100.0)
+        else:
+            profit_per_unit = margin
+            
+        total_profit = profit_per_unit * w
+        
         self.spin_total_cost.setValue(total_cost)
-        self.spin_selling_price.setValue(total_cost + profit_per_unit * w)
+        self.spin_selling_price.setValue(total_cost + total_profit)
 
     def generate_barcode(self):
         now = datetime.datetime.now()

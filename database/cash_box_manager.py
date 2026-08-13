@@ -35,11 +35,41 @@ class CashBoxManager:
             logging.error(f"Erreur get_or_create_today_session: {e}")
             return None
 
+    def get_session_by_id(self, session_id: int):
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM DailySessions WHERE id = %s", (session_id,))
+                sessions = cursor.fetchall()
+                while cursor.nextset(): pass
+                return sessions[0] if sessions else None
+        except Exception as e:
+            logging.error(f"Erreur get_session_by_id: {e}")
+            return None
+
+    def get_session_by_date(self, year: int, month: int, day: int):
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute(
+                    "SELECT * FROM DailySessions WHERE YEAR(opened_at) = %s AND MONTH(opened_at) = %s AND DAY(opened_at) = %s ORDER BY id DESC",
+                    (year, month, day)
+                )
+                sessions = cursor.fetchall()
+                while cursor.nextset(): pass
+                return sessions[0] if sessions else None
+        except Exception as e:
+            logging.error(f"Erreur get_session_by_date: {e}")
+            return None
+
     def update_starting_cash(self, session_id: int, amount: float) -> bool:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("UPDATE DailySessions SET starting_cash_da = %s WHERE id = %s OR DATE(opened_at) = CURDATE()", (amount, session_id))
+                if session_id:
+                    cursor.execute("UPDATE DailySessions SET starting_cash_da = %s WHERE id = %s", (amount, session_id))
+                else:
+                    cursor.execute("UPDATE DailySessions SET starting_cash_da = %s WHERE DATE(opened_at) = CURDATE()", (amount,))
                 conn.commit()
                 return True
         except Exception as e:

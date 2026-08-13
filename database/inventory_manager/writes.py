@@ -297,11 +297,33 @@ class InventoryWriteMixin:
                              remaining_weight: float, remaining_quantity: int, 
                              status: str, reserved_for_client_id: int) -> bool:
         """
-        تحديث شامل للمنتج يشمل الحقول الأساسية والحقول الإضافية (الوزن المتبقي، الحالة، حجز العميل).
+        تحديث شامل للمنتج يشمل الحقول الأساسية والحقول الإضافية.
+        عند تحويل الحالة إلى Available: يتم تلقائياً استرجاع الوزن والكمية المتبقية وإلغاء حجز العميل وأي عربون قديم معلق لتصبح القطعة متاحة تماماً للبيع والعرابين.
         """
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
+                
+                norm_status = str(status or 'Available').strip()
+                norm_item_type = str(item_type or 'WEIGHT').upper()
+
+                if norm_status == 'Available':
+                    reserved_for_client_id = None
+                    if norm_item_type == 'WEIGHT':
+                        if remaining_weight is None or float(remaining_weight) <= 0:
+                            remaining_weight = weight
+                    elif norm_item_type == 'PIECE':
+                        if remaining_quantity is None or int(remaining_quantity) <= 0:
+                            remaining_quantity = quantity
+
+                    # إلغاء أي ارتباط بـ Versement قديم قيد التنفيذ للقطعة عند جعلها متاحة للبيع
+                    cursor.execute(
+                        "UPDATE Versement_Items SET item_status = 'ANNULE' WHERE inventory_id = %s AND item_status = 'EN_COURS'",
+                        (item_id,)
+                    )
+                elif norm_status != 'Reserved':
+                    reserved_for_client_id = None
+
                 query = """
                     UPDATE Inventory 
                     SET barcode = %s, name = %s, item_type = %s, category_id = %s, 
@@ -318,7 +340,7 @@ class InventoryWriteMixin:
                     weight, quantity, metal_cost_per_gram, labor_cost_per_gram, 
                     profit_margin, margin_type, total_cost, selling_price, 
                     location_id, supplier_id,
-                    remaining_weight, remaining_quantity, status, reserved_for_client_id,
+                    remaining_weight, remaining_quantity, norm_status, reserved_for_client_id,
                     item_id
                 ))
                 conn.commit()

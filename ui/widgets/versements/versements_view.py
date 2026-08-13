@@ -38,7 +38,7 @@ class VersementTableDelegate(QStyledItemDelegate):
         data = index.data(Qt.UserRole)
         if isinstance(data, dict) and data.get("type") == "SEPARATOR":
             painter.save()
-            painter.fillRect(option.rect, QColor("#b0bec5"))
+            painter.fillRect(option.rect, QColor("#0f8f83"))
             painter.restore()
             return
         super().paint(painter, option, index)
@@ -2001,7 +2001,7 @@ class VersementsView(QWidget):
                 text_color_reste = "#0f5132" if is_complete else "#c0392b"
                 self.add_group_header_row({"type": "SUMMARY"}, sum_text_1, 4, sum_text_2, 5, bg_color=bg_summary, text_color=payment_summary_color, text_color2=text_color_reste)
 
-                # الشريط الفاصل الرمادي بين كل ملف versement وآخر (طابق صورة العميل تماماً)
+                # الشريط الفاصل الأخضر بين كل ملف versement وآخر (بنفس لون شريط الجدول)
                 row_space = self.table.rowCount()
                 self.table.insertRow(row_space)
                 self.table.setRowHeight(row_space, 14)
@@ -2009,7 +2009,7 @@ class VersementsView(QWidget):
                 for col in range(9):
                     empty_item = QTableWidgetItem("")
                     empty_item.setFlags(Qt.NoItemFlags)
-                    empty_item.setBackground(QBrush(QColor("#b0bec5")))
+                    empty_item.setBackground(QBrush(QColor("#0f8f83")))
                     empty_item.setData(Qt.UserRole, separator_data)
                     self.table.setItem(row_space, col, empty_item)
                 self.table.setSpan(row_space, 0, 1, 9)

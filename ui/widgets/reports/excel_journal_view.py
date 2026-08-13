@@ -1007,16 +1007,52 @@ class ExcelJournalView(QWidget):
         except Exception: pass
             
     def set_starting_cash(self):
-        journee = self.manager.cash_box.get_or_create_today_session()
-        if not journee: return
-        current_fc = float(journee.get('starting_cash_da', 0.0))
+        target_session = None
+        
+        # 1. Check selected row in table
+        selected = self.table.selectedItems()
+        if selected:
+            row = selected[0].row()
+            item0 = self.table.item(row, 0)
+            if item0:
+                s_id = item0.data(Qt.UserRole)
+                if isinstance(s_id, int):
+                    target_session = getattr(self.manager.cash_box, 'get_session_by_id', lambda x: None)(s_id)
+
+        # 2. Check active date filter
+        if not target_session:
+            year = self.combo_year.currentData()
+            month = self.combo_month.currentData()
+            day = self.combo_day.currentData()
+            if day and day > 0 and year and month:
+                target_session = getattr(self.manager.cash_box, 'get_session_by_date', lambda y, m, d: None)(year, month, day)
+
+        # 3. Fallback to today's session
+        if not target_session:
+            target_session = self.manager.cash_box.get_or_create_today_session()
+
+        if not target_session:
+            QMessageBox.warning(self, "Erreur", "Aucune session de caisse trouvée.")
+            return
+
+        current_fc = float(target_session.get('starting_cash_da') or 0.0)
+        session_date = target_session.get('opened_at')
+        date_label = session_date.strftime("%d/%m/%Y") if hasattr(session_date, 'strftime') else str(session_date)[:10]
+
         from ui.tools.virtual_numpad import VirtualNumpad
-        pad = VirtualNumpad(title="Fond de Caisse (Fc)", mode="dialog", allow_decimal=True, initial_value=str(current_fc), parent=self)
+        pad = VirtualNumpad(
+            title=f"Fond de Caisse (Fc) - {date_label}",
+            mode="dialog",
+            allow_decimal=True,
+            initial_value=str(current_fc) if current_fc != 0 else "",
+            parent=self
+        )
         if pad.exec() == QDialog.Accepted:
             try:
-                amount = float(pad.get_value())
-                if self.manager.cash_box.update_starting_cash(journee['id'], amount): 
-                    self.load_data() 
+                val = pad.get_value()
+                amount = float(val) if val else 0.0
+                if self.manager.cash_box.update_starting_cash(target_session['id'], amount):
+                    self.load_data()
             except ValueError:
                 pass
                 
@@ -1036,7 +1072,7 @@ class ExcelJournalView(QWidget):
         day_name = days[date_obj.weekday()]
         return f"{day_name} Le {date_obj.strftime('%d/%m/%Y')}"
         
-    def add_merged_row(self, text1, col_span1, text2=None, col_span2=None, bg_color="#e1e8ef", text_color="#17212b", bg_color2="#e8eef3"):
+    def add_merged_row(self, text1, col_span1, text2=None, col_span2=None, bg_color="#e1e8ef", text_color="#17212b", bg_color2="#e8eef3", session_id=None):
         row = self.table.rowCount()
         self.table.insertRow(row)
         item1 = QTableWidgetItem(text1)
@@ -1044,6 +1080,8 @@ class ExcelJournalView(QWidget):
         item1.setFont(QFont("", 12, QFont.Bold))
         item1.setBackground(QBrush(QColor(bg_color)))
         item1.setForeground(QBrush(QColor(text_color)))
+        if session_id is not None:
+            item1.setData(Qt.UserRole, session_id)
         self.table.setItem(row, 0, item1)
         self.table.setSpan(row, 0, 1, col_span1)
         if text2 and col_span2:
@@ -1052,6 +1090,8 @@ class ExcelJournalView(QWidget):
             item2.setFont(QFont("", 12, QFont.Bold))
             item2.setBackground(QBrush(QColor(bg_color2)))
             item2.setForeground(QBrush(QColor(text_color)))
+            if session_id is not None:
+                item2.setData(Qt.UserRole, session_id)
             self.table.setItem(row, col_span1, item2)
             self.table.setSpan(row, col_span1, 1, col_span2)
             
@@ -1100,7 +1140,13 @@ class ExcelJournalView(QWidget):
                         
                     if not filtered_receipts and (client_search or seller_filter_id != 0): continue
                         
-                    self.add_merged_row(self.get_french_date_string(date_obj), 3, f"Fc : {fc_amount:,.0f} Da", 6, bg_color="#dfe8ef", text_color="#17212b", bg_color2="#e8eef3")
+                    fc_formatted = f"{fc_amount:,.2f}".rstrip('0').rstrip('.') if (fc_amount % 1 != 0) else f"{fc_amount:,.0f}"
+                    self.add_merged_row(
+                        self.get_french_date_string(date_obj), 3,
+                        f"Fc : {fc_formatted} Da", 6,
+                        bg_color="#dfe8ef", text_color="#17212b", bg_color2="#e8eef3",
+                        session_id=journee_id
+                    )
                     
                     if not filtered_receipts:
                         row = self.table.rowCount()
@@ -1172,8 +1218,8 @@ class ExcelJournalView(QWidget):
                     empty_item = QTableWidgetItem("Total Journée")
                     empty_item.setFont(QFont("", 11, QFont.Bold))
                     empty_item.setTextAlignment(Qt.AlignCenter)
-                    empty_item.setBackground(QBrush(QColor("#d4edda")))
-                    empty_item.setForeground(QBrush(QColor("#155724")))
+                    empty_item.setBackground(QBrush(QColor("#0f8f83")))
+                    empty_item.setForeground(QBrush(QColor("white")))
                     self.table.setItem(row, 0, empty_item)
                     
                     for idx, t_val in enumerate([t_ps, t_rec, t_oc, t_tpe, t_euro, t_dollar], start=1):
@@ -1181,14 +1227,14 @@ class ExcelJournalView(QWidget):
                         t_item = QTableWidgetItem(fmt)
                         t_item.setFont(QFont("", 11, QFont.Bold))
                         t_item.setTextAlignment(Qt.AlignCenter)
-                        t_item.setBackground(QBrush(QColor("#d4edda")))
-                        t_item.setForeground(QBrush(QColor("#155724")))
+                        t_item.setBackground(QBrush(QColor("#0f8f83")))
+                        t_item.setForeground(QBrush(QColor("white")))
                         self.table.setItem(row, idx, t_item)
                         
                     for col_idx in [7, 8]:
                         item = QTableWidgetItem("")
-                        item.setBackground(QBrush(QColor("#d4edda")))
-                        item.setForeground(QBrush(QColor("#155724")))
+                        item.setBackground(QBrush(QColor("#0f8f83")))
+                        item.setForeground(QBrush(QColor("white")))
                         self.table.setItem(row, col_idx, item)
 
             self._adjust_table_columns()
