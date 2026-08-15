@@ -249,88 +249,6 @@ class VersementItemNoteDialog(QDialog):
         return selected_custom_note(self.combo_note)
 
 
-
-class FacturationVersementDialog(QDialog):
-    def __init__(self, manager, data, parent=None):
-        super().__init__(parent)
-        self.manager = manager
-        self.data = data
-        self.setWindowTitle("Facturation d'un article livré")
-        self.setFixedSize(500, 470)
-        self.v_data = None
-        self.client_id = None
-        self._load_v_data()
-        self._init_ui()
-        
-    def _load_v_data(self):
-        versements = getattr(self.manager.versements, 'get_versements', lambda **k: [])(status_filter=None)
-        self.v_data = next((v for v in versements if v['id'] == self.data.get("v_id")), None)
-        self.client_id = self.v_data.get('client_id') if self.v_data else 1
-        
-    def _init_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(15)
-        
-        lbl_info = QLabel("<b>Article :</b> " + str(self.data.get("designation", "")))
-        lbl_info.setStyleSheet("font-size: 16px; color: #2c3e50;")
-        layout.addWidget(lbl_info)
-        
-        lbl_desc = QLabel("La facturation de cet article générera une facture de vente (Journal Excel).")
-        lbl_desc.setWordWrap(True)
-        lbl_desc.setStyleSheet("color: #7f8c8d; font-size: 13px;")
-        layout.addWidget(lbl_desc)
-        
-        form = QFormLayout()
-        self.inp_price = QLineEdit("0")
-        self.inp_price.setStyleSheet("font-size: 18px; font-weight: bold; color: #27ae60; padding: 5px;")
-        self.inp_price.setFocusPolicy(Qt.ClickFocus)
-        self.inp_price.mousePressEvent = lambda e: _open_numpad(self.inp_price, allow_decimal=True, parent=self)
-        form.addRow("Prix de Vente Final (DA):", self.inp_price)
-        
-        self.inp_cash = QLineEdit("0")
-        self.inp_cash.setStyleSheet("font-size: 18px; font-weight: bold; color: #2980b9; padding: 5px;")
-        self.inp_cash.setFocusPolicy(Qt.ClickFocus)
-        self.inp_cash.mousePressEvent = lambda e: _open_numpad(self.inp_cash, allow_decimal=True, parent=self)
-        form.addRow("Cash Payé Aujourd'hui (DA):", self.inp_cash)
-        self.combo_note = create_invoice_note_combo(
-            self.manager, self.data.get("custom_note"), self
-        )
-        form.addRow("À Vendre :", self.combo_note)
-        
-        self.combo_vendeur = QComboBox()
-        self.combo_vendeur.setStyleSheet("font-size: 16px; padding: 5px;")
-        self._load_sellers()
-        form.addRow("Vendeur :", self.combo_vendeur)
-        
-        layout.addLayout(form)
-        
-        btn_layout = QHBoxLayout()
-        btn_cancel = QPushButton("Annuler")
-        btn_cancel.clicked.connect(self.reject)
-        
-        btn_confirm = QPushButton("Facturer et Livrer")
-        btn_confirm.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold;")
-        btn_confirm.clicked.connect(self.accept)
-        
-        for btn in [btn_cancel, btn_confirm]:
-            btn.setFixedHeight(45)
-            btn_layout.addWidget(btn)
-            
-        layout.addLayout(btn_layout)
-        
-    def get_product_note(self):
-        return selected_custom_note(self.combo_note)
-
-    def _load_sellers(self):
-        try:
-            with self.manager.db.get_db_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                cursor.execute("SELECT id, username FROM Users WHERE is_active = 1")
-                for u in cursor.fetchall():
-                    self.combo_vendeur.addItem(u['username'], u['id'])
-        except Exception:
-            pass
-
 # ========================================================
 # الواجهة الرئيسية (Versements View)
 # ========================================================
@@ -803,25 +721,22 @@ class VersementsView(QWidget):
             QMessageBox.warning(self, "Erreur", "Impossible d'enregistrer À Vendre pour cet article.")
 
     def _handle_retirer_item(self, data):
-        dlg = FacturationVersementDialog(self.manager, data, self)
-        if dlg.exec() != QDialog.Accepted:
-            return
-
-        try: price = float(dlg.inp_price.text() or 0)
-        except: price = 0.0
-        try: cash = float(dlg.inp_cash.text() or 0)
-        except: cash = 0.0
-        vendeur_id = dlg.combo_vendeur.currentData() or 1
-        product_note = dlg.get_product_note()
+        item_desig = data.get("designation", "")
         item_id = data.get("item_id")
+        v_id = data.get("v_id")
+
+        reply = QMessageBox.question(
+            self,
+            "Confirmer la livraison",
+            f"Voulez-vous marquer cet article comme LIVRÉ (Retiré) ?\n\n💍 {item_desig}\n\n(L'article sera marqué comme livré et déduit du stock)",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
 
         journee = self.manager.cash_box.get_or_create_today_session(user_id=1)
         if not journee:
             QMessageBox.critical(self, "Erreur", "La session de caisse est fermée. La livraison n'a pas été enregistrée.")
-            return
-
-        if not self.manager.versements.update_versement_item_notes(item_id, product_note):
-            QMessageBox.warning(self, "Erreur", "Impossible d'enregistrer À Vendre. La livraison a été annulée.")
             return
 
         if not self.manager.versements.retirer_versement_item(item_id):
@@ -843,7 +758,30 @@ class VersementsView(QWidget):
                 cart_sold_weight = min(cart_sold_weight, remaining_w)
             else:
                 cart_sold_weight = float(data.get("remaining_weight") if data.get("remaining_weight") is not None else original_weight)
-                
+
+        price = float(data.get("selling_price") or data.get("display_price") or data.get("price") or 0.0)
+        if price <= 0:
+            try:
+                with self.manager.db.get_db_connection() as conn:
+                    cursor = conn.cursor(dictionary=True)
+                    cursor.execute("SELECT selling_price FROM Inventory WHERE id = %s", (data.get("inventory_id"),))
+                    row = cursor.fetchone()
+                    if row:
+                        price = float(row.get('selling_price') or 0.0)
+            except Exception:
+                price = 0.0
+
+        client_id = data.get("client_id")
+        if not client_id:
+            try:
+                versements = getattr(self.manager.versements, 'get_versements', lambda **k: [])(status_filter=None)
+                v_data = next((v for v in versements if v['id'] == v_id), None)
+                client_id = v_data.get('client_id') if v_data else 1
+            except Exception:
+                client_id = 1
+
+        product_note = data.get("custom_note") or ""
+
         cart_items = [{
             'id': data.get("inventory_id"),
             'item_type': item_type,
@@ -858,15 +796,15 @@ class VersementsView(QWidget):
         try:
             sale_result = self.manager.sales.create_sale(
                 journee_id=journee['id'],
-                client_id=dlg.client_id,
-                user_id=vendeur_id,
+                client_id=client_id,
+                user_id=1,
                 cart_items=cart_items,
                 total_amount=price,
                 discount=0,
                 net_to_pay=price,
                 cash_paid=0,
                 tpe_paid=0, old_gold_weight=0, impos_weight=0,
-                notes=f"Facturé depuis Versement N°VRS-{data.get('v_id'):05d} (Cash payé: {cash} DA)"
+                notes=f"Livraison depuis Versement N°VRS-{v_id:05d}"
             )
         except Exception as exc:
             sale_result = {"success": False, "message": str(exc)}
@@ -877,28 +815,19 @@ class VersementsView(QWidget):
             if reverted:
                 QMessageBox.critical(
                     self, "Facturation échouée",
-                    f"La facture n'a pas été créée ({detail}). L'article a été remis EN_COURS."
+                    f"La sortie de stock n'a pas été enregistrée ({detail}). L'article a été remis EN_COURS."
                 )
             else:
                 QMessageBox.critical(
                     self, "Erreur critique",
-                    f"La facture n'a pas été créée ({detail}) et le retour EN_COURS a échoué: {revert_message}"
+                    f"La sortie de stock n'a pas été enregistrée ({detail}) et le retour EN_COURS a échoué: {revert_message}"
                 )
             self.load_data()
             return
 
-        if cash > 0:
-            payment_saved = self.manager.versements.add_payment(
-                versement_id=data.get("v_id"),
-                journee_id=journee['id'],
-                montant_da=cash,
-                or_casse_g=0, prix_gramme_jour_da=0,
-                notes=f"Cash de livraison {data.get('designation', '')}",
-                versement_item_id=item_id
-            )
-            if not payment_saved:
-                QMessageBox.warning(self, "Paiement", "La facture a été créée, mais le paiement Versement n'a pas pu être enregistré.")
         self.load_data()
+        QMessageBox.information(self, "Livraison réussie", f"L'article '{item_desig}' a été marqué comme livré et déduit du stock avec succès.")
+
 
     def _handle_cancel_item(self, data):
         if QMessageBox.question(self, "Annuler", "Annuler cet article ? (Retour en vitrine)", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:

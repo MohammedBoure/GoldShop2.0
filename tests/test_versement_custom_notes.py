@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from database.versement import VersementManager
 from ui.widgets.versements.invoice_note_selector import (
@@ -187,19 +187,6 @@ class VersementCustomNoteTests(unittest.TestCase):
         self.assertTrue(all(len(params) == 6 for params in sale_item_params))
 
     def test_failed_individual_invoice_restores_item_to_en_cours(self):
-        class FakeDialog:
-            def __init__(self, manager, data, parent=None):
-                self.inp_price = SimpleNamespace(text=lambda: "36000")
-                self.inp_cash = SimpleNamespace(text=lambda: "0")
-                self.combo_vendeur = SimpleNamespace(currentData=lambda: 4)
-                self.client_id = 8
-
-            def exec(self):
-                return QDialog.Accepted
-
-            def get_product_note(self):
-                return "A vendre"
-
         versements = SimpleNamespace(
             update_versement_item_notes=Mock(return_value=True),
             retirer_versement_item=Mock(return_value=True),
@@ -210,6 +197,7 @@ class VersementCustomNoteTests(unittest.TestCase):
             versements=versements,
             sales=SimpleNamespace(create_sale=Mock(return_value={"success": False, "message": "DB error"})),
             cash_box=SimpleNamespace(get_or_create_today_session=Mock(return_value={"id": 5})),
+            db=SimpleNamespace(get_db_connection=Mock()),
         )
         view = SimpleNamespace(manager=manager, load_data=Mock())
         data = {
@@ -218,9 +206,12 @@ class VersementCustomNoteTests(unittest.TestCase):
             "inventory_id": 21,
             "designation": "Bague A",
             "weight": 1.2,
+            "custom_note": "A vendre",
+            "client_id": 8,
+            "selling_price": 36000,
         }
 
-        with patch("ui.widgets.versements.versements_view.FacturationVersementDialog", FakeDialog), patch(
+        with patch("ui.widgets.versements.versements_view.QMessageBox.question", return_value=QMessageBox.Yes), patch(
             "ui.widgets.versements.versements_view.QMessageBox.critical"
         ):
             VersementsView._handle_retirer_item(view, data)
@@ -230,19 +221,6 @@ class VersementCustomNoteTests(unittest.TestCase):
         view.load_data.assert_called_once()
 
     def test_successful_individual_invoice_receives_selected_product_note(self):
-        class FakeDialog:
-            def __init__(self, manager, data, parent=None):
-                self.inp_price = SimpleNamespace(text=lambda: "36000")
-                self.inp_cash = SimpleNamespace(text=lambda: "0")
-                self.combo_vendeur = SimpleNamespace(currentData=lambda: 4)
-                self.client_id = 8
-
-            def exec(self):
-                return QDialog.Accepted
-
-            def get_product_note(self):
-                return "Commande client"
-
         sales = SimpleNamespace(create_sale=Mock(return_value={"success": True, "sale_id": 44}))
         versements = SimpleNamespace(
             update_versement_item_notes=Mock(return_value=True),
@@ -254,6 +232,7 @@ class VersementCustomNoteTests(unittest.TestCase):
             versements=versements,
             sales=sales,
             cash_box=SimpleNamespace(get_or_create_today_session=Mock(return_value={"id": 5})),
+            db=SimpleNamespace(get_db_connection=Mock()),
         )
         view = SimpleNamespace(manager=manager, load_data=Mock())
         data = {
@@ -262,14 +241,20 @@ class VersementCustomNoteTests(unittest.TestCase):
             "inventory_id": 21,
             "designation": "Bague A",
             "weight": 1.2,
+            "custom_note": "Commande client",
+            "client_id": 8,
+            "selling_price": 36000,
         }
 
-        with patch("ui.widgets.versements.versements_view.FacturationVersementDialog", FakeDialog):
+        with patch("ui.widgets.versements.versements_view.QMessageBox.question", return_value=QMessageBox.Yes), patch(
+            "ui.widgets.versements.versements_view.QMessageBox.information"
+        ):
             VersementsView._handle_retirer_item(view, data)
 
         cart_items = sales.create_sale.call_args.kwargs["cart_items"]
         self.assertEqual(cart_items[0]["custom_note"], "Commande client")
         versements.revert_versement_item_status.assert_not_called()
+
 
 
 if __name__ == "__main__":
