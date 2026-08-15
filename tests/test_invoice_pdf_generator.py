@@ -104,10 +104,10 @@ class InvoicePdfGeneratorTests(unittest.TestCase):
             self.assertIn("VRS-00099", html_called)
             self.assertIn("Remise :", html_called)
             self.assertIn("- 5,000.00 DA", html_called)
-            self.assertIn("Detail des versements", html_called)
-            self.assertIn("- 2,000.00 DA", html_called)
-            self.assertIn("- 3,000.00 DA", html_called)
-            self.assertIn("Acompte 1", html_called)
+            self.assertIn("Total Brut :", html_called)
+            self.assertIn("NET À PAYER :", html_called)
+            self.assertNotIn("Detail des versements", html_called)
+            self.assertNotIn("MONTANT REGLE", html_called)
 
 
 if __name__ == "__main__":

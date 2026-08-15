@@ -469,12 +469,11 @@ def generate_invoice_pdf(
     code_format = pdf_cfg["display"].get("item_code_format", "Code-Barres")
 
     th_code = f'<th style="text-align:center; width:15%;">Code</th>' if show_code else ""
-    show_paid_column = any(item.get("paid_amount_da") is not None for item in items)
     table_headers = f"""
         {th_code}
         <th style="text-align: left;">Désignation</th>
         <th style="text-align: center;">Qté/Pds</th>
-        <th style="text-align: right;">{"Montant regle" if show_paid_column else "Total"}</th>
+        <th style="text-align: right;">Total</th>
     """
 
     items_html = ""
@@ -496,11 +495,8 @@ def generate_invoice_pdf(
 
         is_weight = (item.get('item_type', 'WEIGHT') == 'WEIGHT')
         qty_or_weight = float(item.get('cart_sold_weight', 0)) if is_weight else float(item.get('cart_sold_qty', 0))
-        line_total = float(item.get('cart_line_total', 0))
+        line_total = float(item.get('cart_line_total') or item.get('total_price_da') or 0)
         unit_label = "g" if is_weight else "pcs"
-        paid_amount = _safe_float(item.get("paid_amount_da"))
-        display_amount = paid_amount if show_paid_column else line_total
-        display_color = c_grn if show_paid_column else c_txt
         if is_weight:
             total_weight += qty_or_weight
 
@@ -509,7 +505,7 @@ def generate_invoice_pdf(
             {td_code}
             <td style="vertical-align:middle;">{main_name}{note_html}</td>
             <td style="text-align:center; vertical-align:middle; font-weight:bold; white-space:nowrap;">{qty_or_weight:.2f} {unit_label}</td>
-            <td style="text-align:right; vertical-align:middle; font-weight:bold; color:{display_color}; white-space:nowrap;">{display_amount:,.2f} {currency}</td>
+            <td style="text-align:right; vertical-align:middle; font-weight:bold; color:{c_txt}; white-space:nowrap;">{line_total:,.2f} {currency}</td>
         </tr>
         """
 
@@ -558,49 +554,6 @@ def generate_invoice_pdf(
             f"<td style='padding:5px 6px; text-align:right; font-weight:bold; color:{c_grn};'>"
             f"{total_paid_da:,.2f} {currency}</td></tr>"
         )
-    payment_history_html = ""
-    payments_history = list(payments_history or [])
-    if payments_history:
-        history_rows = ""
-        for payment in payments_history:
-            payment_date = _format_document_datetime(payment.get("payment_date")) or "-"
-            components = []
-            for label, key, unit in (
-                ("Cash", "cash_paid_da", currency),
-                ("TPE", "tpe_paid_da", currency),
-                ("EUR", "euro_paid", "EUR"),
-                ("USD", "dollar_paid", "USD"),
-                ("Or casse", "old_gold_weight_g", "g"),
-                ("Deduit", "deducted_weight_g", "g"),
-            ):
-                value = _safe_float(payment.get(key))
-                if abs(value) > 0.00001:
-                    components.append(f"{label}: {value:,.2f} {unit}")
-            note = escape(str(payment.get("notes") or "").strip())
-            product_name = escape(str(payment.get("product_name") or "").strip())
-            description = " | ".join(part for part in (product_name, note) if part) or "-"
-            remise = _safe_float(payment.get("remise_da"))
-            remise_text = f"- {remise:,.2f} {currency}" if remise else "-"
-            history_rows += (
-                "<tr>"
-                f"<td style='padding:5px; border-bottom:1px solid #eee;'>{escape(payment_date)}</td>"
-                f"<td style='padding:5px; border-bottom:1px solid #eee;'>{description}</td>"
-                f"<td style='padding:5px; border-bottom:1px solid #eee; text-align:right; font-weight:bold;'>{escape(' | '.join(components) or '-')}</td>"
-                f"<td style='padding:5px; border-bottom:1px solid #eee; text-align:right; color:{c_red};'>{remise_text}</td>"
-                "</tr>"
-            )
-        payment_history_html = f"""
-        <div style='margin-top:18px;'>
-            <div style='font-weight:bold; margin-bottom:5px;'>Detail des versements</div>
-            <table width='100%' style='border-collapse:collapse;'>
-                <tr>
-                    <th style='text-align:left;'>Date</th><th style='text-align:left;'>Article / Observation</th>
-                    <th style='text-align:right;'>Paiements</th><th style='text-align:right;'>Remise</th>
-                </tr>
-                {history_rows}
-            </table>
-        </div>
-        """
 
     if total_weight > 0:
         weight_html = f"""
@@ -664,7 +617,6 @@ def generate_invoice_pdf(
             </tr>
         </table>
 
-        {payment_history_html}
         <div style='margin-top:25px; text-align:center; border-top:1px dashed #aaa; padding-top:15px;'><b style='font-size:{int(f_norm*0.9)}px;'>{policy}</b></div>
     </body></html>
     """

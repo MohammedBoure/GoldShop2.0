@@ -777,22 +777,32 @@ class ExcelJournalView(QWidget):
         for it in items:
             mapped = dict(it)
             mapped['name'] = it.get('name', '')
-            mapped['cart_line_total'] = float(it.get('total_price_da', 0))
             mapped['cart_sold_weight'] = float(it.get('sold_weight_g', 0))
             mapped['cart_sold_qty'] = int(it.get('sold_quantity', 1))
             mapped['cart_unit_price'] = float(it.get('unit_price_da', 0))
             mapped['custom_note'] = str(it.get('custom_note') or '')
+            mapped['cart_line_total'] = float(it.get('total_price_da') or (it.get('unit_price_da', 0) * (mapped['cart_sold_weight'] or mapped['cart_sold_qty'])) or 0)
             mapped_items.append(mapped)
 
         # ضبط Total Brut و Net في حال وجود تخفيض
         if discount > 0 and total_brut <= net:
             total_brut = net + discount
         elif total_brut <= 0 and mapped_items:
-            total_brut = sum(float(it.get('cart_line_total', 0)) for it in mapped_items)
+            total_brut = sum(float(it['cart_line_total']) for it in mapped_items)
             if discount > 0 and net <= 0:
                 net = max(0.0, total_brut - discount)
         elif net <= 0 and total_brut > 0:
             net = max(0.0, total_brut - discount)
+
+        # التأكد من مطابقة إجمالي بنود الفاتورة مع Total Brut
+        items_sum = sum(it['cart_line_total'] for it in mapped_items) if mapped_items else 0.0
+        if discount > 0 and total_brut > 0 and mapped_items:
+            if len(mapped_items) == 1 or items_sum <= 0.01:
+                mapped_items[0]['cart_line_total'] = total_brut
+            elif abs(items_sum - total_brut) > 0.01:
+                ratio = total_brut / items_sum
+                for it in mapped_items:
+                    it['cart_line_total'] = round(it['cart_line_total'] * ratio, 2)
 
         try:
             from ui.tools.invoice_generator import generate_invoice_pdf, _clean_facture_number
