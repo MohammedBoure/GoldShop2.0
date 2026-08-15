@@ -672,11 +672,7 @@ def generate_invoice_pdf(
     safe_client_name = re.sub(r'[\\/*?:"<>|]', "", client_name).strip() or "Client_Inconnu"
     client_dir = os.path.join(invoice_dir, safe_client_name)
     os.makedirs(client_dir, exist_ok=True)
-    invoice_file_number = (
-        _safe_document_part(invoice_number)
-        if facture_document_number
-        else f"N{_safe_document_part(_formatted_sale_number(sale_id) or sale_id)}"
-    )
+    invoice_file_number = _safe_document_part(invoice_number or f"FAC-{int(sale_id):04d}")
     pdf_path = os.path.abspath(os.path.join(
         client_dir,
         f"{printed_at_stamp}_{file_prefix}_{invoice_file_number}.pdf",
