@@ -80,11 +80,27 @@ def _legacy_versement_document_number(value) -> str:
         return ""
 
 
+def _clean_facture_number(value, sale_id=None) -> str:
+    text = str(value or "").strip()
+    if not text:
+        if sale_id is not None:
+            return f"FAC-{int(sale_id):04d}" if str(sale_id).isdigit() else str(sale_id)
+        return ""
+    if _looks_like_versement_number(text):
+        return text
+    m = re.match(r"^FAC-\d+[-_](\d+)$", text, re.IGNORECASE)
+    if m:
+        return f"FAC-{int(m.group(1)):04d}"
+    if text.isdigit():
+        return f"FAC-{int(text):04d}"
+    return text
+
+
 def _facture_document_number(value) -> str:
     text = str(value or "").strip()
     if not text or _looks_like_versement_number(text):
         return ""
-    return text
+    return _clean_facture_number(text)
 
 
 def _safe_float(value, default=0.0):
@@ -353,23 +369,29 @@ class PdfHelper:
         )
 
     @staticmethod
-    def build_document_code_html(pdf_cfg, number, f_norm):
+    def build_document_code_html(pdf_cfg, number, f_norm, doc_type=""):
         doc_number = str(number or "").strip()
         if not doc_number:
             return ""
         if doc_number.isdigit():
-            doc_number = f"VRS-{int(doc_number):05d}"
+            if str(doc_type).upper() in ("FACTURE", "FAC", "SALE"):
+                doc_number = f"FAC-{int(doc_number):04d}"
+            else:
+                doc_number = f"VRS-{int(doc_number):05d}"
+        else:
+            m_fac = re.match(r"^FAC-\d+[-_](\d+)$", doc_number, re.IGNORECASE)
+            if m_fac:
+                doc_number = f"FAC-{int(m_fac.group(1)):04d}"
+            else:
+                m_vrs = re.match(r"^VRS-\d+[-_](\d+)$", doc_number, re.IGNORECASE)
+                if m_vrs:
+                    doc_number = f"VRS-{int(m_vrs.group(1)):05d}"
         
         display_text = doc_number if doc_number.startswith(("N°", "NO", "No", "N° ")) else f"N° {doc_number}"
         visible_doc_number = escape(display_text)
         mode = pdf_cfg.get("codes", {}).get("invoice_barcode_mode", "Code-Barres + Texte")
         barcode_b64 = PdfHelper.get_base64_barcode(doc_number, height=5)
-        if mode == "Code-Barres + Texte" and barcode_b64:
-            return (
-                f"<div style='margin-top:6px;'><img src='{barcode_b64}' width='130' height='32'/>"
-                f"<br><span style='font-size:{int(f_norm*1.2)}px; font-weight:bold; color:#0f8f83;'>{visible_doc_number}</span></div>"
-            )
-        if mode == "Code-Barres uniquement" and barcode_b64:
+        if mode in ("Code-Barres + Texte", "Code-Barres uniquement") and barcode_b64:
             return (
                 f"<div style='margin-top:6px;'><img src='{barcode_b64}' width='130' height='32'/>"
                 f"<br><span style='font-size:{int(f_norm*1.2)}px; font-weight:bold; color:#0f8f83;'>{visible_doc_number}</span></div>"
@@ -424,8 +446,8 @@ def generate_invoice_pdf(
 
     title = pdf_cfg["texts"].get("title_facture", "FACTURE")
     file_prefix = "Facture"
-    facture_document_number = _facture_document_number(facture_number)
-    invoice_number = facture_document_number or sale_id
+    cleaned_invoice_number = _clean_facture_number(facture_number, sale_id=sale_id)
+    invoice_number = cleaned_invoice_number or f"FAC-{int(sale_id):04d}"
     printed_at_value = printed_at or datetime.now()
     printed_at_text = _format_document_datetime(printed_at_value)
     printed_at_stamp = (
@@ -441,7 +463,7 @@ def generate_invoice_pdf(
     block_logo_top = f"<div style='text-align:center; margin-bottom:10px;'>{logo_html}</div>" if align_opt == "Au-dessus du nom (Centré)" and logo_html else ""
 
     qr_html = PdfHelper.build_qr_html(pdf_cfg)
-    header_extras = PdfHelper.build_document_code_html(pdf_cfg, invoice_number, f_norm)
+    header_extras = PdfHelper.build_document_code_html(pdf_cfg, invoice_number, f_norm, doc_type="FACTURE")
 
     show_code = pdf_cfg["display"].get("show_item_code_column", True)
     code_format = pdf_cfg["display"].get("item_code_format", "Code-Barres")
@@ -491,12 +513,26 @@ def generate_invoice_pdf(
         </tr>
         """
 
-    payment_summary = ""
-    if show_discount and discount > 0.01:
-        payment_summary += f"<tr><td style='padding:6px; text-align:right;'>Total Brut :</td><td style='padding:6px; text-align:right; font-weight:bold;'>{total_brut:,.2f} {currency}</td></tr>"
-        payment_summary += f"<tr><td style='padding:6px; text-align:right;'>Remise :</td><td style='padding:6px; text-align:right; color:{c_red}; font-weight:bold;'>- {discount:,.2f} {currency}</td></tr>"
+    # حساب Total Brut و Remise و Net بشكل دقيق جداً
+    calc_total_brut = float(total_brut or 0)
+    calc_discount = float(discount or 0)
+    calc_net = float(net or 0)
 
-    payment_summary += f"<tr><td style='padding:10px 6px; text-align:right; font-weight:bold; font-size:{int(f_norm*1.1)}px;'>NET À PAYER :</td><td style='padding:10px 6px; text-align:right; font-weight:bold; border:1px solid #ddd; background-color:#f9f9f9; font-size:{int(f_norm*1.1)}px;'>{net:,.2f} {currency}</td></tr>"
+    if calc_discount > 0.001 and calc_total_brut <= calc_net:
+        calc_total_brut = calc_net + calc_discount
+    elif calc_total_brut <= 0 and items:
+        calc_total_brut = sum(float(item.get('cart_line_total', 0)) for item in items)
+        if calc_discount > 0 and calc_net <= 0:
+            calc_net = max(0.0, calc_total_brut - calc_discount)
+    elif calc_net <= 0 and calc_total_brut > 0:
+        calc_net = max(0.0, calc_total_brut - calc_discount)
+
+    payment_summary = ""
+    if (show_discount or calc_discount > 0.001) and calc_discount > 0.001:
+        payment_summary += f"<tr><td style='padding:6px; text-align:right;'>Total Brut :</td><td style='padding:6px; text-align:right; font-weight:bold;'>{calc_total_brut:,.2f} {currency}</td></tr>"
+        payment_summary += f"<tr><td style='padding:6px; text-align:right;'>Remise :</td><td style='padding:6px; text-align:right; color:{c_red}; font-weight:bold;'>- {calc_discount:,.2f} {currency}</td></tr>"
+
+    payment_summary += f"<tr><td style='padding:10px 6px; text-align:right; font-weight:bold; font-size:{int(f_norm*1.1)}px;'>NET À PAYER :</td><td style='padding:10px 6px; text-align:right; font-weight:bold; border:1px solid #ddd; background-color:#f9f9f9; font-size:{int(f_norm*1.1)}px;'>{calc_net:,.2f} {currency}</td></tr>"
 
     weight_html = ""
     payment_details = dict(payment_details or {})

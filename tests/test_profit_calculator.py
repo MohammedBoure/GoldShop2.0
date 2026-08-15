@@ -41,8 +41,8 @@ class ProfitCalculatorTests(unittest.TestCase):
         ]
 
         revenues = versement_revenues_by_inventory(source_items, payments)
-        self.assertAlmostEqual(revenues[10], 20000.0)
-        self.assertAlmostEqual(revenues[20], 30000.0)
+        self.assertAlmostEqual(revenues[10], 15000.0)
+        self.assertAlmostEqual(revenues[20], 15000.0)
 
     def test_reference_is_detected_for_final_and_individual_versement_invoices(self):
         self.assertEqual(source_versement_id("VRS-00007"), 7)

@@ -139,8 +139,11 @@ class SaleDetailsDialog(QDialog):
             lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
             return lbl
 
+        from ui.tools.invoice_generator import _clean_facture_number
+        clean_fac_num = _clean_facture_number(sale.get('receipt_number', ''), sale_id=self.sale_id)
+
         header_layout.addWidget(create_lbl("<b>N° Facture :</b>", lbl_font), 0, 0)
-        header_layout.addWidget(create_lbl(sale.get('receipt_number', ''), val_font), 0, 1)
+        header_layout.addWidget(create_lbl(clean_fac_num, val_font), 0, 1)
         
         header_layout.addWidget(create_lbl("<b>Date :</b>", lbl_font), 0, 2)
         header_layout.addWidget(create_lbl(str(sale.get('created_at', '')), val_font), 0, 3)
@@ -778,8 +781,16 @@ class ExcelJournalView(QWidget):
             if it.get('paid_amount_da') is not None:
                 mapped['paid_amount_da'] = float(it.get('paid_amount_da') or 0)
 
+        # ضبط Total Brut و Net في حال وجود تخفيض
+        if discount > 0 and total_brut <= net:
+            total_brut = net + discount
+        elif total_brut <= 0 and mapped_items:
+            total_brut = sum(float(it.get('cart_line_total', 0)) for it in mapped_items)
+            if discount > 0 and net <= 0:
+                net = max(0.0, total_brut - discount)
+
         try:
-            from ui.tools.invoice_generator import generate_invoice_pdf
+            from ui.tools.invoice_generator import generate_invoice_pdf, _clean_facture_number
 
             direct_printer = ""
             if direct:
@@ -793,6 +804,8 @@ class ExcelJournalView(QWidget):
                     )
                     return
 
+            clean_fac_num = _clean_facture_number(sale.get('receipt_number', ''), sale_id=sale_id)
+
             generate_invoice_pdf(
                 sale_id=sale_id,
                 client_name=client_name,
@@ -804,7 +817,7 @@ class ExcelJournalView(QWidget):
                 tpe_paid=tpe,
                 or_casse_g=old_gold,
                 show_discount=(discount > 0),
-                facture_number=sale.get('receipt_number', ''),
+                facture_number=clean_fac_num,
                 printed_at=sale.get('created_at'),
                 open_pdf=open_pdf,
                 direct_printer_name=direct_printer,
@@ -849,6 +862,14 @@ class ExcelJournalView(QWidget):
             )
             return
 
+        from ui.tools.invoice_generator import _clean_facture_number
+        clean_fac_num = _clean_facture_number(sale.get('receipt_number', ''), sale_id=sale_id)
+        t_brut = float(sale.get('total_amount_da', 0))
+        t_disc = float(sale.get('discount_da', 0))
+        t_net = float(sale.get('net_to_pay_da', 0))
+        if t_disc > 0 and t_brut <= t_net:
+            t_brut = t_net + t_disc
+
         # تجهيز البيانات بالشكل الذي يتوقعه print_functions.py
         thermal_items = []
         total_weight = 0.0
@@ -876,18 +897,18 @@ class ExcelJournalView(QWidget):
         thermal_data = {
             'items': thermal_items,
             'sale_id': sale_id,     
-            'total_brut': float(sale.get('total_amount_da', 0)),
-            'total': float(sale.get('total_amount_da', 0)),
-            'discount': float(sale.get('discount_da', 0)),
-            'net': float(sale.get('net_to_pay_da', 0)),
-            'net_to_pay': float(sale.get('net_to_pay_da', 0)),
+            'total_brut': t_brut,
+            'total': t_brut,
+            'discount': t_disc,
+            'net': t_net,
+            'net_to_pay': t_net,
             'total_weight': total_weight,
             'paid_weight_equiv': total_weight,
             'remainder_weight': 0.0,
             'client_name': sale.get('client_name') or 'Passager',
             'customerFullName': sale.get('client_name') or 'Passager',
             'currency': 'DA',
-            'facture_number': str(sale.get('receipt_number', '')),
+            'facture_number': clean_fac_num,
             'sale_date': str(sale.get('created_at', '')),
             'printed_at': sale.get('created_at'),
             'payments_history': [],
