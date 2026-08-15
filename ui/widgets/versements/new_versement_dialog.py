@@ -33,6 +33,7 @@ class NewVersementDialog(QDialog):
         self.selected_client_id = None
         self.products_autocomplete_map = {}
         self.is_processing = False
+        self._target_price_per_gram = None
         
         self._last_key_time = 0.0                    
         self._scan_timer = QTimer(self)             
@@ -459,37 +460,76 @@ class NewVersementDialog(QDialog):
         item["versement_quantity"] = max(1, int(value))
         self.refresh_cart()
 
+    def _get_current_payment_da(self):
+        method_idx = self.combo_method.currentIndex()
+        if method_idx == 1:
+            try: cash = float(self.inp_cash.text() or 0)
+            except Exception: cash = 0.0
+            try: tpe = float(self.inp_tpe.text() or 0)
+            except Exception: tpe = 0.0
+            return cash + tpe
+        elif method_idx == 2:
+            try: return float(self.inp_euro_da.text() or 0)
+            except Exception: return 0.0
+        elif method_idx == 3:
+            try: return float(self.inp_casse_da.text() or 0)
+            except Exception: return 0.0
+        elif method_idx == 4:
+            try: return float(self.inp_dollar_da.text() or 0)
+            except Exception: return 0.0
+        return 0.0
+
     def open_discount_pct(self):
         total_brut = sum(self._item_total_price(item) for item in self.cart_items)
-        if total_brut <= 0:
+        total_weight = sum(self._item_total_weight(item) for item in self.cart_items)
+        if total_brut <= 0 or total_weight <= 0:
             QMessageBox.warning(self, "Erreur", "Le panier est vide ou n'a pas de prix estimé initial.")
             return
         
+        current_ppg = total_brut / total_weight
         pad = VirtualNumpad(title="Saisir la Remise (%)", mode="dialog", allow_decimal=True, allow_negative=False, parent=self)
         if pad.exec() == QDialog.Accepted:
             val = pad.get_value()
             if val:
                 pct = float(val)
                 if 0 <= pct <= 100:
-                    remise_val = total_brut * (pct / 100.0)
+                    target_ppg = current_ppg * (1.0 - pct / 100.0)
+                    self._target_price_per_gram = target_ppg
+                    current_pay = self._get_current_payment_da()
+                    if current_pay > 0:
+                        poids_cible = min(total_weight, current_pay / target_ppg) if target_ppg > 0 else total_weight
+                        remise_val = max(0.0, (current_ppg - target_ppg) * poids_cible)
+                    else:
+                        remise_val = total_brut * (pct / 100.0)
                     self.inp_remise_da.setText(f"{remise_val:.2f}")
+                    self.auto_calculate_poids_deduit()
                 else:
                     QMessageBox.warning(self, "Erreur", "Le pourcentage doit être entre 0 et 100.")
 
     def open_discount_final_price(self):
         total_brut = sum(self._item_total_price(item) for item in self.cart_items)
-        if total_brut <= 0:
+        total_weight = sum(self._item_total_weight(item) for item in self.cart_items)
+        if total_brut <= 0 or total_weight <= 0:
             QMessageBox.warning(self, "Erreur", "Le panier est vide ou n'a pas de prix estimé initial.")
             return
         
+        current_ppg = total_brut / total_weight
         pad = VirtualNumpad(title="Saisir le Prix Final (DA)", mode="dialog", allow_decimal=True, allow_negative=False, parent=self)
         if pad.exec() == QDialog.Accepted:
             val = pad.get_value()
             if val:
                 final_price = float(val)
                 if 0 <= final_price <= total_brut:
-                    remise_val = total_brut - final_price
+                    target_ppg = (final_price / total_weight) if total_weight > 0 else current_ppg
+                    self._target_price_per_gram = target_ppg
+                    current_pay = self._get_current_payment_da()
+                    if current_pay > 0:
+                        poids_cible = min(total_weight, current_pay / target_ppg) if target_ppg > 0 else total_weight
+                        remise_val = max(0.0, (current_ppg - target_ppg) * poids_cible)
+                    else:
+                        remise_val = total_brut - final_price
                     self.inp_remise_da.setText(f"{remise_val:.2f}")
+                    self.auto_calculate_poids_deduit()
                 else:
                     QMessageBox.warning(self, "Erreur", f"Le prix final doit être entre 0 et {total_brut:,.2f} DA.")
 
@@ -502,7 +542,7 @@ class NewVersementDialog(QDialog):
 
         current_ppg = total_brut / total_weight
         pad = VirtualNumpad(
-            title=f"Saisir le prix/g avec aide (actuel: {current_ppg:,.2f} DA/g)",
+            title=f"Saisir le prix/g cible (actuel: {current_ppg:,.2f} DA/g)",
             mode="dialog",
             allow_decimal=True,
             allow_negative=False,
@@ -517,47 +557,50 @@ class NewVersementDialog(QDialog):
                     QMessageBox.warning(self, "Erreur", "Le prix/g cible doit être supérieur à 0.")
                     return
                 target_ppg = min(target_ppg, current_ppg)
-                remise_value = max(0.0, (current_ppg - target_ppg) * total_weight)
+                self._target_price_per_gram = target_ppg
+                current_pay = self._get_current_payment_da()
+                if current_pay > 0:
+                    poids_cible = min(total_weight, current_pay / target_ppg)
+                    remise_value = max(0.0, (current_ppg - target_ppg) * poids_cible)
+                else:
+                    remise_value = max(0.0, (current_ppg - target_ppg) * total_weight)
                 self.inp_remise_da.setText(f"{remise_value:.2f}")
+                self.auto_calculate_poids_deduit()
 
     def auto_calculate_poids_deduit(self):
-        """مساعد في الحساب: يكتب تلقائياً الوزن المقتنى بالجرام بناءً على سعر الغرام بالمساعدة ويسمح للمستخدم بالتعديل اليدوي"""
+        """الحساب التلقائي للوزن المقتنى بناءً على الدفعة والتخفيض وسعر الغرام المتفق عليه"""
         total_brut = sum(self._item_total_price(item) for item in self.cart_items)
         total_weight = sum(self._item_total_weight(item) for item in self.cart_items)
         
         try: remise = float(self.inp_remise_da.text() or 0)
-        except: remise = 0.0
+        except Exception: remise = 0.0
         
-        method_idx = self.combo_method.currentIndex()
-        acompte_da = 0.0
-        if method_idx == 1:
-            try: cash = float(self.inp_cash.text() or 0)
-            except: cash = 0.0
-            try: tpe = float(self.inp_tpe.text() or 0)
-            except: tpe = 0.0
-            acompte_da = cash + tpe
-        elif method_idx == 2:
-            try: acompte_da = float(self.inp_euro_da.text() or 0)
-            except: acompte_da = 0.0
-        elif method_idx == 3:
-            try: acompte_da = float(self.inp_casse_da.text() or 0)
-            except: acompte_da = 0.0
-        elif method_idx == 4:
-            try: acompte_da = float(self.inp_dollar_da.text() or 0)
-            except: acompte_da = 0.0
+        acompte_da = self._get_current_payment_da()
 
         if total_brut > 0 and total_weight > 0:
             prix_g_moyen = total_brut / total_weight
-            total_payment_value = acompte_da + remise
-            poids_auto = (total_payment_value / prix_g_moyen) if prix_g_moyen > 0 else 0.0
-                
-            if poids_auto > total_weight: poids_auto = total_weight
+            
+            # إذا تم ضبط سعر غرام تفضيلي وكان هناك دفع، يتم تحديث التخفيض المقابل للمبلغ المدفوع بدقة
+            if getattr(self, '_target_price_per_gram', None) and self._target_price_per_gram > 0 and self._target_price_per_gram < prix_g_moyen and acompte_da > 0:
+                poids_auto = acompte_da / self._target_price_per_gram
+                if poids_auto > total_weight: poids_auto = total_weight
+                expected_remise = max(0.0, (prix_g_moyen - self._target_price_per_gram) * poids_auto)
+                if abs(remise - expected_remise) > 0.01:
+                    remise = expected_remise
+                    self.inp_remise_da.blockSignals(True)
+                    self.inp_remise_da.setText(f"{remise:.2f}")
+                    self.inp_remise_da.blockSignals(False)
+            else:
+                total_payment_value = acompte_da + remise
+                poids_auto = (total_payment_value / prix_g_moyen) if prix_g_moyen > 0 else 0.0
+                if poids_auto > total_weight: poids_auto = total_weight
             
             self.inp_poids_deduit.blockSignals(True)
             self.inp_poids_deduit.setText(f"{poids_auto:.3f}")
             self.inp_poids_deduit.blockSignals(False)
             
         self.update_dynamic_summary()
+
 
     def update_dynamic_summary(self):
         total_brut = sum(self._item_total_price(item) for item in self.cart_items)

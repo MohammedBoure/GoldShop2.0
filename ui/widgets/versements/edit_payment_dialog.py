@@ -30,6 +30,7 @@ class EditPaymentDialog(QDialog):
         self.v_data = None
         self.item_prices = {}
         self.item_weights = {}
+        self._target_price_per_gram = None
 
         self.setWindowTitle(f"Modifier Paiement #{self.payment_id} - Dossier VRS-{self.versement_id:05d}")
         self.setMinimumSize(1100, 680)
@@ -528,9 +529,29 @@ class EditPaymentDialog(QDialog):
         unit_ppg, rem_weight = self._get_price_per_gram_context()
         return rem_weight * unit_ppg
 
+    def _get_current_payment_da(self):
+        method_idx = self.combo_method.currentIndex()
+        if method_idx == 0:
+            try: cash = float(self.inp_cash.text() or 0)
+            except Exception: cash = 0.0
+            try: tpe = float(self.inp_tpe.text() or 0)
+            except Exception: tpe = 0.0
+            return cash + tpe
+        elif method_idx == 1:
+            try: return float(self.inp_euro_da.text() or 0)
+            except Exception: return 0.0
+        elif method_idx == 2:
+            try: return float(self.inp_casse_da.text() or 0)
+            except Exception: return 0.0
+        elif method_idx == 3:
+            try: return float(self.inp_dollar_da.text() or 0)
+            except Exception: return 0.0
+        return 0.0
+
     def open_discount_pct(self):
+        unit_ppg, base_weight = self._get_price_per_gram_context()
         base_amount = self._get_active_base_amount()
-        if base_amount <= 0:
+        if base_amount <= 0 or base_weight <= 0:
             QMessageBox.warning(self, "Erreur", "Aucune base de prix estimé disponible pour calculer la remise.")
             return
 
@@ -540,14 +561,23 @@ class EditPaymentDialog(QDialog):
             if val:
                 pct = float(val)
                 if 0 <= pct <= 100:
-                    remise_val = base_amount * (pct / 100.0)
+                    target_ppg = unit_ppg * (1.0 - pct / 100.0)
+                    self._target_price_per_gram = target_ppg
+                    current_pay = self._get_current_payment_da()
+                    if current_pay > 0:
+                        poids_cible = min(base_weight, current_pay / target_ppg) if target_ppg > 0 else base_weight
+                        remise_val = max(0.0, (unit_ppg - target_ppg) * poids_cible)
+                    else:
+                        remise_val = base_amount * (pct / 100.0)
                     self.inp_remise_da.setText(f"{remise_val:.2f}")
+                    self.auto_calculate_poids_deduit()
                 else:
                     QMessageBox.warning(self, "Erreur", "Le pourcentage doit être entre 0 et 100.")
 
     def open_discount_final_price(self):
+        unit_ppg, base_weight = self._get_price_per_gram_context()
         base_amount = self._get_active_base_amount()
-        if base_amount <= 0:
+        if base_amount <= 0 or base_weight <= 0:
             QMessageBox.warning(self, "Erreur", "Aucune base de prix estimé disponible pour calculer la remise.")
             return
 
@@ -557,8 +587,16 @@ class EditPaymentDialog(QDialog):
             if val:
                 final_price = float(val)
                 if 0 <= final_price <= base_amount:
-                    remise_val = base_amount - final_price
+                    target_ppg = (final_price / base_weight) if base_weight > 0 else unit_ppg
+                    self._target_price_per_gram = target_ppg
+                    current_pay = self._get_current_payment_da()
+                    if current_pay > 0:
+                        poids_cible = min(base_weight, current_pay / target_ppg) if target_ppg > 0 else base_weight
+                        remise_val = max(0.0, (unit_ppg - target_ppg) * poids_cible)
+                    else:
+                        remise_val = base_amount - final_price
                     self.inp_remise_da.setText(f"{remise_val:.2f}")
+                    self.auto_calculate_poids_deduit()
                 else:
                     QMessageBox.warning(self, "Erreur", f"Le prix final doit être entre 0 et {base_amount:,.2f} DA.")
 
@@ -569,7 +607,7 @@ class EditPaymentDialog(QDialog):
             return
 
         pad = VirtualNumpad(
-            title=f"Saisir le prix/g avec aide (actuel: {current_ppg:,.2f} DA/g)",
+            title=f"Saisir le prix/g cible (actuel: {current_ppg:,.2f} DA/g)",
             mode="dialog",
             allow_decimal=True,
             allow_negative=False,
@@ -584,11 +622,18 @@ class EditPaymentDialog(QDialog):
                     QMessageBox.warning(self, "Erreur", "Le prix/g cible doit être supérieur à 0.")
                     return
                 target_ppg = min(target_ppg, current_ppg)
-                remise_value = max(0.0, (current_ppg - target_ppg) * base_weight)
+                self._target_price_per_gram = target_ppg
+                current_pay = self._get_current_payment_da()
+                if current_pay > 0:
+                    poids_cible = min(base_weight, current_pay / target_ppg)
+                    remise_value = max(0.0, (current_ppg - target_ppg) * poids_cible)
+                else:
+                    remise_value = max(0.0, (current_ppg - target_ppg) * base_weight)
                 self.inp_remise_da.setText(f"{remise_value:.2f}")
+                self.auto_calculate_poids_deduit()
 
     def auto_calculate_poids_deduit(self):
-        """الحساب التلقائي اللحظي للوزن المقتنى بناءً على الدفعة والتخفيض وسعر الغرام (نفس طريقة NewVersementDialog)"""
+        """الحساب التلقائي اللحظي للوزن المقتنى بناءً على الدفعة والتخفيض وسعر الغرام المتفق عليه"""
         unit_ppg, base_weight = self._get_price_per_gram_context()
 
         try:
@@ -596,30 +641,24 @@ class EditPaymentDialog(QDialog):
         except Exception:
             remise = 0.0
 
-        method_idx = self.combo_method.currentIndex()
-        acompte_da = 0.0
-        if method_idx == 0:
-            try: cash = float(self.inp_cash.text() or 0)
-            except Exception: cash = 0.0
-            try: tpe = float(self.inp_tpe.text() or 0)
-            except Exception: tpe = 0.0
-            acompte_da = cash + tpe
-        elif method_idx == 1:
-            try: acompte_da = float(self.inp_euro_da.text() or 0)
-            except Exception: acompte_da = 0.0
-        elif method_idx == 2:
-            try: acompte_da = float(self.inp_casse_da.text() or 0)
-            except Exception: acompte_da = 0.0
-        elif method_idx == 3:
-            try: acompte_da = float(self.inp_dollar_da.text() or 0)
-            except Exception: acompte_da = 0.0
+        acompte_da = self._get_current_payment_da()
 
         if unit_ppg > 0 and base_weight > 0:
-            total_payment_value = acompte_da + remise
-            poids_auto = (total_payment_value / unit_ppg) if unit_ppg > 0 else 0.0
-
-            if poids_auto > base_weight:
-                poids_auto = base_weight
+            if getattr(self, '_target_price_per_gram', None) and self._target_price_per_gram > 0 and self._target_price_per_gram < unit_ppg and acompte_da > 0:
+                poids_auto = acompte_da / self._target_price_per_gram
+                if poids_auto > base_weight:
+                    poids_auto = base_weight
+                expected_remise = max(0.0, (unit_ppg - self._target_price_per_gram) * poids_auto)
+                if abs(remise - expected_remise) > 0.01:
+                    remise = expected_remise
+                    self.inp_remise_da.blockSignals(True)
+                    self.inp_remise_da.setText(f"{remise:.2f}")
+                    self.inp_remise_da.blockSignals(False)
+            else:
+                total_payment_value = acompte_da + remise
+                poids_auto = (total_payment_value / unit_ppg) if unit_ppg > 0 else 0.0
+                if poids_auto > base_weight:
+                    poids_auto = base_weight
 
             self.inp_poids_deduit.blockSignals(True)
             self.inp_poids_deduit.setText(f"{poids_auto:.3f}")
@@ -630,6 +669,7 @@ class EditPaymentDialog(QDialog):
             self.inp_poids_deduit.blockSignals(False)
 
         self.update_dynamic_summary()
+
 
     def update_dynamic_summary(self):
         unit_ppg, base_weight = self._get_price_per_gram_context()
