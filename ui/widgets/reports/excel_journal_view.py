@@ -763,6 +763,11 @@ class ExcelJournalView(QWidget):
         total_brut = float(sale.get('total_amount_da', 0))
         discount = float(sale.get('discount_da', 0))
         net = float(sale.get('net_to_pay_da', 0))
+
+        v_summary = sale.get('versement_payment_summary') or {}
+        v_remise = float(v_summary.get('total_remise_da', 0))
+        if v_remise > discount:
+            discount = v_remise
         
         cash = float(sale.get('cash_paid_da', 0))
         tpe = float(sale.get('tpe_paid_da', 0))
@@ -778,8 +783,6 @@ class ExcelJournalView(QWidget):
             mapped['cart_unit_price'] = float(it.get('unit_price_da', 0))
             mapped['custom_note'] = str(it.get('custom_note') or '')
             mapped_items.append(mapped)
-            if it.get('paid_amount_da') is not None:
-                mapped['paid_amount_da'] = float(it.get('paid_amount_da') or 0)
 
         # ضبط Total Brut و Net في حال وجود تخفيض
         if discount > 0 and total_brut <= net:
@@ -788,6 +791,8 @@ class ExcelJournalView(QWidget):
             total_brut = sum(float(it.get('cart_line_total', 0)) for it in mapped_items)
             if discount > 0 and net <= 0:
                 net = max(0.0, total_brut - discount)
+        elif net <= 0 and total_brut > 0:
+            net = max(0.0, total_brut - discount)
 
         try:
             from ui.tools.invoice_generator import generate_invoice_pdf, _clean_facture_number
@@ -821,9 +826,8 @@ class ExcelJournalView(QWidget):
                 printed_at=sale.get('created_at'),
                 open_pdf=open_pdf,
                 direct_printer_name=direct_printer,
-                # لا نرسل تفاصيل وسائل الدفع إلى الفاتورة؛ فقط القيم الإجمالية أعلاه.
-                payment_details=None,
-                payments_history=None,
+                payment_details=sale.get('versement_payment_summary'),
+                payments_history=sale.get('payments_history'),
             )
 
             if direct:
@@ -864,8 +868,10 @@ class ExcelJournalView(QWidget):
 
         from ui.tools.invoice_generator import _clean_facture_number
         clean_fac_num = _clean_facture_number(sale.get('receipt_number', ''), sale_id=sale_id)
+        v_summary = sale.get('versement_payment_summary') or {}
+        v_remise = float(v_summary.get('total_remise_da', 0))
+        t_disc = max(float(sale.get('discount_da', 0)), v_remise)
         t_brut = float(sale.get('total_amount_da', 0))
-        t_disc = float(sale.get('discount_da', 0))
         t_net = float(sale.get('net_to_pay_da', 0))
         if t_disc > 0 and t_brut <= t_net:
             t_brut = t_net + t_disc
@@ -911,7 +917,7 @@ class ExcelJournalView(QWidget):
             'facture_number': clean_fac_num,
             'sale_date': str(sale.get('created_at', '')),
             'printed_at': sale.get('created_at'),
-            'payments_history': [],
+            'payments_history': sale.get('payments_history', []),
             'amount_in_words': '.............................................',
         }
 

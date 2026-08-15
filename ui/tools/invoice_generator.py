@@ -559,7 +559,7 @@ def generate_invoice_pdf(
             f"{total_paid_da:,.2f} {currency}</td></tr>"
         )
     payment_history_html = ""
-    payments_history = []
+    payments_history = list(payments_history or [])
     if payments_history:
         history_rows = ""
         for payment in payments_history:

@@ -441,18 +441,28 @@ class SalesManager:
                 payments = [payment for payment in payments if paid_on_or_before_delivery(payment)]
 
         sale["source_versement_id"] = versement_id
+        summary = build_versement_payment_summary(payments)
+        sale["versement_payment_summary"] = summary
+        sale["payments_history"] = summary.get("payment_history", [])
+
+        versement_remise = float(summary.get("total_remise_da") or 0.0)
+        current_discount = float(sale.get("discount_da") or 0.0)
+        final_discount = max(current_discount, versement_remise)
+        sale["discount_da"] = final_discount
 
         if is_final_versement_invoice:
-            summary = build_versement_payment_summary(payments)
             sale["total_amount_da"] = summary["total_brut_da"]
-            sale["discount_da"] = summary["total_remise_da"]
             sale["net_to_pay_da"] = summary["net_to_pay_da"]
             sale["cash_paid_da"] = summary["cash_paid_da"]
             sale["tpe_paid_da"] = summary["tpe_paid_da"]
             sale["old_gold_weight_g"] = summary["old_gold_weight_g"]
             sale["impos_weight_g"] = summary["deducted_weight_g"]
-            sale["versement_payment_summary"] = summary
-            sale["payments_history"] = summary["payment_history"]
+        else:
+            if final_discount > 0:
+                cur_net = float(sale.get("net_to_pay_da") or sale.get("total_amount_da") or 0.0)
+                cur_brut = float(sale.get("total_amount_da") or 0.0)
+                if cur_brut <= cur_net:
+                    sale["total_amount_da"] = cur_net + final_discount
 
         cursor.execute("""
             SELECT vi.inventory_id,
