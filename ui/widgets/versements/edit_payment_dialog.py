@@ -1,4 +1,4 @@
-# ui/widgets/versements/add_payment_dialog.py
+# ui/widgets/versements/edit_payment_dialog.py
 
 import logging
 from PySide6.QtWidgets import (
@@ -14,28 +14,29 @@ from ui.tools.virtual_numpad import VirtualNumpad
 from ui.tools.virtual_keyboard import VirtualKeyboardDialog
 
 
-class AddPaymentDialog(QDialog):
+class EditPaymentDialog(QDialog):
     """
-    نافذة إضافة دفعة مالية جديدة لملف عربون مفتوح (Versement / Acompte)
-    مصممة بنظام العرض المنقسم (Split View) المتطابق 100% مع واجهة إنشاء العربون (NewVersementDialog).
+    نافذة تعديل وتصحيح دفعة مالية سابقة في ملف عربون (Versement / Acompte).
+    تعتمد نفس التصميم المنقسم (Split View) ونفس المنطق الحسابي لواجهة إنشاء العربون (NewVersementDialog).
     """
-    def __init__(self, manager, versement_id, journee_id, preselected_item_id=None, parent=None):
+    def __init__(self, manager, p_data, parent=None):
         super().__init__(parent)
         self.manager = manager
-        self.versement_id = versement_id
-        self.journee_id = journee_id
-        self.preselected_item_id = preselected_item_id
+        self.p_data = p_data or {}
+        self.versement_id = self.p_data.get('v_id')
+        self.payment_id = self.p_data.get('payment_id')
 
         self.is_versement_libre = False
         self.v_data = None
         self.item_prices = {}
         self.item_weights = {}
 
-        self.setWindowTitle(f"Ajouter un Paiement - Dossier VRS-{self.versement_id:05d}")
+        self.setWindowTitle(f"Modifier Paiement #{self.payment_id} - Dossier VRS-{self.versement_id:05d}")
         self.setMinimumSize(1100, 680)
 
         self._load_versement_data()
         self.init_ui()
+        self._load_initial_payment_data()
         self.auto_calculate_poids_deduit()
 
     def showEvent(self, event):
@@ -56,11 +57,8 @@ class AddPaymentDialog(QDialog):
                         self.item_prices[item_id] = float(item.get('display_price') or item.get('selling_price') or 0)
                         self.item_weights[item_id] = float(item.get('display_weight') or item.get('weight') or 0)
         except Exception as e:
-            logging.error(f"[AddPaymentDialog] Erreur chargement versement: {e}")
+            logging.error(f"[EditPaymentDialog] Erreur chargement versement: {e}")
 
-    # ==========================================
-    # دوال مساعدة لإنشاء أزرار لوحات المفاتيح
-    # ==========================================
     def _wrap_with_numpad(self, widget, allow_decimal=True):
         container = QWidget()
         lay = QHBoxLayout(container)
@@ -119,7 +117,7 @@ class AddPaymentDialog(QDialog):
         main_layout.setSpacing(12)
 
         # ==========================================
-        # الجانب الأيسر: معلومات الملف، القطع والسجل (52%)
+        # الجانب الأيسر: معلومات الملف والقطع (52%)
         # ==========================================
         left_panel = QFrame()
         left_panel.setObjectName("left_panel")
@@ -135,13 +133,13 @@ class AddPaymentDialog(QDialog):
         created_at = str(self.v_data.get('created_at', ''))[:10] if self.v_data else ''
 
         card_info = QFrame()
-        card_info.setStyleSheet("background-color: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 6px;")
+        card_info.setStyleSheet("background-color: #fefce8; border: 1px solid #fde047; border-radius: 6px; padding: 6px;")
         card_layout = QVBoxLayout(card_info)
         card_layout.setContentsMargins(8, 6, 8, 6)
         card_layout.setSpacing(4)
 
-        lbl_header = QLabel(f"📦 <b>Dossier N° VRS-{self.versement_id:05d}</b> &nbsp;|&nbsp; Date : {created_at} &nbsp;|&nbsp; Statut : <span style='color: #0f8f83;'><b>{statut}</b></span>")
-        lbl_header.setStyleSheet("font-size: 14px; color: #166534;")
+        lbl_header = QLabel(f"✏️ <b>Modification Paiement N° {self.payment_id}</b> &nbsp;|&nbsp; Dossier VRS-{self.versement_id:05d} &nbsp;|&nbsp; Statut : <b>{statut}</b>")
+        lbl_header.setStyleSheet("font-size: 14px; color: #854d0e;")
         lbl_client = QLabel(f"👤 <b>Client :</b> {client_name} &nbsp;&nbsp; 📞 <b>Tél :</b> {client_phone}")
         lbl_client.setStyleSheet("font-size: 13px; color: #1f2937;")
         card_layout.addWidget(lbl_header)
@@ -171,7 +169,7 @@ class AddPaymentDialog(QDialog):
 
         left_layout.addWidget(self.table_items, stretch=3)
 
-        # 3. سجل الدفعات السابقة
+        # 3. سجل الدفعات
         lbl_hist = QLabel("📜 Historique des Paiements Enregistrés")
         lbl_hist.setStyleSheet("font-size: 14px; font-weight: bold; color: #2c3e50; margin-top: 4px;")
         left_layout.addWidget(lbl_hist)
@@ -199,7 +197,7 @@ class AddPaymentDialog(QDialog):
         self._populate_left_panel_tables()
 
         # ==========================================
-        # الجانب الأيمن: بيانات الدفع والخصم (48%)
+        # الجانب الأيمن: بيانات التعديل والخصم (48%)
         # ==========================================
         right_panel = QFrame()
         right_panel.setFixedWidth(560)
@@ -228,8 +226,8 @@ class AddPaymentDialog(QDialog):
         lay_target.addWidget(btn_details)
         right_layout.addWidget(group_target)
 
-        # 2. صندوق الدفع والخصومات (المتطابق تماماً مع NewVersementDialog)
-        group_pay = QGroupBox("💵 Financement, Remise et Acompte")
+        # 2. صندوق الدفع والخصومات
+        group_pay = QGroupBox("💵 Modification du Financement & Acompte")
         group_pay.setStyleSheet(group_target.styleSheet())
         pay_layout = QVBoxLayout(group_pay)
         pay_layout.setContentsMargins(10, 14, 10, 10)
@@ -343,7 +341,7 @@ class AddPaymentDialog(QDialog):
 
         pay_layout.addWidget(self.stacked_pay)
 
-        # أزرار المساعدة في التخفيضات (Discount Tools)
+        # أزرار المساعدة في التخفيضات
         lbl_remise_tools = QLabel("🛠️ Outils d'aide Remise :")
         lbl_remise_tools.setStyleSheet("font-size: 12px; font-weight: bold; color: #7f8c8d;")
         pay_layout.addWidget(lbl_remise_tools)
@@ -412,10 +410,10 @@ class AddPaymentDialog(QDialog):
         self.lbl_summary_reste = QLabel("0.00 g")
         self.lbl_summary_reste.setStyleSheet("font-size: 16px; font-weight: bold; color: #c0392b;")
 
-        sum_layout.addRow(self._styled_lbl("Total Initial Média :"), self.lbl_summary_brut)
+        sum_layout.addRow(self._styled_lbl("Base Initiale Sans ce Paiement :"), self.lbl_summary_brut)
         sum_layout.addRow(self._styled_lbl("Remise Appliquée :"), self.lbl_summary_remise)
-        sum_layout.addRow(self._styled_lbl("Acompte Versé :", color="#27ae60"), self.lbl_summary_paye)
-        sum_layout.addRow(self._styled_lbl("Reste Final :", color="#c0392b"), self.lbl_summary_reste)
+        sum_layout.addRow(self._styled_lbl("Nouveau Paiement :", color="#27ae60"), self.lbl_summary_paye)
+        sum_layout.addRow(self._styled_lbl("Nouveau Reste Final :", color="#c0392b"), self.lbl_summary_reste)
 
         pay_layout.addWidget(self.summary_box)
         right_layout.addWidget(group_pay)
@@ -428,8 +426,8 @@ class AddPaymentDialog(QDialog):
         self.btn_cancel.setCursor(Qt.PointingHandCursor)
         self.btn_cancel.clicked.connect(self.reject)
 
-        self.btn_confirm = QPushButton("🔒 Enregistrer le Paiement")
-        self.btn_confirm.setStyleSheet("background-color: #0f8f83; color: white; font-weight: bold; font-size: 15px; padding: 10px 20px; border-radius: 6px; border: none;")
+        self.btn_confirm = QPushButton("💾 Enregistrer les Modifications")
+        self.btn_confirm.setStyleSheet("background-color: #2980b9; color: white; font-weight: bold; font-size: 15px; padding: 10px 20px; border-radius: 6px; border: none;")
         self.btn_confirm.setCursor(Qt.PointingHandCursor)
         self.btn_confirm.clicked.connect(self.save_payment)
 
@@ -440,19 +438,68 @@ class AddPaymentDialog(QDialog):
         main_layout.addWidget(left_panel, stretch=52)
         main_layout.addWidget(right_panel, stretch=48)
 
-        self.on_payment_method_changed(0)
-        self.inp_cash.setFocus()
+    def _load_initial_payment_data(self):
+        """تحميل بيانات الدفعة السابقة في الحقول المناسبة"""
+        m_da = float(self.p_data.get('montant_da') or 0)
+        m_tpe = float(self.p_data.get('tpe_da') or 0)
+        m_eu = float(self.p_data.get('montant_euro') or 0)
+        taux_eu = float(self.p_data.get('taux_change_euro') or 0)
+        m_dl = float(self.p_data.get('montant_dollar') or 0)
+        taux_dl = float(self.p_data.get('taux_change_dollar') or 0)
+        o_c = float(self.p_data.get('or_casse_g') or 0)
+        prix_g = float(self.p_data.get('prix_gramme_jour_da') or 0)
+        remise = float(self.p_data.get('remise_da') or 0)
+        deduit = float(self.p_data.get('poids_deduit_g') or 0)
+        notes = str(self.p_data.get('notes') or '')
+
+        if m_eu > 0:
+            self.combo_method.setCurrentIndex(1)
+            self.inp_euro.setText(f"{m_eu:.2f}")
+            self.inp_taux_change.setText(f"{taux_eu:.2f}")
+            self.inp_euro_da.setText(f"{m_eu * taux_eu:.2f}")
+        elif o_c > 0:
+            self.combo_method.setCurrentIndex(2)
+            self.inp_oc.setText(f"{o_c:.3f}")
+            self.inp_prix_g_casse.setText(f"{prix_g:.2f}")
+            self.inp_casse_da.setText(f"{o_c * prix_g:.2f}")
+        elif m_dl > 0:
+            self.combo_method.setCurrentIndex(3)
+            self.inp_dollar.setText(f"{m_dl:.2f}")
+            self.inp_taux_change_dollar.setText(f"{taux_dl:.2f}")
+            self.inp_dollar_da.setText(f"{m_dl * taux_dl:.2f}")
+        else:
+            self.combo_method.setCurrentIndex(0)
+            if m_da != 0: self.inp_cash.setText(f"{m_da:.2f}")
+            if m_tpe != 0: self.inp_tpe.setText(f"{m_tpe:.2f}")
+
+        if remise > 0:
+            self.inp_remise_da.setText(f"{remise:.2f}")
+        if deduit > 0:
+            self.inp_poids_deduit.setText(f"{deduit:.3f}")
+        if notes:
+            self.inp_notes.setText(notes)
+
+        # تحديد القطعة الهدف السابقة
+        v_item_id = self.p_data.get('versement_item_id')
+        if v_item_id is not None:
+            for idx in range(self.combo_target.count()):
+                if self.combo_target.itemData(idx) == v_item_id:
+                    self.combo_target.setCurrentIndex(idx)
+                    break
 
     def on_payment_method_changed(self, index):
         self.stacked_pay.setCurrentIndex(index)
         self.auto_calculate_poids_deduit()
 
     # ========================================================
-    # أدوات المساعدة في التخفيضات (Discount Tools - نفس طريقة NewVersementDialog)
+    # أدوات المساعدة في التخفيضات (Discount Tools)
     # ========================================================
     def _get_price_per_gram_context(self):
-        """إرجاع سعر الغرام والوزن المتاح للهدف المحدد (سواء ملف ككل أو قطعة محددة)"""
+        """إرجاع سعر الغرام والوزن المتاح قبل هذه الدفعة (بدون خصم هذه الدفعة نفسها)"""
         selected_item_id = self.combo_target.currentData()
+        old_payment_id = self.payment_id
+        old_deduction = float(self.p_data.get('poids_deduit_g') or 0) if self.p_data.get('versement_item_id') == selected_item_id else 0.0
+
         if selected_item_id and selected_item_id in self.item_prices and selected_item_id in self.item_weights:
             item_price = float(self.item_prices[selected_item_id] or 0)
             item_weight = float(self.item_weights[selected_item_id] or 0)
@@ -461,7 +508,7 @@ class AddPaymentDialog(QDialog):
                 deductions = sum(
                     float(p.get('poids_deduit_g') or 0)
                     for p in (self.v_data.get('payments', []) if self.v_data else [])
-                    if p.get('versement_item_id') == selected_item_id
+                    if p.get('versement_item_id') == selected_item_id and p.get('id') != old_payment_id
                 )
                 rem_weight = max(0.0, item_weight - deductions)
                 return unit_ppg, rem_weight
@@ -471,8 +518,10 @@ class AddPaymentDialog(QDialog):
             total_weight = float(self.v_data.get('total_weight_g') or 0)
             if total_est > 0 and total_weight > 0:
                 unit_ppg = total_est / total_weight
-                rem_weight = float(self.v_data.get('reste_poids_g') or 0)
-                return unit_ppg, rem_weight
+                current_payment_ded = float(self.p_data.get('poids_deduit_g') or 0)
+                rem_weight = float(self.v_data.get('reste_poids_g') or 0) + current_payment_ded
+                return unit_ppg, max(0.0, rem_weight)
+
         return 0.0, 0.0
 
     def _get_active_base_amount(self):
@@ -686,18 +735,13 @@ class AddPaymentDialog(QDialog):
                     if item.get('supplier_name'):
                         display_name += f" | Fourn: {item['supplier_name']}"
                     self.combo_target.addItem(f"💍 {display_name}", item['id'])
-
-                    if self.preselected_item_id and item['id'] == self.preselected_item_id:
-                        idx = self.combo_target.count() - 1
-                        self.combo_target.setCurrentIndex(idx)
         except Exception as e:
-            logging.error(f"[AddPaymentDialog] Erreur chargement combo articles: {e}")
+            logging.error(f"[EditPaymentDialog] Erreur chargement combo articles: {e}")
 
     def _populate_left_panel_tables(self):
         if not self.v_data:
             return
 
-        # جدول القطع
         items = self.v_data.get('items', [])
         payments = self.v_data.get('payments', [])
         self.table_items.setRowCount(0)
@@ -733,7 +777,6 @@ class AddPaymentDialog(QDialog):
             self.table_items.setItem(i, 4, it_price)
             self.table_items.setRowHeight(i, 28)
 
-        # جدول سجل الدفعات السابقة
         self.table_history.setRowCount(0)
         for i, p in enumerate(payments):
             self.table_history.insertRow(i)
@@ -755,7 +798,10 @@ class AddPaymentDialog(QDialog):
                 devise_parts.append(f"{float(p.get('or_casse_g') or 0):.2f}g casse")
             devise_str = " | ".join(devise_parts) if devise_parts else "-"
 
-            it_date = QTableWidgetItem(date_str)
+            is_current = (p.get('id') == self.payment_id)
+            prefix = "✏️ " if is_current else ""
+
+            it_date = QTableWidgetItem(f"{prefix}{date_str}")
             it_da = QTableWidgetItem(f"{total_da:,.0f} DA" if total_da > 0 else "-")
             it_dev = QTableWidgetItem(devise_str)
             it_rem = QTableWidgetItem(f"{remise:,.0f} DA" if remise > 0 else "-")
@@ -763,6 +809,9 @@ class AddPaymentDialog(QDialog):
 
             for it in [it_date, it_da, it_dev, it_rem, it_ded]:
                 it.setTextAlignment(Qt.AlignCenter)
+                if is_current:
+                    it.setBackground(QBrush(QColor("#fef3c7")))
+                    it.setForeground(QBrush(QColor("#92400e")))
 
             self.table_history.setItem(i, 0, it_date)
             self.table_history.setItem(i, 1, it_da)
@@ -887,38 +936,28 @@ class AddPaymentDialog(QDialog):
                     self.inp_notes.setFocus()
                     return
 
-            if poids_deduit == 0 and not self.is_versement_libre:
-                reply = QMessageBox.question(
-                    self, "Attention", "Le poids à déduire est 0g. Êtes-vous sûr de ne rien déduire du reste ?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                if reply == QMessageBox.StandardButton.No:
-                    return
-
-            success = self.manager.versements.add_payment(
-                versement_id=self.versement_id,
-                journee_id=self.journee_id,
+            success = self.manager.versements.update_payment(
+                payment_id=self.payment_id,
                 montant_da=montant_da_for_storage,
                 tpe_da=tpe,
                 montant_euro=euro,
                 taux_change_euro=taux,
-                or_casse_g=oc,
-                poids_deduit_g=poids_deduit,
-                prix_gramme_jour_da=prix_g,
-                notes=notes,
-                versement_item_id=selected_item_id,
                 montant_dollar=dollar,
                 taux_change_dollar=taux_dollar,
-                remise_da=remise_da
+                remise_da=remise_da,
+                or_casse_g=oc,
+                poids_deduit_g=poids_deduit,
+                notes=notes,
+                versement_item_id=selected_item_id
             )
 
             if success:
                 self.accept()
             else:
-                QMessageBox.critical(self, "Erreur", "Une erreur est survenue lors de l'enregistrement.")
+                QMessageBox.critical(self, "Erreur", "Échec de la modification du paiement.")
 
         except Exception as e:
-            logging.error(f"[AddPaymentDialog] Erreur save_payment: {e}")
+            logging.error(f"[EditPaymentDialog] Erreur save_payment: {e}")
             import traceback
             traceback.print_exc()
             QMessageBox.critical(self, "Erreur", f"Une exception s'est produite: {e}")
