@@ -505,6 +505,7 @@ class VersementsView(QWidget):
 
                 item_share = (w / total_active_w) if total_active_w > 0 else 0.0
                 item_paid_amount = payment_summary['total_paid_da'] * item_share
+                selling_price = float(item.get('display_price') or item.get('selling_price') or 0.0)
                 pdf_data['items'].append({
                     "name": full_name,
                     "item_name": full_name,
@@ -514,6 +515,8 @@ class VersementsView(QWidget):
                     "reserved_quantity": quantity,
                     "weight": w,
                     "total_weight": w,
+                    "selling_price": selling_price,
+                    "total_amount": selling_price,
                     "remaining_weight": item_remaining_w,
                     "paid_amount": item_paid_amount,
                     "custom_note": normalize_custom_note(item.get("custom_note")),
@@ -568,10 +571,12 @@ class VersementsView(QWidget):
                 "operation_number": v_num
             })
 
+        total_estimated_price = float(v_data.get('total_estimated_price_da', 0))
         pdf_data['total_weight'] = float(v_data.get('total_weight_g', 0))
         pdf_data['exact_paid_weight'] = float(v_data.get('total_paid_weight_g', 0))
         pdf_data['remaining_weight'] = float(v_data.get('reste_poids_g', 0))
         pdf_data['total_paid'] = payment_summary['total_paid_da']
+        pdf_data['total_estimated_price_da'] = total_estimated_price
         pdf_data['total_remise_da'] = payment_summary['total_remise_da']
         pdf_data['total_dollar'] = payment_summary['dollar_paid']
         pdf_data['payment_summary'] = payment_summary
@@ -580,7 +585,7 @@ class VersementsView(QWidget):
         pdf_data['euro_paid'] = payment_summary['euro_paid']
         pdf_data['old_gold_weight_g'] = payment_summary['old_gold_weight_g']
         pdf_data['deducted_weight_g'] = payment_summary['deducted_weight_g']
-        pdf_data['total_amount'] = pdf_data['total_paid']
+        pdf_data['total_amount'] = total_estimated_price if total_estimated_price > 0 else pdf_data['total_paid']
         pdf_data['total_quantity'] = sum(int(item.get('reserved_quantity') or 1) for item in pdf_data['items'])
 
         return pdf_data, v_data

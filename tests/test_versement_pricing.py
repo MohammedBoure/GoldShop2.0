@@ -1,6 +1,7 @@
 import unittest
 
 from database.versement import (
+    build_versement_payment_summary,
     discount_for_target_price,
     payment_value_da,
     price_after_discount,
@@ -58,6 +59,53 @@ class VersementPricingTests(unittest.TestCase):
 
         self.assertAlmostEqual(shop_price_per_gram(items), 33333.3333333333)
         self.assertEqual(shop_price_per_gram(items, 20), 35000.0)
+
+    def test_build_versement_payment_summary_avoids_double_counting(self):
+        payments = [
+            {
+                "id": 1,
+                "montant_da": 10000,
+                "tpe_da": 0,
+                "montant_euro": 0,
+                "taux_change_euro": 0,
+                "remise_da": 500,
+                "poids_deduit_g": 0.3,
+            },
+            {
+                "id": 2,
+                "montant_da": 25000,
+                "tpe_da": 2000,
+                "montant_euro": 100,
+                "taux_change_euro": 250,
+                "remise_da": 0,
+                "poids_deduit_g": 0.8,
+            },
+            {
+                "id": 3,
+                "montant_da": 15000,
+                "tpe_da": 0,
+                "montant_dollar": 50,
+                "taux_change_dollar": 300,
+                "remise_da": 0,
+                "poids_deduit_g": 0.45,
+            },
+        ]
+
+        summary = build_versement_payment_summary(payments)
+        # Expected:
+        # P1: cash 10000
+        # P2: euro 100 * 250 = 25000 (pure cash is 0, since raw_da = 25000 is the converted euro), tpe 2000
+        # P3: dollar 50 * 300 = 15000 (pure cash is 0, since raw_da = 15000 is converted dollar)
+        # Total paid: 10000 + 2000 + 25000 + 15000 = 52000 DA (NOT 10000 + 25000 + 25000 + 15000 + 15000 = 92000)
+        self.assertEqual(summary["cash_paid_da"], 10000.0)
+        self.assertEqual(summary["tpe_paid_da"], 2000.0)
+        self.assertEqual(summary["euro_paid"], 100.0)
+        self.assertEqual(summary["euro_equivalent_da"], 25000.0)
+        self.assertEqual(summary["dollar_paid"], 50.0)
+        self.assertEqual(summary["dollar_equivalent_da"], 15000.0)
+        self.assertEqual(summary["total_paid_da"], 52000.0)
+        self.assertEqual(summary["total_remise_da"], 500.0)
+        self.assertAlmostEqual(summary["deducted_weight_g"], 1.55)
 
 
 if __name__ == "__main__":
