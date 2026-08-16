@@ -545,9 +545,8 @@ class ExcelJournalView(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.setWordWrap(False)
-        self.table.setUniformRowHeights(True)
         self.table.verticalHeader().setDefaultSectionSize(32)
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         
