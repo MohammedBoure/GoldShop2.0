@@ -215,12 +215,20 @@ class SalesManager:
     # ============================================================
     # 3. تقارير الإكسيل والمجاميع
     # ============================================================
-    def get_daily_sales_for_excel(self, journee_id: int) -> list:
+    def get_bulk_sales_for_excel(self, journee_ids: list) -> dict:
+        """
+        جلب جميع بيانات المبيعات والدفعات لعدة جلسات يومية في استعلام واحد مجمع 
+        لتحقيق أقصى سرعة وأداء، وإرجاع قاموس بمفتاح journee_id.
+        """
+        if not journee_ids:
+            return {}
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
-                query = """
+                format_strings = ','.join(['%s'] * len(journee_ids))
+                query = f"""
                     SELECT 
+                        s.journee_id,
                         s.id as sale_id,
                         si.id as item_id,
                         c.name as client_name,
@@ -246,13 +254,15 @@ class SalesManager:
                     LEFT JOIN Inventory i ON si.inventory_id = i.id
                     LEFT JOIN Categories cat ON i.category_id = cat.id
                     LEFT JOIN Suppliers sup ON i.supplier_id = sup.id
-                    WHERE s.journee_id = %s AND s.status = 'COMPLETED'
+                    WHERE s.journee_id IN ({format_strings}) AND s.status = 'COMPLETED'
                 """
-                cursor.execute(query, (journee_id,))
+                cursor.execute(query, tuple(journee_ids))
                 sales_results = cursor.fetchall()
+                while cursor.nextset(): pass
                 
-                query_vp = """
+                query_vp = f"""
                     SELECT 
+                        vp.journee_id,
                         CONCAT('VRS_', vp.versement_id) as sale_id,
                         vp.id as item_id,
                         c.name as client_name,
@@ -272,13 +282,16 @@ class SalesManager:
                     JOIN Versements v ON vp.versement_id = v.id
                     LEFT JOIN Clients c ON v.client_id = c.id
                     LEFT JOIN Versement_Items vi ON vp.versement_item_id = vi.id
-                    WHERE vp.journee_id = %s
+                    WHERE vp.journee_id IN ({format_strings})
                 """
-                cursor.execute(query_vp, (journee_id,))
+                cursor.execute(query_vp, tuple(journee_ids))
                 vp_results = cursor.fetchall()
+                while cursor.nextset(): pass
                 
-                all_results = sales_results + vp_results
-                for r in all_results:
+                results_by_session = {jid: [] for jid in journee_ids}
+                from datetime import datetime
+                for r in sales_results + vp_results:
+                    jid = r.get('journee_id')
                     c_name = r.get('client_name')
                     r_notes = str(r.get('raw_notes') or r.get('Observation') or '').strip()
                     obs_parts = []
@@ -290,14 +303,20 @@ class SalesManager:
                         if r_notes and r_notes not in obs_parts:
                             obs_parts.append(r_notes)
                     r['Observation'] = " | ".join(obs_parts) if obs_parts else (r_notes or "-")
+                    if jid in results_by_session:
+                        results_by_session[jid].append(r)
 
-                from datetime import datetime
-                all_results.sort(key=lambda x: (x['timestamp'] if x['timestamp'] else datetime.min, str(x['sale_id']), x['item_id']))
+                for jid in results_by_session:
+                    results_by_session[jid].sort(key=lambda x: (x['timestamp'] if x['timestamp'] else datetime.min, str(x['sale_id']), x['item_id']))
                 
-                return all_results
+                return results_by_session
         except Exception as e:
-            logging.error(f"Erreur get_daily_sales_for_excel: {e}")
-            return []
+            logging.error(f"Erreur get_bulk_sales_for_excel: {e}")
+            return {jid: [] for jid in journee_ids}
+
+    def get_daily_sales_for_excel(self, journee_id: int) -> list:
+        res = self.get_bulk_sales_for_excel([journee_id])
+        return res.get(journee_id, [])
 
     def get_daily_totals(self, journee_id: int) -> dict:
         try:

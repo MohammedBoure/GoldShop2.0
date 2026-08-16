@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QFrame,
     QInputDialog, QMessageBox, QLineEdit, QMenu, QDialog, QFormLayout, QGridLayout
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QBrush
 import qtawesome as qta
 
@@ -422,6 +422,22 @@ class EditSellerDialog(QDialog):
         return self.combo_seller.currentData()
 
 class ExcelJournalView(QWidget):
+    # Pre-allocated shared styling resources for high performance
+    FONT_NORMAL = QFont("", 12, QFont.Normal)
+    FONT_BOLD_11 = QFont("", 11, QFont.Bold)
+    FONT_BOLD_12 = QFont("", 12, QFont.Bold)
+
+    BRUSH_WHITE = QBrush(QColor("white"))
+    BRUSH_RED = QBrush(QColor("#c0392b"))
+    BRUSH_BG_WHITE = QBrush(QColor("#ffffff"))
+    BRUSH_BG_ALT = QBrush(QColor("#ebf5fb"))
+    BRUSH_HEADER_BG1 = QBrush(QColor("#dfe8ef"))
+    BRUSH_HEADER_BG2 = QBrush(QColor("#e8eef3"))
+    BRUSH_TOTAL_BG = QBrush(QColor("#0f8f83"))
+    BRUSH_DARK_TEXT = QBrush(QColor("#17212b"))
+    BRUSH_MUTED_TEXT = QBrush(QColor("#7f8c8d"))
+    BRUSH_NO_DATA_BG = QBrush(QColor("#ecf0f1"))
+
     def __init__(self, manager):
         super().__init__()
         self.manager = manager
@@ -480,7 +496,13 @@ class ExcelJournalView(QWidget):
         self.inp_search_client = QLineEdit()
         self.inp_search_client.setPlaceholderText("Nom du client ou désignation...")
         self.inp_search_client.setStyleSheet("font-size: 13px; padding: 4px 8px; border: 1px solid #cbd5df; border-radius: 4px; background-color: white; min-width: 200px;")
-        self.inp_search_client.textChanged.connect(self.load_data)
+        
+        # Debounced search timer
+        self.search_timer = QTimer(self)
+        self.search_timer.setSingleShot(True)
+        self.search_timer.setInterval(250)
+        self.search_timer.timeout.connect(self.load_data)
+        self.inp_search_client.textChanged.connect(lambda: self.search_timer.start())
         row2.addWidget(self.inp_search_client)
         
         row2.addSpacing(15)
@@ -490,6 +512,11 @@ class ExcelJournalView(QWidget):
         self.combo_seller.addItem("Tous les vendeurs", 0)
         self.combo_seller.currentIndexChanged.connect(self.load_data)
         row2.addWidget(self.combo_seller)
+
+        # Filters combo auto-refresh
+        self.combo_year.currentIndexChanged.connect(self.load_data)
+        self.combo_month.currentIndexChanged.connect(self.load_data)
+        self.combo_day.currentIndexChanged.connect(self.load_data)
 
         row2.addSpacing(15)
         self.toolbar_actions_widget = QWidget()
@@ -519,6 +546,8 @@ class ExcelJournalView(QWidget):
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setWordWrap(False)
+        self.table.setUniformRowHeights(True)
+        self.table.verticalHeader().setDefaultSectionSize(32)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         
@@ -526,11 +555,29 @@ class ExcelJournalView(QWidget):
         self.table.customContextMenuRequested.connect(self.show_context_menu)
         self.table.itemSelectionChanged.connect(self.on_table_selection_changed)
         
-        header = self.table.horizontalHeader()
-        header.setStretchLastSection(False)
-        header.setDefaultSectionSize(110)
         layout.addWidget(self.table)
+        self._adjust_table_columns()
         self.load_sellers_combo()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.table.rowCount() == 0:
+            self.load_data()
+        else:
+            self._scroll_to_bottom()
+            QTimer.singleShot(60, self._scroll_to_bottom)
+
+    def _scroll_to_bottom(self):
+        """التمرير إلى نهاية الجدول تماماً وبدقة عالية"""
+        if hasattr(self, "table") and self.table.rowCount() > 0:
+            last_row = self.table.rowCount() - 1
+            item = self.table.item(last_row, 0)
+            if item:
+                self.table.scrollToItem(item, QTableWidget.PositionAtBottom)
+            self.table.scrollToBottom()
+            vsb = self.table.verticalScrollBar()
+            if vsb:
+                vsb.setValue(vsb.maximum())
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -538,32 +585,31 @@ class ExcelJournalView(QWidget):
 
     def _adjust_table_columns(self):
         """
-        تعديل أبعاد أعمدة الجدول ديناميكياً:
-        - إذا كان إجمالي عرض المحتوى أقل من عرض الشاشة المتاح: تتمدد الأعمدة لتغطي 100% من الشاشة.
-        - إذا كان إجمالي عرض المحتوى أكبر من عرض الشاشة: يتم الحفاظ على الحجم الطبيعي وتفعيل السحب الأفقي (scroll).
+        تعديل وتوزيع أعمدة الجدول بسلاسة وسرعة فائقة دون استهلاك معالج:
+        - تثبيت عرض الأعمدة الرقمية لمنع الحسابات الثقيلة.
+        - تمديد عمودي Désignation و Observation لملء الشاشة بشكل متناسق.
         """
         if not hasattr(self, "table") or self.table.columnCount() == 0:
             return
 
         header = self.table.horizontalHeader()
-        viewport_w = self.table.viewport().width()
-        if viewport_w <= 0:
-            return
-
-        for i in range(self.table.columnCount()):
-            header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        header.setStretchLastSection(False)
         
-        content_w = sum(self.table.columnWidth(i) for i in range(self.table.columnCount()))
+        fixed_widths = {
+            1: 85,   # P.S
+            2: 110,  # Recette
+            3: 85,   # O.C
+            4: 95,   # TPE
+            5: 85,   # Euro
+            6: 85,   # Dollar
+            7: 120   # Vendeur
+        }
+        for col, width in fixed_widths.items():
+            header.setSectionResizeMode(col, QHeaderView.Interactive)
+            self.table.setColumnWidth(col, width)
 
-        if content_w < viewport_w:
-            header.setSectionResizeMode(0, QHeaderView.Stretch)       # Désignation
-            for i in range(1, 9):
-                if i != 8:
-                    header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
-            header.setSectionResizeMode(8, QHeaderView.Stretch)       # Observation
-        else:
-            for i in range(self.table.columnCount()):
-                header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(8, QHeaderView.Stretch)
 
     # ──────────────────────────────────────────────────────────────
     # قراءة أسماء الطابعات من الإعدادات
@@ -1094,29 +1140,39 @@ class ExcelJournalView(QWidget):
                 pass
                 
     def populate_filters(self):
+        self.combo_year.blockSignals(True)
+        self.combo_month.blockSignals(True)
+        self.combo_day.blockSignals(True)
+        
         current_date = datetime.now()
         for y in range(current_date.year - 2, current_date.year + 3):
             self.combo_year.addItem(str(y), y)
         self.combo_year.setCurrentText(str(current_date.year))
         months = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
-        for i, m in enumerate(months, 1): self.combo_month.addItem(m, i)
+        for i, m in enumerate(months, 1): 
+            self.combo_month.addItem(m, i)
         self.combo_month.setCurrentIndex(current_date.month - 1)
         self.combo_day.addItem("Tous les jours", 0)
-        for d in range(1, 32): self.combo_day.addItem(f"{d:02d}", d)
+        for d in range(1, 32): 
+            self.combo_day.addItem(f"{d:02d}", d)
+            
+        self.combo_year.blockSignals(False)
+        self.combo_month.blockSignals(False)
+        self.combo_day.blockSignals(False)
             
     def get_french_date_string(self, date_obj):
         days = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
         day_name = days[date_obj.weekday()]
         return f"{day_name} Le {date_obj.strftime('%d/%m/%Y')}"
         
-    def add_merged_row(self, text1, col_span1, text2=None, col_span2=None, bg_color="#e1e8ef", text_color="#17212b", bg_color2="#e8eef3", session_id=None):
+    def add_merged_row(self, text1, col_span1, text2=None, col_span2=None, bg_color=None, text_color=None, bg_color2=None, session_id=None):
         row = self.table.rowCount()
         self.table.insertRow(row)
         item1 = QTableWidgetItem(text1)
         item1.setTextAlignment(Qt.AlignCenter)
-        item1.setFont(QFont("", 12, QFont.Bold))
-        item1.setBackground(QBrush(QColor(bg_color)))
-        item1.setForeground(QBrush(QColor(text_color)))
+        item1.setFont(self.FONT_BOLD_12)
+        item1.setBackground(self.BRUSH_HEADER_BG1 if bg_color is None else (self.BRUSH_NO_DATA_BG if bg_color == "#ecf0f1" else QBrush(QColor(bg_color))))
+        item1.setForeground(self.BRUSH_DARK_TEXT if text_color is None else (self.BRUSH_MUTED_TEXT if text_color == "#7f8c8d" else QBrush(QColor(text_color))))
         if session_id is not None:
             item1.setData(Qt.UserRole, session_id)
         self.table.setItem(row, 0, item1)
@@ -1124,30 +1180,33 @@ class ExcelJournalView(QWidget):
         if text2 and col_span2:
             item2 = QTableWidgetItem(text2)
             item2.setTextAlignment(Qt.AlignCenter)
-            item2.setFont(QFont("", 12, QFont.Bold))
-            item2.setBackground(QBrush(QColor(bg_color2)))
-            item2.setForeground(QBrush(QColor(text_color)))
+            item2.setFont(self.FONT_BOLD_12)
+            item2.setBackground(self.BRUSH_HEADER_BG2 if bg_color2 is None else QBrush(QColor(bg_color2)))
+            item2.setForeground(self.BRUSH_DARK_TEXT if text_color is None else QBrush(QColor(text_color)))
             if session_id is not None:
                 item2.setData(Qt.UserRole, session_id)
             self.table.setItem(row, col_span1, item2)
             self.table.setSpan(row, col_span1, 1, col_span2)
             
     def load_data(self):
-        self.table.setRowCount(0)
-        year = self.combo_year.currentData()
-        month = self.combo_month.currentData()
-        day = self.combo_day.currentData()
-        client_search = self.inp_search_client.text().lower().strip()
-        seller_filter_name = self.combo_seller.currentText()
-        seller_filter_id = self.combo_seller.currentData()
-        
-        self.lbl_main_title.setText(f"États De Recettes Du Mois De {self.combo_month.currentText()} {year}")
+        self.table.setUpdatesEnabled(False)
+        self.table.blockSignals(True)
         try:
+            self.table.setRowCount(0)
+            year = self.combo_year.currentData()
+            month = self.combo_month.currentData()
+            day = self.combo_day.currentData()
+            client_search = self.inp_search_client.text().lower().strip()
+            seller_filter_name = self.combo_seller.currentText()
+            seller_filter_id = self.combo_seller.currentData()
+            
+            self.lbl_main_title.setText(f"États De Recettes Du Mois De {self.combo_month.currentText()} {year}")
+            
             with self.manager.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
                 query_sessions = "SELECT * FROM DailySessions WHERE YEAR(opened_at) = %s AND MONTH(opened_at) = %s"
                 params = [year, month]
-                if day > 0:
+                if day and day > 0:
                     query_sessions += " AND DAY(opened_at) = %s"
                     params.append(day)
                 query_sessions += " ORDER BY opened_at ASC"
@@ -1155,128 +1214,137 @@ class ExcelJournalView(QWidget):
                 sessions = cursor.fetchall()
                 while cursor.nextset(): pass
                 
-                if not sessions:
-                    self.add_merged_row("Aucune donnée trouvée pour cette période.", 9, bg_color="#ecf0f1", text_color="#7f8c8d")
-                    return
-                    
-                for session in sessions:
-                    journee_id = session['id']
-                    date_obj = session['opened_at'] 
-                    fc_amount = float(session['starting_cash_da'] or 0)
-                    
-                    receipts = getattr(self.manager.sales, 'get_daily_sales_for_excel', lambda x: [])(journee_id)
-                    filtered_receipts = []
-                    for r in receipts:
-                        obs = str(r.get('Observation', '')).lower()
-                        des = str(r.get('Designation', '')).lower()
-                        c_name = str(r.get('client_name', '')).lower()
-                        vend = str(r.get('Vendeur_Name') or r.get('Vendeur_Sofiane', ''))
-                        if client_search and (client_search not in obs and client_search not in des and client_search not in c_name): continue
-                        if seller_filter_id != 0 and vend != seller_filter_name: continue
-                        filtered_receipts.append(r)
-                        
-                    if not filtered_receipts and (client_search or seller_filter_id != 0): continue
-                        
-                    fc_formatted = f"{fc_amount:,.2f}".rstrip('0').rstrip('.') if (fc_amount % 1 != 0) else f"{fc_amount:,.0f}"
-                    self.add_merged_row(
-                        self.get_french_date_string(date_obj), 3,
-                        f"Fc : {fc_formatted} Da", 6,
-                        bg_color="#dfe8ef", text_color="#17212b", bg_color2="#e8eef3",
-                        session_id=journee_id
-                    )
-                    
-                    if not filtered_receipts:
-                        row = self.table.rowCount()
-                        self.table.insertRow(row)
-                        self.table.setItem(row, 0, QTableWidgetItem("Aucune vente"))
+            if not sessions:
+                self.add_merged_row("Aucune donnée trouvée pour cette période.", 9, bg_color="#ecf0f1", text_color="#7f8c8d")
+                return
+                
+            session_ids = [s['id'] for s in sessions]
+            all_bulk_receipts = getattr(self.manager.sales, 'get_bulk_sales_for_excel', lambda s_ids: {})(session_ids)
+            
+            for session in sessions:
+                journee_id = session['id']
+                date_obj = session['opened_at'] 
+                fc_amount = float(session['starting_cash_da'] or 0)
+                
+                receipts = all_bulk_receipts.get(journee_id, [])
+                filtered_receipts = []
+                for r in receipts:
+                    obs = str(r.get('Observation', '')).lower()
+                    des = str(r.get('Designation', '')).lower()
+                    c_name = str(r.get('client_name', '')).lower()
+                    vend = str(r.get('Vendeur_Name') or r.get('Vendeur_Sofiane', ''))
+                    if client_search and (client_search not in obs and client_search not in des and client_search not in c_name): 
                         continue
-                        
-                    t_ps, t_rec, t_oc, t_tpe, t_euro, t_dollar = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+                    if seller_filter_id != 0 and vend != seller_filter_name: 
+                        continue
+                    filtered_receipts.append(r)
                     
-                    current_sale_id = None
-                    current_bg = "#ffffff"
+                if not filtered_receipts and (client_search or seller_filter_id != 0): 
+                    continue
                     
-                    for r in filtered_receipts:
-                        sale_id = r.get('sale_id')
-                        if current_sale_id is None:
-                            current_sale_id = sale_id
-                            current_bg = "#ffffff"
-                        elif sale_id != current_sale_id:
-                            current_sale_id = sale_id
-                            current_bg = "#ebf5fb" if current_bg == "#ffffff" else "#ffffff"
-
-                        t_ps += float(r.get('P_S') or 0)
-                        t_rec += float(r.get('Recette') or 0)
-                        t_oc += float(r.get('OC') or 0)
-                        t_tpe += float(r.get('TPE') or 0)
-                        t_euro += float(r.get('Euro') or 0)
-                        t_dollar += float(r.get('Dollar') or 0)
-                        
-                        row = self.table.rowCount()
-                        self.table.insertRow(row)
-                        cols_data = [
-                            str(r.get('Designation', '')),
-                            f"{float(r.get('P_S') or 0):.2f}",
-                            f"{float(r.get('Recette') or 0):.0f}" if float(r.get('Recette') or 0) != 0 else ";",
-                            f"{float(r.get('OC') or 0):.2f}" if float(r.get('OC') or 0) != 0 else "0",
-                            f"{float(r.get('TPE') or 0):.0f}" if float(r.get('TPE') or 0) != 0 else "0",
-                            f"{float(r.get('Euro') or 0):.0f}" if float(r.get('Euro') or 0) != 0 else "0",
-                            f"{float(r.get('Dollar') or 0):.0f}" if float(r.get('Dollar') or 0) != 0 else "0",
-                            str(r.get('Vendeur_Name') or r.get('Vendeur_Sofiane', '')),
-                            str(r.get('Observation', ''))
-                        ]
-                        
-                        for col_idx, val in enumerate(cols_data):
-                            item = QTableWidgetItem(val)
-                            item.setTextAlignment(Qt.AlignCenter if col_idx in [1,2,3,4,5,6] else Qt.AlignLeft | Qt.AlignVCenter)
-                            item.setBackground(QBrush(QColor(current_bg)))
-                            if val == ";" or (val.startswith("-") and val not in ["-0", "-0.0", "-0.00"]):
-                                item.setForeground(QBrush(QColor("#c0392b")))
-
-                            
-                            if col_idx == 0:
-                                item.setData(Qt.UserRole, r.get('sale_id'))
-                                item.setData(Qt.UserRole + 1, r.get('item_id'))
-                                item.setData(Qt.UserRole + 2, float(r.get('Recette') or 0))
-                                item.setData(Qt.UserRole + 3, float(r.get('TPE') or 0))
-                                item.setData(Qt.UserRole + 4, float(r.get('OC') or 0))
-                                item.setData(Qt.UserRole + 5, float(r.get('Euro') or 0))
-                                item.setData(Qt.UserRole + 6, float(r.get('Dollar') or 0))
-                                item.setData(Qt.UserRole + 7, float(r.get('Impos') or 0))
-                                item.setData(Qt.UserRole + 8, r.get('vendeur_id'))
-                                item.setData(Qt.UserRole + 9, r.get('raw_notes') or '')
-                                
-                            self.table.setItem(row, col_idx, item)
-                            
-                    totals = getattr(self.manager.sales, 'get_daily_totals', lambda x: {})(journee_id)
+                fc_formatted = f"{fc_amount:,.2f}".rstrip('0').rstrip('.') if (fc_amount % 1 != 0) else f"{fc_amount:,.0f}"
+                self.add_merged_row(
+                    self.get_french_date_string(date_obj), 3,
+                    f"Fc : {fc_formatted} Da", 6,
+                    bg_color="#dfe8ef", text_color="#17212b", bg_color2="#e8eef3",
+                    session_id=journee_id
+                )
+                
+                if not filtered_receipts:
                     row = self.table.rowCount()
                     self.table.insertRow(row)
+                    self.table.setItem(row, 0, QTableWidgetItem("Aucune vente"))
+                    continue
                     
-                    empty_item = QTableWidgetItem("Total Journée")
-                    empty_item.setFont(QFont("", 11, QFont.Bold))
-                    empty_item.setTextAlignment(Qt.AlignCenter)
-                    empty_item.setBackground(QBrush(QColor("#0f8f83")))
-                    empty_item.setForeground(QBrush(QColor("white")))
-                    self.table.setItem(row, 0, empty_item)
-                    
-                    for idx, t_val in enumerate([t_ps, t_rec, t_oc, t_tpe, t_euro, t_dollar], start=1):
-                        fmt = f"{t_val:.2f}" if idx in [1, 3] else f"{t_val:.0f}"
-                        t_item = QTableWidgetItem(fmt)
-                        t_item.setFont(QFont("", 11, QFont.Bold))
-                        t_item.setTextAlignment(Qt.AlignCenter)
-                        t_item.setBackground(QBrush(QColor("#0f8f83")))
-                        t_item.setForeground(QBrush(QColor("white")))
-                        self.table.setItem(row, idx, t_item)
-                        
-                    for col_idx in [7, 8]:
-                        item = QTableWidgetItem("")
-                        item.setBackground(QBrush(QColor("#0f8f83")))
-                        item.setForeground(QBrush(QColor("white")))
-                        self.table.setItem(row, col_idx, item)
+                t_ps, t_rec, t_oc, t_tpe, t_euro, t_dollar = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+                current_sale_id = None
+                current_bg_brush = self.BRUSH_BG_WHITE
+                
+                for r in filtered_receipts:
+                    sale_id = r.get('sale_id')
+                    if current_sale_id is None:
+                        current_sale_id = sale_id
+                        current_bg_brush = self.BRUSH_BG_WHITE
+                    elif sale_id != current_sale_id:
+                        current_sale_id = sale_id
+                        current_bg_brush = self.BRUSH_BG_ALT if current_bg_brush == self.BRUSH_BG_WHITE else self.BRUSH_BG_WHITE
 
-            self._adjust_table_columns()
+                    t_ps += float(r.get('P_S') or 0)
+                    t_rec += float(r.get('Recette') or 0)
+                    t_oc += float(r.get('OC') or 0)
+                    t_tpe += float(r.get('TPE') or 0)
+                    t_euro += float(r.get('Euro') or 0)
+                    t_dollar += float(r.get('Dollar') or 0)
+                    
+                    row = self.table.rowCount()
+                    self.table.insertRow(row)
+                    cols_data = [
+                        str(r.get('Designation', '')),
+                        f"{float(r.get('P_S') or 0):.2f}",
+                        f"{float(r.get('Recette') or 0):.0f}" if float(r.get('Recette') or 0) != 0 else ";",
+                        f"{float(r.get('OC') or 0):.2f}" if float(r.get('OC') or 0) != 0 else "0",
+                        f"{float(r.get('TPE') or 0):.0f}" if float(r.get('TPE') or 0) != 0 else "0",
+                        f"{float(r.get('Euro') or 0):.0f}" if float(r.get('Euro') or 0) != 0 else "0",
+                        f"{float(r.get('Dollar') or 0):.0f}" if float(r.get('Dollar') or 0) != 0 else "0",
+                        str(r.get('Vendeur_Name') or r.get('Vendeur_Sofiane', '')),
+                        str(r.get('Observation', ''))
+                    ]
+                    
+                    for col_idx, val in enumerate(cols_data):
+                        item = QTableWidgetItem(val)
+                        item.setTextAlignment(Qt.AlignCenter if col_idx in [1,2,3,4,5,6] else (Qt.AlignLeft | Qt.AlignVCenter))
+                        item.setBackground(current_bg_brush)
+                        if val == ";" or (val.startswith("-") and val not in ["-0", "-0.0", "-0.00"]):
+                            item.setForeground(self.BRUSH_RED)
+
+                        if col_idx == 0:
+                            item.setData(Qt.UserRole, r.get('sale_id'))
+                            item.setData(Qt.UserRole + 1, r.get('item_id'))
+                            item.setData(Qt.UserRole + 2, float(r.get('Recette') or 0))
+                            item.setData(Qt.UserRole + 3, float(r.get('TPE') or 0))
+                            item.setData(Qt.UserRole + 4, float(r.get('OC') or 0))
+                            item.setData(Qt.UserRole + 5, float(r.get('Euro') or 0))
+                            item.setData(Qt.UserRole + 6, float(r.get('Dollar') or 0))
+                            item.setData(Qt.UserRole + 7, float(r.get('Impos') or 0))
+                            item.setData(Qt.UserRole + 8, r.get('vendeur_id'))
+                            item.setData(Qt.UserRole + 9, r.get('raw_notes') or '')
+                            
+                        self.table.setItem(row, col_idx, item)
+                        
+                row = self.table.rowCount()
+                self.table.insertRow(row)
+                
+                empty_item = QTableWidgetItem("Total Journée")
+                empty_item.setFont(self.FONT_BOLD_11)
+                empty_item.setTextAlignment(Qt.AlignCenter)
+                empty_item.setBackground(self.BRUSH_TOTAL_BG)
+                empty_item.setForeground(self.BRUSH_WHITE)
+                self.table.setItem(row, 0, empty_item)
+                
+                for idx, t_val in enumerate([t_ps, t_rec, t_oc, t_tpe, t_euro, t_dollar], start=1):
+                    fmt = f"{t_val:.2f}" if idx in [1, 3] else f"{t_val:.0f}"
+                    t_item = QTableWidgetItem(fmt)
+                    t_item.setFont(self.FONT_BOLD_11)
+                    t_item.setTextAlignment(Qt.AlignCenter)
+                    t_item.setBackground(self.BRUSH_TOTAL_BG)
+                    t_item.setForeground(self.BRUSH_WHITE)
+                    self.table.setItem(row, idx, t_item)
+                    
+                for col_idx in [7, 8]:
+                    item = QTableWidgetItem("")
+                    item.setBackground(self.BRUSH_TOTAL_BG)
+                    item.setForeground(self.BRUSH_WHITE)
+                    self.table.setItem(row, col_idx, item)
+
         except Exception as e:
-            pass
+            import logging
+            logging.error(f"Erreur load_data ExcelJournal: {e}")
+        finally:
+            self.table.blockSignals(False)
+            self.table.setUpdatesEnabled(True)
+            self._adjust_table_columns()
+            self._scroll_to_bottom()
+            QTimer.singleShot(60, self._scroll_to_bottom)
 
     def open_sales_interface(self):
         from PySide6.QtWidgets import QApplication
