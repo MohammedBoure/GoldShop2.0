@@ -140,4 +140,4 @@ class OverviewTab(QWidget):
             self.vitrine_section.update_data(vitrine_gold + vitrine_silver)
 
         if hasattr(self, 'charts_section'):
-            self.charts_section.update_data(sales_trend, purchases_trend)
+            self.charts_section.update_data(sales_trend)

@@ -135,182 +135,43 @@ class StatisticsManager:
             
         return metrics
     
-    def get_sales_trend(self, days=30, start_date=None, end_date=None, granularity="day"):
+    def get_sales_trend(self, days=30):
         data = []
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
-                where_clauses = ["status = 'COMPLETED'"]
-                params = []
-
-                if start_date and end_date:
-                    where_clauses.append("DATE(created_at) BETWEEN %s AND %s")
-                    params.extend([str(start_date), str(end_date)])
-                elif days is not None and days > 0:
-                    where_clauses.append("created_at >= DATE_SUB(CURDATE(), INTERVAL %s DAY)")
-                    params.append(days)
-
-                where_sql = " AND ".join(where_clauses)
-                if where_sql:
-                    where_sql = "WHERE " + where_sql
-
-                granularity = (granularity or "day").lower()
-                if granularity == "month":
-                    query = f"""
-                        SELECT 
-                            DATE_FORMAT(created_at, '%Y-%m') as period_key,
-                            DATE(DATE_FORMAT(created_at, '%Y-%m-01')) as date,
-                            SUM(net_to_pay_da) as daily_value,
-                            SUM(net_to_pay_da) as total_amount,
-                            COUNT(*) as count
-                        FROM Sales
-                        {where_sql}
-                        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
-                        ORDER BY date ASC
-                    """
-                elif granularity == "week":
-                    query = f"""
-                        SELECT 
-                            DATE_FORMAT(DATE_SUB(DATE(created_at), INTERVAL WEEKDAY(created_at) DAY), '%Y-%m-%d') as period_key,
-                            DATE_SUB(DATE(created_at), INTERVAL WEEKDAY(created_at) DAY) as date,
-                            SUM(net_to_pay_da) as daily_value,
-                            SUM(net_to_pay_da) as total_amount,
-                            COUNT(*) as count
-                        FROM Sales
-                        {where_sql}
-                        GROUP BY DATE_SUB(DATE(created_at), INTERVAL WEEKDAY(created_at) DAY)
-                        ORDER BY date ASC
-                    """
-                else:
-                    query = f"""
-                        SELECT 
-                            DATE_FORMAT(created_at, '%Y-%m-%d') as period_key,
-                            DATE(created_at) as date,
-                            SUM(net_to_pay_da) as daily_value,
-                            SUM(net_to_pay_da) as total_amount,
-                            COUNT(*) as count
-                        FROM Sales
-                        {where_sql}
-                        GROUP BY DATE(created_at)
-                        ORDER BY date ASC
-                    """
-
-                cursor.execute(query, tuple(params))
+                query = """
+                    SELECT DATE(created_at) as date, SUM(net_to_pay_da) as daily_value
+                    FROM Sales
+                    WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                      AND status = 'COMPLETED'
+                    GROUP BY DATE(created_at)
+                    ORDER BY date ASC
+                """
+                cursor.execute(query, (days,))
                 data = cursor.fetchall()
         except Exception as e:
             logging.error(f"Error getting sales trend: {e}")
         return data
 
-    def get_purchases_trend(self, days=30, start_date=None, end_date=None, granularity="day"):
-        data = []
+    def get_purchases_trend(self, days=30):
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
-                where_clauses = []
-                params = []
-
-                if start_date and end_date:
-                    where_clauses.append("DATE(transaction_date) BETWEEN %s AND %s")
-                    params.extend([str(start_date), str(end_date)])
-                elif days is not None and days > 0:
-                    where_clauses.append("transaction_date >= DATE_SUB(CURDATE(), INTERVAL %s DAY)")
-                    params.append(days)
-
-                where_sql = " AND ".join(where_clauses)
-                if where_sql:
-                    where_sql = "WHERE " + where_sql
-
-                granularity = (granularity or "day").lower()
-                amount_expr = "COALESCE(CASE WHEN amount_debit > 0 THEN amount_debit ELSE ABS(amount) END, 0)"
-
-                if granularity == "month":
-                    query = f"""
-                        SELECT
-                            DATE_FORMAT(transaction_date, '%Y-%m') as period_key,
-                            DATE(DATE_FORMAT(transaction_date, '%Y-%m-01')) as date,
-                            SUM({amount_expr}) as daily_cost,
-                            SUM({amount_expr}) as total_amount,
-                            COUNT(*) as count
-                        FROM SupplierTransactions
-                        {where_sql}
-                        GROUP BY DATE_FORMAT(transaction_date, '%Y-%m')
-                        ORDER BY date ASC
-                    """
-                elif granularity == "week":
-                    query = f"""
-                        SELECT
-                            DATE_FORMAT(DATE_SUB(DATE(transaction_date), INTERVAL WEEKDAY(transaction_date) DAY), '%Y-%m-%d') as period_key,
-                            DATE_SUB(DATE(transaction_date), INTERVAL WEEKDAY(transaction_date) DAY) as date,
-                            SUM({amount_expr}) as daily_cost,
-                            SUM({amount_expr}) as total_amount,
-                            COUNT(*) as count
-                        FROM SupplierTransactions
-                        {where_sql}
-                        GROUP BY DATE_SUB(DATE(transaction_date), INTERVAL WEEKDAY(transaction_date) DAY)
-                        ORDER BY date ASC
-                    """
-                else:
-                    query = f"""
-                        SELECT
-                            DATE_FORMAT(transaction_date, '%Y-%m-%d') as period_key,
-                            DATE(transaction_date) as date,
-                            SUM({amount_expr}) as daily_cost,
-                            SUM({amount_expr}) as total_amount,
-                            COUNT(*) as count
-                        FROM SupplierTransactions
-                        {where_sql}
-                        GROUP BY DATE(transaction_date)
-                        ORDER BY date ASC
-                    """
-
-                cursor.execute(query, tuple(params))
-                data = cursor.fetchall()
+                query = """
+                    SELECT
+                        DATE(transaction_date) as date,
+                        SUM(ABS(amount)) as daily_cost
+                    FROM SupplierTransactions
+                    WHERE transaction_date >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                    GROUP BY DATE(transaction_date)
+                    ORDER BY DATE(transaction_date) ASC
+                """
+                cursor.execute(query, (days,))
+                return cursor.fetchall()
         except Exception as e:
             logging.error(f"Error getting purchases trend: {e}")
-        return data
-
-    def get_financial_trend(self, days=30, start_date=None, end_date=None, granularity="day"):
-        """جلب التدفق المالي المجمع (مبيعات ومشتريات) للفترة المحددة مع حساب الصافي"""
-        sales = self.get_sales_trend(days=days, start_date=start_date, end_date=end_date, granularity=granularity)
-        purchases = self.get_purchases_trend(days=days, start_date=start_date, end_date=end_date, granularity=granularity)
-
-        combined = {}
-        for s in sales:
-            k = str(s.get("period_key") or s.get("date") or "")
-            if not k:
-                continue
-            combined[k] = {
-                "period_key": k,
-                "date": str(s.get("date") or k),
-                "inflow": float(s.get("total_amount") or s.get("daily_value") or 0.0),
-                "outflow": 0.0,
-                "sales_count": int(s.get("count") or 1)
-            }
-
-        for p in purchases:
-            k = str(p.get("period_key") or p.get("date") or "")
-            if not k:
-                continue
-            if k not in combined:
-                combined[k] = {
-                    "period_key": k,
-                    "date": str(p.get("date") or k),
-                    "inflow": 0.0,
-                    "outflow": float(p.get("total_amount") or p.get("daily_cost") or 0.0),
-                    "sales_count": 0
-                }
-            else:
-                combined[k]["outflow"] = float(p.get("total_amount") or p.get("daily_cost") or 0.0)
-
-        # ترتيب النتائج زمنياً
-        sorted_keys = sorted(combined.keys())
-        result = []
-        for k in sorted_keys:
-            entry = combined[k]
-            entry["net"] = entry["inflow"] - entry["outflow"]
-            result.append(entry)
-
-        return result
+            return []
 
     def get_active_alerts(self):
         alerts = []

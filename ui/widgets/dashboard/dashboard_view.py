@@ -119,9 +119,6 @@ class DashboardView(QWidget):
             purchases_trend = self.manager.stats.get_purchases_trend(30)
             alerts_data = self.manager.stats.get_active_alerts()
 
-            if hasattr(self.overview_tab, 'charts_section') and hasattr(self.manager, 'stats'):
-                self.overview_tab.charts_section.set_stats_manager(self.manager.stats)
-
             self.overview_tab.update_content(metrics, sales_trend, purchases_trend, alerts_data)
 
         except Exception as e:
