@@ -51,6 +51,10 @@ class NewVersementDialog(QDialog):
         self.init_ui()
         self.setup_product_completer()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.setWindowState(Qt.WindowMaximized)
+
     # ==========================================
     # دوال مساعدة لإنشاء أزرار لوحات المفاتيح
     # ==========================================

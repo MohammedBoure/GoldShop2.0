@@ -52,4 +52,15 @@ def create_invoice_note_combo(manager, current_value="", parent=None):
 
 
 def selected_custom_note(combo):
-    return normalize_custom_note(combo.currentData())
+    if combo is None:
+        return ""
+    data = combo.currentData()
+    if data is not None and str(data).strip():
+        return normalize_custom_note(data)
+
+    text = combo.currentText().strip() if hasattr(combo, 'currentText') else ""
+    if text.endswith("(valeur actuelle)"):
+        text = text.replace("(valeur actuelle)", "").strip()
+    if text and text != EMPTY_NOTE_LABEL:
+        return normalize_custom_note(text)
+    return ""

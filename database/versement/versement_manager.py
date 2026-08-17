@@ -669,6 +669,31 @@ class VersementManager:
                 cursor = conn.cursor(dictionary=True)
                 custom_note = str(notes or '').strip()[:MAX_CUSTOM_NOTE_LENGTH]
                 cursor.execute("UPDATE Versement_Items SET notes = %s WHERE id = %s", (custom_note, item_id))
+
+                # Sync with SaleItems if a sale/invoice was already created for this versement item
+                cursor.execute("SELECT versement_id, inventory_id FROM Versement_Items WHERE id = %s", (item_id,))
+                vi_row = cursor.fetchone()
+                if vi_row and vi_row.get("versement_id"):
+                    v_id = vi_row["versement_id"]
+                    inv_id = vi_row.get("inventory_id")
+                    v_receipt = f"VRS-{v_id}"
+                    v_tag = f"VRS-{v_id:05d}"
+                    if inv_id:
+                        cursor.execute("""
+                            UPDATE SaleItems si
+                            JOIN Sales s ON s.id = si.sale_id
+                            SET si.custom_note = %s
+                            WHERE (s.receipt_number = %s OR s.notes LIKE %s OR s.notes LIKE %s)
+                              AND si.inventory_id = %s
+                        """, (custom_note, v_receipt, f"%{v_receipt}%", f"%{v_tag}%", inv_id))
+                    else:
+                        cursor.execute("""
+                            UPDATE SaleItems si
+                            JOIN Sales s ON s.id = si.sale_id
+                            SET si.custom_note = %s
+                            WHERE (s.receipt_number = %s OR s.notes LIKE %s OR s.notes LIKE %s)
+                        """, (custom_note, v_receipt, f"%{v_receipt}%", f"%{v_tag}%"))
+
                 conn.commit()
                 return True
         except Exception as e:

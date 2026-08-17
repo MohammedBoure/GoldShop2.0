@@ -143,6 +143,13 @@ class AddItemToVersementDialog(QDialog):
         self.lbl_result.setWordWrap(True)
         self.lbl_result.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.lbl_result)
+
+        lbl_note = QLabel("<b>Note / À Vendre pour cet article :</b>")
+        lbl_note.setStyleSheet("font-size: 13px; color: #2c3e50;")
+        layout.addWidget(lbl_note)
+        self.combo_note = create_invoice_note_combo(self.manager, "", self)
+        self.combo_note.setEditable(True)
+        layout.addWidget(self.combo_note)
         
         btn_layout = QHBoxLayout()
         self.btn_add = QPushButton(" Ajouter au dossier")
@@ -205,7 +212,8 @@ class AddItemToVersementDialog(QDialog):
 
     def add_item(self):
         if self.inventory_id and self.designation:
-            if self.manager.versements.add_item_to_versement(self.versement_id, self.inventory_id, self.designation):
+            note_val = selected_custom_note(self.combo_note)
+            if self.manager.versements.add_item_to_versement(self.versement_id, self.inventory_id, self.designation, notes=note_val):
                 self.accept()
             else:
                 QMessageBox.warning(self, "Erreur", "Impossible d'ajouter l'article au dossier.")
@@ -216,8 +224,8 @@ class VersementItemNoteDialog(QDialog):
         super().__init__(parent)
         self.manager = manager
         self.data = data
-        self.setWindowTitle("Modifier À Vendre")
-        self.setMinimumWidth(520)
+        self.setWindowTitle("Modifier la Note du Produit")
+        self.setMinimumWidth(540)
         self._init_ui()
 
     def _init_ui(self):
@@ -226,19 +234,22 @@ class VersementItemNoteDialog(QDialog):
 
         title = QLabel(f"<b>Article :</b> {self.data.get('designation', '')}")
         title.setWordWrap(True)
+        title.setStyleSheet("font-size: 14px; color: #1e293b;")
         layout.addWidget(title)
 
+        existing_note = self.data.get("custom_note") or self.data.get("notes") or ""
         self.combo_note = create_invoice_note_combo(
-            self.manager, self.data.get("custom_note"), self
+            self.manager, existing_note, self
         )
-        layout.addWidget(QLabel("À Vendre :"))
+        self.combo_note.setEditable(True)
+        layout.addWidget(QLabel("<b>Note / À Vendre :</b> (Sélectionnez ou saisissez directement)"))
         layout.addWidget(self.combo_note)
 
         buttons = QHBoxLayout()
         btn_cancel = QPushButton("Annuler")
         btn_cancel.clicked.connect(self.reject)
         btn_save = QPushButton("Enregistrer")
-        btn_save.setStyleSheet("background-color: #0f8f83; color: white; font-weight: bold;")
+        btn_save.setStyleSheet("background-color: #0f8f83; color: white; font-weight: bold; font-size: 14px; border-radius: 6px;")
         btn_save.clicked.connect(self.accept)
         for button in (btn_cancel, btn_save):
             button.setFixedHeight(42)
@@ -655,10 +666,10 @@ class VersementsView(QWidget):
             
         elif row_type == "ITEM":
             act_show_details = menu.addAction("ℹ️ Afficher les spécifications détaillées du produit")
+            act_edit_item_note = menu.addAction("🏷️ Modifier Note / À Vendre")
             menu.addSeparator()
             item_status = data.get("item_status")
             if item_status == 'EN_COURS' and v_statut == 'EN_COURS':
-                act_edit_item_note = menu.addAction("🏷️ Modifier À Vendre")
                 act_pay_item = menu.addAction("💵 Ajouter un paiement pour CET ARTICLE")
                 act_retirer_item = menu.addAction("📦 Marquer cet article comme RETIRÉ (Livré)")
                 menu.addSeparator()
@@ -1460,8 +1471,15 @@ class VersementFullDetailsDialog(QDialog):
         self.versement_id = versement_id
         self.manager = manager
         self.setWindowTitle(f"📋 Détails complets du Versement N° VRS-{versement_id:05d}")
-        self.setMinimumSize(1050, 700)
+        self.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.setGeometry(screen)
+        self.setWindowState(Qt.WindowMaximized)
         self._init_ui()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.setWindowState(Qt.WindowMaximized)
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
@@ -1496,7 +1514,7 @@ class VersementFullDetailsDialog(QDialog):
         layout.addWidget(info_frame)
 
         # Section 1: Tableau des Articles (Produits)
-        lbl_articles = QLabel("💍 Articles et Bijoux dans ce Versement (Tableau complet) :")
+        lbl_articles = QLabel("💍 Articles et Bijoux dans ce Versement (Double-cliquez pour modifier la note) :")
         lbl_articles.setStyleSheet("font-size: 15px; font-weight: bold; color: #0f8f83; margin-top: 5px;")
         layout.addWidget(lbl_articles)
 
@@ -1552,6 +1570,10 @@ class VersementFullDetailsDialog(QDialog):
             table_articles.setItem(row_idx, 4, it_rem)
             table_articles.setItem(row_idx, 5, it_st)
             table_articles.setItem(row_idx, 6, it_note)
+
+        table_articles.setContextMenuPolicy(Qt.CustomContextMenu)
+        table_articles.customContextMenuRequested.connect(lambda pos: self._on_article_context_menu(table_articles, items, pos))
+        table_articles.doubleClicked.connect(lambda idx: self._on_article_double_clicked(table_articles, items, idx))
 
         layout.addWidget(table_articles)
 
@@ -1623,3 +1645,34 @@ class VersementFullDetailsDialog(QDialog):
         btn_layout.addWidget(btn_close)
 
         layout.addLayout(btn_layout)
+
+    def _on_article_double_clicked(self, table_articles, items, idx):
+        if not idx.isValid(): return
+        row = idx.row()
+        if 0 <= row < len(items):
+            self._edit_dialog_item_note(table_articles, items[row], row)
+
+    def _on_article_context_menu(self, table_articles, items, pos):
+        row = table_articles.rowAt(pos.y())
+        if row < 0 or row >= len(items): return
+        item_data = items[row]
+        menu = QMenu(self)
+        act_edit = menu.addAction("🏷️ Modifier Note / À Vendre")
+        action = menu.exec_(table_articles.viewport().mapToGlobal(pos))
+        if action == act_edit:
+            self._edit_dialog_item_note(table_articles, item_data, row)
+
+    def _edit_dialog_item_note(self, table_articles, item_data, row):
+        item_id = item_data.get("item_id") or item_data.get("id")
+        dlg = VersementItemNoteDialog(self.manager, item_data, self)
+        if dlg.exec() == QDialog.Accepted:
+            new_note = dlg.get_product_note()
+            if self.manager.versements.update_versement_item_notes(item_id, new_note):
+                item_data["custom_note"] = new_note
+                item_data["notes"] = new_note
+                it_note = table_articles.item(row, 6)
+                if it_note:
+                    it_note.setText(new_note)
+                    it_note.setToolTip(new_note)
+                if self.parent() and hasattr(self.parent(), "load_data"):
+                    self.parent().load_data()

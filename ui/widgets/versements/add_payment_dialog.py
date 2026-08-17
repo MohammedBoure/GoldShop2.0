@@ -33,7 +33,10 @@ class AddPaymentDialog(QDialog):
         self._target_price_per_gram = None
 
         self.setWindowTitle(f"Ajouter un Paiement - Dossier VRS-{self.versement_id:05d}")
-        self.setMinimumSize(1100, 680)
+        self.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.setGeometry(screen)
+        self.setWindowState(Qt.WindowMaximized)
 
         self._load_versement_data()
         self.init_ui()
@@ -41,8 +44,7 @@ class AddPaymentDialog(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
-        screen = QApplication.primaryScreen().availableGeometry()
-        self.move(int((screen.width() - self.width()) / 2), max(20, int((screen.height() - self.height()) / 2)))
+        self.setWindowState(Qt.WindowMaximized)
 
     def _load_versement_data(self):
         try:
