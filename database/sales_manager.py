@@ -269,7 +269,7 @@ class SalesManager:
                         COALESCE(vi_inv.barcode, '') as barcode,
                         c.name as client_name,
                         COALESCE(NULLIF(vi.designation, ''), CONCAT('Versement N° VRS-', vp.versement_id)) as Designation,
-                        COALESCE(vp.poids_deduit_g, 0.0) as P_S,
+                        0.0 as P_S,
                         IF(COALESCE(vp.montant_euro, 0) > 0 OR COALESCE(vp.montant_dollar, 0) > 0 OR COALESCE(vp.or_casse_g, 0) > 0, 0.0, vp.montant_da) as Recette,
                         vp.or_casse_g as OC,
                         vp.tpe_da as TPE,
