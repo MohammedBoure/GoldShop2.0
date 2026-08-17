@@ -231,6 +231,7 @@ class SalesManager:
                         s.journee_id,
                         s.id as sale_id,
                         si.id as item_id,
+                        COALESCE(NULLIF(si.barcode, ''), i.barcode, '') as barcode,
                         c.name as client_name,
                         CONCAT(si.name, 
                                IF(cat.name IS NOT NULL AND cat.name != '', CONCAT(' | Cat: ', cat.name), ''),
@@ -265,9 +266,10 @@ class SalesManager:
                         vp.journee_id,
                         CONCAT('VRS_', vp.versement_id) as sale_id,
                         vp.id as item_id,
+                        COALESCE(vi_inv.barcode, '') as barcode,
                         c.name as client_name,
                         COALESCE(NULLIF(vi.designation, ''), CONCAT('Versement N° VRS-', vp.versement_id)) as Designation,
-                        0.0 as P_S,
+                        COALESCE(vp.poids_deduit_g, 0.0) as P_S,
                         IF(COALESCE(vp.montant_euro, 0) > 0 OR COALESCE(vp.montant_dollar, 0) > 0 OR COALESCE(vp.or_casse_g, 0) > 0, 0.0, vp.montant_da) as Recette,
                         vp.or_casse_g as OC,
                         vp.tpe_da as TPE,
@@ -282,6 +284,7 @@ class SalesManager:
                     JOIN Versements v ON vp.versement_id = v.id
                     LEFT JOIN Clients c ON v.client_id = c.id
                     LEFT JOIN Versement_Items vi ON vp.versement_item_id = vi.id
+                    LEFT JOIN Inventory vi_inv ON vi.inventory_id = vi_inv.id
                     WHERE vp.journee_id IN ({format_strings})
                 """
                 cursor.execute(query_vp, tuple(journee_ids))
@@ -428,6 +431,18 @@ class SalesManager:
                 return True
         except Exception as e:
             logging.error(f"Erreur update_sale_item_notes: {e}")
+            return False
+
+    def update_sale_item_weight(self, sale_item_id: int, new_weight: float) -> bool:
+        """تعديل وزن بند البيع (P.S) وتحديث إجمالي وزن البيع إذا لزم الأمر"""
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE SaleItems SET sold_weight_g = %s WHERE id = %s", (new_weight, sale_item_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Erreur update_sale_item_weight: {e}")
             return False
 
     def _enrich_versement_closure_sale(self, cursor, sale: dict) -> None:

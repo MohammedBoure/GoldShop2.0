@@ -230,6 +230,10 @@ class SaleDetailsDialog(QDialog):
             b_color = "green" if benefice >= 0 else "red"
             table.setItem(row, 8, create_item(f"{benefice:,.2f} DA", bold=True, color=b_color))
 
+        table.setContextMenuPolicy(Qt.CustomContextMenu)
+        table.customContextMenuRequested.connect(lambda pos: self._on_details_context_menu(table, items, pos))
+        table.cellDoubleClicked.connect(lambda r, c: self._on_details_double_clicked(table, items, r, c))
+
         layout.addWidget(table)
 
         discount = float(sale.get('discount_da') or 0)
@@ -252,10 +256,30 @@ class SaleDetailsDialog(QDialog):
 
         layout.addWidget(summary_frame)
 
-        btn_close = QPushButton("Fermer (Annuler)")
-        btn_close.setStyleSheet("background-color: #95a5a6; color: white; padding: 15px; font-weight: bold; font-size: 18px; border-radius: 5px;")
+        btn_close = QPushButton("Fermer")
+        btn_close.setStyleSheet("background-color: #95a5a6; color: white; padding: 12px; font-weight: bold; font-size: 16px; border-radius: 5px;")
         btn_close.clicked.connect(self.accept)
         layout.addWidget(btn_close)
+
+    def _on_details_context_menu(self, table, items, pos):
+        row = table.rowAt(pos.y())
+        if row < 0 or row >= len(items): return
+        bc = str(items[row].get('barcode') or '').strip()
+        if bc and bc != 'N/A':
+            menu = QMenu(self)
+            act_copy = menu.addAction(f"📋 Copier le Code-barres ({bc})")
+            action = menu.exec_(table.viewport().mapToGlobal(pos))
+            if action == act_copy:
+                from PySide6.QtWidgets import QApplication
+                QApplication.clipboard().setText(bc)
+
+    def _on_details_double_clicked(self, table, items, row, col):
+        if 0 <= row < len(items):
+            bc = str(items[row].get('barcode') or '').strip()
+            if bc and bc != 'N/A':
+                from PySide6.QtWidgets import QApplication
+                QApplication.clipboard().setText(bc)
+                QMessageBox.information(self, "Code-barres copié", f"Code-barres copié dans le presse-papier :\n<b>{bc}</b>")
 
 
 class EditSaleDialog(QDialog):
@@ -421,6 +445,273 @@ class EditSellerDialog(QDialog):
     def get_seller_id(self):
         return self.combo_seller.currentData()
 
+
+class EditWeightDialog(QDialog):
+    """نافذة تعديل وتحديد الوزن الخارج (P.S) للسطر المحدد بدقة."""
+    def __init__(self, current_weight, designation="", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Modifier le Poids Sorti (P.S)")
+        self.setFixedSize(480, 240)
+        
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        if designation:
+            lbl_des = QLabel(f"<b>Article / Ligne :</b> {designation}")
+            lbl_des.setWordWrap(True)
+            lbl_des.setStyleSheet("font-size: 14px; color: #2c3e50;")
+            layout.addWidget(lbl_des)
+        
+        form = QFormLayout()
+        self.inp_weight = QLineEdit(f"{float(current_weight or 0):.2f}")
+        self.inp_weight.setStyleSheet("font-size: 20px; padding: 8px; font-weight: bold; color: #2c3e50; border: 2px solid #3498db; border-radius: 6px;")
+        
+        from ui.tools.virtual_numpad import VirtualNumpad
+        def show_pad(inp):
+            VirtualNumpad(mode="direct", target_widget=inp, allow_decimal=True, allow_negative=False, parent=self).show()
+        self.inp_weight.mousePressEvent = lambda e: show_pad(self.inp_weight)
+        
+        form.addRow("⚖️ <b>Poids Sorti P.S (g) :</b>", self.inp_weight)
+        layout.addLayout(form)
+        
+        btn_lay = QHBoxLayout()
+        btn_cancel = QPushButton("Annuler")
+        btn_cancel.setStyleSheet("padding: 8px 18px; font-size: 14px;")
+        btn_cancel.clicked.connect(self.reject)
+        
+        btn_save = QPushButton("Enregistrer le Poids")
+        btn_save.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; font-size: 14px; padding: 8px 22px; border-radius: 6px;")
+        btn_save.clicked.connect(self.accept)
+        
+        btn_lay.addStretch()
+        btn_lay.addWidget(btn_cancel)
+        btn_lay.addWidget(btn_save)
+        layout.addLayout(btn_lay)
+
+    def get_weight(self):
+        try:
+            return float(self.inp_weight.text().strip() or 0)
+        except ValueError:
+            return 0.0
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        from PySide6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen().availableGeometry()
+        x = (screen.width() - self.width()) // 2
+        y = (screen.height() - self.height()) // 2
+        self.move(x, y)
+
+
+class SaleProductsDialog(QDialog):
+    """
+    نافذة عرض كافة المنتجات والباركودات للعملية المحددة مع إمكانية نسخ أي باركود بنقرة زر.
+    """
+    def __init__(self, manager, sale_id, parent=None):
+        super().__init__(parent)
+        self.manager = manager
+        self.sale_id = sale_id
+        self.is_versement = isinstance(sale_id, str) and str(sale_id).startswith("VRS_")
+        self.actual_id = int(str(sale_id).replace("VRS_", "")) if self.is_versement else int(sale_id)
+        
+        self.setWindowTitle("📦 Liste des Produits & Codes-barres")
+        self.setMinimumSize(960, 520)
+        self.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(14)
+
+        items = []
+        info_text = ""
+        try:
+            with self.manager.db.get_db_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                if self.is_versement:
+                    cursor.execute("""
+                        SELECT v.id as v_id, c.name as client_name, v.status, v.created_at
+                        FROM Versements v
+                        LEFT JOIN Clients c ON v.client_id = c.id
+                        WHERE v.id = %s
+                    """, (self.actual_id,))
+                    v_row = cursor.fetchone()
+                    info_text = f"Dossier Versement N° VRS-{self.actual_id:05d} | Client : {v_row.get('client_name') or 'Passager'} | Statut : {v_row.get('status', 'EN_COURS')}" if v_row else f"Dossier Versement N° VRS-{self.actual_id:05d}"
+                    
+                    cursor.execute("""
+                        SELECT vi.id, vi.designation as name, vi.notes as custom_note, vi.item_status,
+                               COALESCE(i.barcode, '') as barcode,
+                               COALESCE(cat.name, 'Bijoux') as category_name,
+                               COALESCE(i.weight, 0) as sold_weight_g,
+                               vi.reserved_quantity as sold_quantity,
+                               COALESCE(i.selling_price, 0) as total_price_da
+                        FROM Versement_Items vi
+                        LEFT JOIN Inventory i ON vi.inventory_id = i.id
+                        LEFT JOIN Categories cat ON i.category_id = cat.id
+                        WHERE vi.versement_id = %s
+                    """, (self.actual_id,))
+                    items = cursor.fetchall()
+                else:
+                    cursor.execute("""
+                        SELECT s.id as sale_id, s.receipt_number, c.name as client_name, s.created_at, u.username as seller_name
+                        FROM Sales s
+                        LEFT JOIN Clients c ON s.client_id = c.id
+                        LEFT JOIN Users u ON s.user_id = u.id
+                        WHERE s.id = %s
+                    """, (self.actual_id,))
+                    s_row = cursor.fetchone()
+                    from ui.tools.invoice_generator import _clean_facture_number
+                    rec_num = _clean_facture_number(s_row.get('receipt_number', ''), sale_id=self.actual_id) if s_row else f"#{self.actual_id}"
+                    info_text = f"Facture N° {rec_num} | Client : {s_row.get('client_name') or 'Passager'} | Vendeur : {s_row.get('seller_name') or 'N/A'}" if s_row else f"Vente #{self.actual_id}"
+                    
+                    cursor.execute("""
+                        SELECT si.id, si.name, si.custom_note,
+                               COALESCE(NULLIF(si.barcode, ''), i.barcode, '') as barcode,
+                               COALESCE(cat.name, 'N/A') as category_name,
+                               si.sold_weight_g,
+                               si.sold_quantity,
+                               si.unit_price_da,
+                               si.total_price_da
+                        FROM SaleItems si
+                        LEFT JOIN Inventory i ON si.inventory_id = i.id
+                        LEFT JOIN Categories cat ON i.category_id = cat.id
+                        WHERE si.sale_id = %s
+                    """, (self.actual_id,))
+                    items = cursor.fetchall()
+        except Exception as e:
+            layout.addWidget(QLabel(f"Erreur de chargement: {e}"))
+            return
+
+        # Header banner
+        header_frame = QFrame()
+        header_frame.setStyleSheet("background-color: #f0f9ff; border: 1px solid #7dd3fc; border-radius: 8px; padding: 12px;")
+        h_layout = QHBoxLayout(header_frame)
+        lbl_head = QLabel(f"<b>📦 {info_text}</b>")
+        lbl_head.setStyleSheet("font-size: 15px; color: #0369a1;")
+        h_layout.addWidget(lbl_head)
+        h_layout.addStretch()
+
+        btn_copy_all = QPushButton("📋 Copier Tous les Codes-barres")
+        btn_copy_all.setStyleSheet("background-color: #0284c7; color: white; font-weight: bold; padding: 6px 14px; border-radius: 5px;")
+        all_barcodes = [str(it.get('barcode', '')).strip() for it in items if str(it.get('barcode', '')).strip()]
+        btn_copy_all.clicked.connect(lambda: self._copy_all_barcodes(all_barcodes, btn_copy_all))
+        h_layout.addWidget(btn_copy_all)
+        layout.addWidget(header_frame)
+
+        # Table of products
+        self.table = QTableWidget(len(items), 7)
+        self.table.setHorizontalHeaderLabels([
+            "Code-barres", "Désignation Produit", "Catégorie", "Poids P.S (g)", "Quantité", "Prix Total (DA)", "Action (Copier)"
+        ])
+        self.table.setStyleSheet("""
+            QTableWidget { background-color: white; gridline-color: #cbd5e1; font-size: 14px; }
+            QHeaderView::section { background-color: #0f8f83; color: white; font-weight: bold; font-size: 13px; padding: 7px; }
+            QTableWidget::item { padding: 6px; }
+        """)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
+
+        for row_idx, it in enumerate(items):
+            bc = str(it.get('barcode') or '').strip()
+            name = str(it.get('name') or '')
+            cat = str(it.get('category_name') or '-')
+            w = float(it.get('sold_weight_g') or 0)
+            q = int(it.get('sold_quantity') or 1)
+            price = float(it.get('total_price_da') or 0)
+
+            it_bc = QTableWidgetItem(bc if bc else "-")
+            it_bc.setFont(QFont("", 13, QFont.Bold))
+            it_bc.setTextAlignment(Qt.AlignCenter)
+            if bc:
+                it_bc.setForeground(QBrush(QColor("#0f8f83")))
+            
+            it_name = QTableWidgetItem(name)
+            it_cat = QTableWidgetItem(cat)
+            it_cat.setTextAlignment(Qt.AlignCenter)
+            it_w = QTableWidgetItem(f"{w:.2f} g")
+            it_w.setTextAlignment(Qt.AlignCenter)
+            it_q = QTableWidgetItem(str(q))
+            it_q.setTextAlignment(Qt.AlignCenter)
+            it_p = QTableWidgetItem(f"{price:,.2f} DA" if price > 0 else "-")
+            it_p.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            it_p.setFont(QFont("", 12, QFont.Bold))
+
+            self.table.setItem(row_idx, 0, it_bc)
+            self.table.setItem(row_idx, 1, it_name)
+            self.table.setItem(row_idx, 2, it_cat)
+            self.table.setItem(row_idx, 3, it_w)
+            self.table.setItem(row_idx, 4, it_q)
+            self.table.setItem(row_idx, 5, it_p)
+
+            # Copy button cell
+            if bc:
+                btn_copy = QPushButton("📋 Copier")
+                btn_copy.setCursor(Qt.PointingHandCursor)
+                btn_copy.setStyleSheet("background-color: #f1f5f9; color: #1e293b; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; font-weight: bold; padding: 4px 10px;")
+                btn_copy.clicked.connect(lambda _, code=bc, b=btn_copy: self._copy_single_barcode(code, b))
+                self.table.setCellWidget(row_idx, 6, btn_copy)
+            else:
+                it_na = QTableWidgetItem("Sans code")
+                it_na.setTextAlignment(Qt.AlignCenter)
+                it_na.setForeground(QBrush(QColor("#94a3b8")))
+                self.table.setItem(row_idx, 6, it_na)
+
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(lambda pos: self._on_table_context_menu(pos, items))
+        layout.addWidget(self.table)
+
+        btn_box = QHBoxLayout()
+        btn_box.addStretch()
+        btn_close = QPushButton("Fermer")
+        btn_close.setStyleSheet("background-color: #64748b; color: white; font-weight: bold; padding: 8px 24px; border-radius: 6px;")
+        btn_close.clicked.connect(self.accept)
+        btn_box.addWidget(btn_close)
+        layout.addLayout(btn_box)
+
+    def _copy_single_barcode(self, code, button):
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(code)
+        button.setText("✅ Copié !")
+        button.setStyleSheet("background-color: #22c55e; color: white; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; padding: 4px 10px;")
+        QTimer.singleShot(1500, lambda: self._reset_copy_btn(button))
+
+    def _reset_copy_btn(self, button):
+        try:
+            button.setText("📋 Copier")
+            button.setStyleSheet("background-color: #f1f5f9; color: #1e293b; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; font-weight: bold; padding: 4px 10px;")
+        except: pass
+
+    def _copy_all_barcodes(self, barcodes, button):
+        from PySide6.QtWidgets import QApplication
+        if not barcodes:
+            QMessageBox.information(self, "Information", "Aucun code-barres disponible.")
+            return
+        joined = "\n".join(barcodes)
+        QApplication.clipboard().setText(joined)
+        button.setText("✅ Tous Copiés !")
+        QTimer.singleShot(2000, lambda: button.setText("📋 Copier Tous les Codes-barres"))
+
+    def _on_table_context_menu(self, pos, items):
+        row = self.table.rowAt(pos.y())
+        if row < 0 or row >= len(items): return
+        bc = str(items[row].get('barcode') or '').strip()
+        if not bc: return
+        menu = QMenu(self)
+        act_copy = menu.addAction(f"📋 Copier le code-barres : {bc}")
+        action = menu.exec_(self.table.viewport().mapToGlobal(pos))
+        if action == act_copy:
+            from PySide6.QtWidgets import QApplication
+            QApplication.clipboard().setText(bc)
+
+
 class ExcelJournalView(QWidget):
     # Pre-allocated shared styling resources for high performance
     FONT_NORMAL = QFont("", 12, QFont.Normal)
@@ -553,6 +844,7 @@ class ExcelJournalView(QWidget):
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_context_menu)
         self.table.itemSelectionChanged.connect(self.on_table_selection_changed)
+        self.table.cellDoubleClicked.connect(self.on_cell_double_clicked)
         
         layout.addWidget(self.table)
         self._adjust_table_columns()
@@ -661,6 +953,7 @@ class ExcelJournalView(QWidget):
         seller_id = item.data(Qt.UserRole + 8)
 
         raw_obs = item.data(Qt.UserRole + 9)
+        barcode = str(item.data(Qt.UserRole + 10) or "").strip()
         item_obs = self.table.item(row, 8)
         current_obs = str(raw_obs if raw_obs is not None else (item_obs.text() if item_obs else ""))
 
@@ -676,10 +969,25 @@ class ExcelJournalView(QWidget):
             QMenu::separator { height: 1px; background: #ddd; margin: 4px 10px; }
         """)
 
+        act_copy_bc = None
+        if barcode:
+            act_copy_bc = menu.addAction(f"📋 Copier le Code-barres : {barcode}")
+
+        act_view_products = menu.addAction("📦 Afficher la liste des produits & Codes-barres")
+        act_edit_weight = menu.addAction("⚖️ Modifier le Poids Sorti (P.S)")
+        menu.addSeparator()
+
         if is_versement:
             act_edit_obs = menu.addAction("Modifier l'observation")
             action = menu.exec_(self.table.viewport().mapToGlobal(pos))
-            if action == act_edit_obs:
+            if not action: return
+            if action == act_copy_bc:
+                self.copy_barcode_to_clipboard(barcode)
+            elif action == act_view_products:
+                self.show_sale_products(sale_id)
+            elif action == act_edit_weight:
+                self.edit_p_s(row)
+            elif action == act_edit_obs:
                 self.edit_versement_observation(item_id, current_obs)
             return
 
@@ -714,7 +1022,13 @@ class ExcelJournalView(QWidget):
         action = menu.exec_(self.table.viewport().mapToGlobal(pos))
         if not action: return
         
-        if action == act_print_pdf:
+        if action == act_copy_bc:
+            self.copy_barcode_to_clipboard(barcode)
+        elif action == act_view_products:
+            self.show_sale_products(sale_id)
+        elif action == act_edit_weight:
+            self.edit_p_s(row)
+        elif action == act_print_pdf:
             self.print_invoice_pdf(sale_id)
         elif action == act_print_direct:
             self.print_invoice_pdf(sale_id, open_pdf=False, direct=True)
@@ -765,7 +1079,19 @@ class ExcelJournalView(QWidget):
         is_versement = isinstance(sale_id, str) and sale_id.startswith("VRS_")
         item_id = item.data(Qt.UserRole + 1)
         
-        raw_obs = item.data(Qt.UserRole + 7)
+        raw_obs = item.data(Qt.UserRole + 9)
+        barcode = str(item.data(Qt.UserRole + 10) or "").strip()
+
+        # زر عرض المنتجات والباركودات
+        self._add_action_btn("fa5s.boxes", "Afficher la liste des produits & Codes-barres", "#8e44ad", "#9b59b6", lambda: self.show_sale_products(sale_id))
+
+        # زر تعديل الوزن P.S
+        self._add_action_btn("fa5s.weight-hanging", "Modifier le Poids Sorti (P.S)", "#16a085", "#1abc9c", lambda: self.edit_p_s(row))
+
+        # زر نسخ الباركود مباشرة
+        if barcode:
+            self._add_action_btn("fa5s.copy", f"Copier le Code-barres ({barcode})", "#2c3e50", "#34495e", lambda: self.copy_barcode_to_clipboard(barcode))
+
         if is_versement:
             current_vrs_obs = str(raw_obs if raw_obs is not None else (self.table.item(row, 8).text() if self.table.item(row, 8) else ""))
             self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_versement_observation(item_id, current_vrs_obs))
@@ -1005,9 +1331,56 @@ class ExcelJournalView(QWidget):
                 f"Erreur lors de l'impression thermique :\n{e}"
             )
 
-    # ──────────────────────────────────────────────────────────────
-    # باقي الدوال (بدون تغيير)
-    # ──────────────────────────────────────────────────────────────
+    def on_cell_double_clicked(self, row, col):
+        if col == 1:
+            self.edit_p_s(row)
+
+    def edit_p_s(self, row):
+        if row < 0 or row >= self.table.rowCount(): return
+        item0 = self.table.item(row, 0)
+        if not item0: return
+        sale_id = item0.data(Qt.UserRole)
+        item_id = item0.data(Qt.UserRole + 1)
+        if not sale_id or not item_id: return
+        
+        is_versement = isinstance(sale_id, str) and str(sale_id).startswith("VRS_")
+        cur_p_s = item0.data(Qt.UserRole + 11)
+        if cur_p_s is None:
+            item_p_s = self.table.item(row, 1)
+            try:
+                cur_p_s = float(item_p_s.text().strip()) if item_p_s else 0.0
+            except ValueError:
+                cur_p_s = 0.0
+        
+        desig = self.table.item(row, 0).text() if self.table.item(row, 0) else ""
+        dlg = EditWeightDialog(cur_p_s, desig, self)
+        if dlg.exec() == QDialog.Accepted:
+            new_w = dlg.get_weight()
+            updated = False
+            if is_versement:
+                if hasattr(self.manager.versements, "update_payment_poids_deduit"):
+                    actual_pay_id = item_id
+                    updated = self.manager.versements.update_payment_poids_deduit(actual_pay_id, new_w)
+            else:
+                if hasattr(self.manager.sales, "update_sale_item_weight"):
+                    updated = self.manager.sales.update_sale_item_weight(item_id, new_w)
+            
+            if updated:
+                self.load_data()
+            else:
+                QMessageBox.warning(self, "Erreur", "Impossible de mettre à jour le poids.")
+
+    def show_sale_products(self, sale_id):
+        if not sale_id: return
+        dlg = SaleProductsDialog(self.manager, sale_id, self)
+        dlg.exec()
+
+    def copy_barcode_to_clipboard(self, barcode):
+        if barcode:
+            from PySide6.QtWidgets import QApplication
+            QApplication.clipboard().setText(barcode)
+            QMessageBox.information(self, "Code-barres copié", f"Code-barres copié dans le presse-papier :\n<b>{barcode}</b>")
+
     def show_sale_details(self, sale_id):
         from ui.tools.virtual_keyboard import VirtualPasswordInputDialog
         pwd, ok = VirtualPasswordInputDialog.getText(
@@ -1307,6 +1680,15 @@ class ExcelJournalView(QWidget):
                             item.setData(Qt.UserRole + 7, float(r.get('Impos') or 0))
                             item.setData(Qt.UserRole + 8, r.get('vendeur_id'))
                             item.setData(Qt.UserRole + 9, r.get('raw_notes') or '')
+                            item.setData(Qt.UserRole + 10, r.get('barcode') or '')
+                            item.setData(Qt.UserRole + 11, float(r.get('P_S') or 0))
+                            
+                            bc = str(r.get('barcode') or '').strip()
+                            if bc:
+                                item.setToolTip(f"Code-barres: {bc}\n{cols_data[0]}")
+                        elif col_idx == 1:
+                            bc = str(r.get('barcode') or '').strip()
+                            item.setToolTip(f"Poids Sorti P.S: {cols_data[1]} g" + (f"\nCode-barres: {bc}" if bc else "") + "\n(Double-cliquez pour modifier le poids)")
                             
                         self.table.setItem(row, col_idx, item)
                         

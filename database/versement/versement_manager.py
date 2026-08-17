@@ -663,6 +663,18 @@ class VersementManager:
             logging.error(f"Erreur update_payment: {e}")
             return False
 
+    def update_payment_poids_deduit(self, payment_id: int, new_weight: float) -> bool:
+        """تحديث الوزن المقتطع P.S لدفعة عربون"""
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("UPDATE Versement_Payments SET poids_deduit_g = %s WHERE id = %s", (new_weight, payment_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Erreur update_payment_poids_deduit: {e}")
+            return False
+
     def update_versement_item_notes(self, item_id: int, notes: str) -> bool:
         try:
             with self.db.get_db_connection() as conn:
