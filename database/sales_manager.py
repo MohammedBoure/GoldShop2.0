@@ -171,7 +171,7 @@ class SalesManager:
             cursor = conn.cursor(dictionary=True)
             conn.autocommit = False
 
-            cursor.execute("SELECT status FROM Sales WHERE id = %s", (sale_id,))
+            cursor.execute("SELECT status, receipt_number, notes FROM Sales WHERE id = %s FOR UPDATE", (sale_id,))
             sale = cursor.fetchone()
             if not sale or sale['status'] == 'CANCELLED':
                 return False
@@ -187,20 +187,32 @@ class SalesManager:
                     cursor.execute("""
                         UPDATE Inventory 
                         SET status = IF(reserved_for_client_id IS NOT NULL, 'Reserved',
-                                    IF(remaining_weight + %s >= weight, 'Available', 'Partially_Sold')),
-                            remaining_weight = remaining_weight + %s
+                                    IF(LEAST(weight, COALESCE(remaining_weight, 0) + %s) >= weight, 'Available', 'Partially_Sold')),
+                            remaining_weight = LEAST(weight, COALESCE(remaining_weight, 0) + %s)
                         WHERE id = %s
-                    """, (item['sold_weight_g'], item['sold_weight_g'], inv_id))
+                    """, (float(item['sold_weight_g'] or 0), float(item['sold_weight_g'] or 0), inv_id))
                 else:
                     cursor.execute("""
                         UPDATE Inventory 
                         SET status = IF(reserved_for_client_id IS NOT NULL, 'Reserved',
-                                    IF(remaining_quantity + %s >= quantity, 'Available', 'Partially_Sold')),
-                            remaining_quantity = remaining_quantity + %s
+                                    IF(LEAST(quantity, COALESCE(remaining_quantity, 0) + %s) >= quantity, 'Available', 'Partially_Sold')),
+                            remaining_quantity = LEAST(quantity, COALESCE(remaining_quantity, 0) + %s)
                         WHERE id = %s
-                    """, (item['sold_quantity'], item['sold_quantity'], inv_id))
+                    """, (int(item['sold_quantity'] or 1), int(item['sold_quantity'] or 1), inv_id))
 
             cursor.execute("UPDATE Sales SET status = 'CANCELLED' WHERE id = %s", (sale_id,))
+
+            v_id = source_versement_id(sale.get("receipt_number"), sale.get("notes"))
+            if v_id:
+                cursor.execute("SELECT status FROM Versements WHERE id = %s", (v_id,))
+                v_row = cursor.fetchone()
+                if v_row and v_row.get("status") == "CLOTURE":
+                    cursor.execute("UPDATE Versements SET status = 'EN_COURS' WHERE id = %s", (v_id,))
+                    cursor.execute(
+                        "UPDATE Versement_Items SET item_status = 'EN_COURS' WHERE versement_id = %s AND item_status = 'RETIRE'",
+                        (v_id,)
+                    )
+
             conn.commit()
             return True
 

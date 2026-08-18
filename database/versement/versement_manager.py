@@ -251,9 +251,13 @@ class VersementManager:
             cursor = conn.cursor(dictionary=True)
             conn.autocommit = False
 
-            cursor.execute("SELECT client_id FROM Versements WHERE id = %s", (versement_id,))
+            cursor.execute("SELECT client_id, status FROM Versements WHERE id = %s", (versement_id,))
             v_data = cursor.fetchone()
-            client_id = v_data['client_id'] if v_data else 1
+            if v_data and v_data.get("status") == "CLOTURE":
+                conn.commit()
+                return True
+
+            client_id = (v_data or {}).get("client_id") or 1
 
             cursor.execute("""
                 SELECT vi.inventory_id, vi.designation, vi.notes AS custom_note,
@@ -265,7 +269,6 @@ class VersementManager:
                 FOR UPDATE
             """, (versement_id,))
             items_to_retire = cursor.fetchall()
-
 
             from .versement_invoice_summary import build_versement_payment_summary
             cursor.execute("""
@@ -292,79 +295,91 @@ class VersementManager:
                     sold_quantity = max(1, int(it.get("reserved_quantity") or 1))
                     cursor.execute("""
                         UPDATE Inventory
-                        SET status = IF(COALESCE(remaining_quantity, quantity) - %s <= 0, 'Sold',
-                                    IF(COALESCE(remaining_quantity, quantity) - %s < COALESCE(quantity, 1), 'Partially_Sold', 'Available')),
+                        SET status = IF(GREATEST(0, COALESCE(remaining_quantity, quantity) - %s) <= 0, 'Sold',
+                                    IF(GREATEST(0, COALESCE(remaining_quantity, quantity) - %s) < COALESCE(quantity, 1), 'Partially_Sold', 'Available')),
                             remaining_quantity = GREATEST(0, COALESCE(remaining_quantity, quantity) - %s)
                         WHERE id = %s
                     """, (sold_quantity, sold_quantity, sold_quantity, inv_id))
                 else:
                     item_qty = int(it.get("quantity") or 1)
                     sold_quantity = 1
+                    original_weight = float(it.get("weight") or 0.0)
+                    rem_w = float(it.get("remaining_weight") if it.get("remaining_weight") is not None else original_weight)
                     if item_qty > 1:
-                        original_weight = float(it.get("weight") or 0.0)
                         sold_weight = round(original_weight / item_qty, 3)
-                        remaining_w = float(it.get("remaining_weight") if it.get("remaining_weight") is not None else original_weight)
-                        sold_weight = min(sold_weight, remaining_w)
+                        sold_weight = min(sold_weight, rem_w)
                     else:
-                        sold_weight = float(it.get("remaining_weight") if it.get("remaining_weight") is not None else it.get("weight") or 0.0)
-                    
+                        sold_weight = min(rem_w, original_weight) if original_weight > 0 else rem_w
+
                     cursor.execute("""
                         UPDATE Inventory
-                        SET status = IF(COALESCE(remaining_weight, weight) - %s <= 0.005 OR COALESCE(remaining_quantity, quantity) - %s <= 0, 'Sold', 'Partially_Sold'),
+                        SET status = IF(GREATEST(0, COALESCE(remaining_weight, weight) - %s) <= 0.005 OR GREATEST(0, COALESCE(remaining_quantity, quantity) - %s) <= 0, 'Sold', 'Partially_Sold'),
                             remaining_weight = GREATEST(0, COALESCE(remaining_weight, weight) - %s),
                             remaining_quantity = GREATEST(0, COALESCE(remaining_quantity, quantity) - %s)
                         WHERE id = %s
                     """, (sold_weight, sold_quantity, sold_weight, sold_quantity, inv_id))
 
             if items_to_retire:
-                cursor.execute("""
-                    INSERT INTO Sales (receipt_number, journee_id, client_id, user_id, total_amount_da, discount_da, net_to_pay_da, cash_paid_da, tpe_paid_da, old_gold_weight_g, impos_weight_g, status, notes, created_at)
-                    VALUES (%s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s, 'COMPLETED', %s, NOW())
-                """, (
-                    f"VRS-{versement_id:05d}",
-                    journee_id,
-                    client_id,
-                    payment_summary["total_brut_da"],
-                    payment_summary["total_remise_da"],
-                    payment_summary["net_to_pay_da"],
-                    payment_summary["cash_paid_da"],
-                    payment_summary["tpe_paid_da"],
-                    payment_summary["old_gold_weight_g"],
-                    payment_summary["deducted_weight_g"],
-                    f"Clôture Versement N° VRS-{versement_id:05d}",
-                ))
-                sale_id = cursor.lastrowid
+                receipt_tag = f"VRS-{versement_id:05d}"
+                cursor.execute("SELECT id FROM Sales WHERE receipt_number = %s AND status = 'COMPLETED'", (receipt_tag,))
+                existing_sale = cursor.fetchone()
+                if not existing_sale:
+                    cursor.execute("""
+                        INSERT INTO Sales (receipt_number, journee_id, client_id, user_id, total_amount_da, discount_da, net_to_pay_da, cash_paid_da, tpe_paid_da, old_gold_weight_g, impos_weight_g, status, notes, created_at)
+                        VALUES (%s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s, 'COMPLETED', %s, NOW())
+                    """, (
+                        receipt_tag,
+                        journee_id,
+                        client_id,
+                        payment_summary["total_brut_da"],
+                        payment_summary["total_remise_da"],
+                        payment_summary["net_to_pay_da"],
+                        payment_summary["cash_paid_da"],
+                        payment_summary["tpe_paid_da"],
+                        payment_summary["old_gold_weight_g"],
+                        payment_summary["deducted_weight_g"],
+                        f"Clôture Versement N° VRS-{versement_id:05d}",
+                    ))
+                    sale_id = cursor.lastrowid
 
-                for it in items_to_retire:
-                    item_type = str(it.get("item_type") or "WEIGHT").upper()
-                    quantity = max(1, int(it.get("reserved_quantity") or 1)) if item_type == "PIECE" else 1
-                    sold_weight = (
-                        float(it.get("remaining_weight") or it.get("weight") or 0.0)
-                        if item_type == "WEIGHT" else 0.0
-                    )
-                    barcode = str(it.get("barcode") or "")
-                    desig = str(it.get("designation") or "Article Versement")
-                    item_note = str(it.get("custom_note") or "").strip()[:MAX_CUSTOM_NOTE_LENGTH]
-                    unit_price = float(it.get("selling_price") or 0.0)
-                    total_price = unit_price * quantity if item_type == "PIECE" else unit_price
+                    for it in items_to_retire:
+                        item_type = str(it.get("item_type") or "WEIGHT").upper()
+                        quantity = max(1, int(it.get("reserved_quantity") or 1)) if item_type == "PIECE" else 1
+                        original_weight = float(it.get("weight") or 0.0)
+                        rem_w = float(it.get("remaining_weight") if it.get("remaining_weight") is not None else original_weight)
+                        item_qty = int(it.get("quantity") or 1)
+                        if item_type == "WEIGHT":
+                            if item_qty > 1:
+                                sold_weight = round(original_weight / item_qty, 3)
+                                sold_weight = min(sold_weight, rem_w)
+                            else:
+                                sold_weight = min(rem_w, original_weight) if original_weight > 0 else rem_w
+                        else:
+                            sold_weight = 0.0
 
-                    if "item_type" not in it:
-                        cursor.execute("""
-                            INSERT INTO SaleItems
-                                (sale_id, inventory_id, barcode, name, item_type,
-                                 sold_weight_g, sold_quantity, unit_price_da, total_price_da, custom_note)
-                            VALUES (%s, %s, %s, %s, 'WEIGHT', %s, 1, 0, 0, %s)
-                        """, (sale_id, it.get("inventory_id"), barcode, desig, sold_weight, item_note))
-                    else:
-                        cursor.execute("""
-                            INSERT INTO SaleItems
-                                (sale_id, inventory_id, barcode, name, item_type,
-                                 sold_weight_g, sold_quantity, unit_price_da, total_price_da, custom_note)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (
-                            sale_id, it.get("inventory_id"), barcode, desig, item_type,
-                            sold_weight, quantity, unit_price, total_price, item_note,
-                        ))
+                        barcode = str(it.get("barcode") or "")
+                        desig = str(it.get("designation") or "Article Versement")
+                        item_note = str(it.get("custom_note") or "").strip()[:MAX_CUSTOM_NOTE_LENGTH]
+                        unit_price = float(it.get("selling_price") or 0.0)
+                        total_price = unit_price * quantity if item_type == "PIECE" else unit_price
+
+                        if "item_type" not in it:
+                            cursor.execute("""
+                                INSERT INTO SaleItems
+                                    (sale_id, inventory_id, barcode, name, item_type,
+                                     sold_weight_g, sold_quantity, unit_price_da, total_price_da, custom_note)
+                                VALUES (%s, %s, %s, %s, 'WEIGHT', %s, 1, 0, 0, %s)
+                            """, (sale_id, it.get("inventory_id"), barcode, desig, sold_weight, item_note))
+                        else:
+                            cursor.execute("""
+                                INSERT INTO SaleItems
+                                    (sale_id, inventory_id, barcode, name, item_type,
+                                     sold_weight_g, sold_quantity, unit_price_da, total_price_da, custom_note)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (
+                                sale_id, it.get("inventory_id"), barcode, desig, item_type,
+                                sold_weight, quantity, unit_price, total_price, item_note,
+                            ))
 
             conn.commit()
             return True
@@ -384,15 +399,60 @@ class VersementManager:
             cursor = conn.cursor(dictionary=True)
             conn.autocommit = False
 
+            cursor.execute("SELECT status FROM Versements WHERE id = %s FOR UPDATE", (versement_id,))
+            v_data = cursor.fetchone()
+            if not v_data or v_data.get("status") == "ANNULE":
+                conn.commit()
+                return True
+
+            receipt_number = f"VRS-{versement_id:05d}"
+
+            # Cancel any COMPLETED closure/delivery sales linked to this versement
+            cursor.execute("""
+                SELECT s.id, s.status
+                FROM Sales s
+                WHERE (s.receipt_number = %s OR s.notes LIKE %s)
+                  AND s.status = 'COMPLETED'
+            """, (receipt_number, f"%{receipt_number}%"))
+            sales_to_cancel = cursor.fetchall()
+            for s_row in sales_to_cancel:
+                cursor.execute("""
+                    SELECT si.inventory_id, si.item_type, si.sold_weight_g, si.sold_quantity
+                    FROM SaleItems si
+                    WHERE si.sale_id = %s AND si.inventory_id IS NOT NULL
+                """, (s_row["id"],))
+                sale_items = cursor.fetchall()
+                for sale_item in sale_items:
+                    inv_id = sale_item.get("inventory_id")
+                    if not inv_id:
+                        continue
+                    if str(sale_item.get("item_type") or "WEIGHT").upper() == "PIECE":
+                        cursor.execute("""
+                            UPDATE Inventory
+                            SET status = IF(reserved_for_client_id IS NOT NULL, 'Reserved',
+                                        IF(LEAST(quantity, COALESCE(remaining_quantity, 0) + %s) >= quantity, 'Available', 'Partially_Sold')),
+                                remaining_quantity = LEAST(quantity, COALESCE(remaining_quantity, 0) + %s)
+                            WHERE id = %s
+                        """, (int(sale_item.get("sold_quantity") or 1), int(sale_item.get("sold_quantity") or 1), inv_id))
+                    else:
+                        cursor.execute("""
+                            UPDATE Inventory
+                            SET status = IF(reserved_for_client_id IS NOT NULL, 'Reserved',
+                                        IF(LEAST(weight, COALESCE(remaining_weight, 0) + %s) >= weight, 'Available', 'Partially_Sold')),
+                                remaining_weight = LEAST(weight, COALESCE(remaining_weight, 0) + %s)
+                            WHERE id = %s
+                        """, (float(sale_item.get("sold_weight_g") or 0), float(sale_item.get("sold_weight_g") or 0), inv_id))
+                cursor.execute("UPDATE Sales SET status = 'CANCELLED' WHERE id = %s", (s_row["id"],))
+
             cursor.execute("UPDATE Versements SET status = 'ANNULE' WHERE id = %s", (versement_id,))
             cursor.execute(
-                "UPDATE Versement_Items SET item_status = 'ANNULE' "
-                "WHERE versement_id = %s AND item_status != 'RETIRE'",
+                "UPDATE Versement_Items SET item_status = 'ANNULE', reserved_quantity = 0 "
+                "WHERE versement_id = %s",
                 (versement_id,),
             )
             cursor.execute(
                 "SELECT DISTINCT inventory_id FROM Versement_Items "
-                "WHERE versement_id = %s AND item_status = 'ANNULE' AND inventory_id IS NOT NULL",
+                "WHERE versement_id = %s AND inventory_id IS NOT NULL",
                 (versement_id,),
             )
             for row in cursor.fetchall():
@@ -420,7 +480,7 @@ class VersementManager:
             cursor = conn.cursor(dictionary=True)
             conn.autocommit = False
 
-            cursor.execute("SELECT status FROM Versements WHERE id = %s", (versement_id,))
+            cursor.execute("SELECT status FROM Versements WHERE id = %s FOR UPDATE", (versement_id,))
             versement = cursor.fetchone()
             if not versement:
                 return False, "Dossier introuvable."
@@ -437,6 +497,8 @@ class VersementManager:
             if current_status == 'EN_COURS' and target_status == 'CLOTURE':
                 return (True, "Succes") if self.cloture_versement(versement_id, journee_id) else (False, "Impossible de cloturer le dossier.")
             if current_status == 'EN_COURS' and target_status == 'ANNULE':
+                return (True, "Succes") if self.cancel_versement(versement_id) else (False, "Impossible d'annuler le dossier.")
+            if current_status == 'CLOTURE' and target_status == 'ANNULE':
                 return (True, "Succes") if self.cancel_versement(versement_id) else (False, "Impossible d'annuler le dossier.")
             if target_status == 'EN_COURS':
                 return self._reopen_versement(versement_id, current_status)
@@ -462,36 +524,54 @@ class VersementManager:
             closure_inventory_ids = []
 
             if current_status == 'CLOTURE':
-                cursor.execute("SELECT id FROM Sales WHERE receipt_number = %s", (receipt_number,))
-                sale = cursor.fetchone()
-                sale_items = []
-                if sale:
-                    cursor.execute("""
-                        SELECT inventory_id, item_type, sold_weight_g, sold_quantity
-                        FROM SaleItems WHERE sale_id = %s AND inventory_id IS NOT NULL
-                    """, (sale["id"],))
-                    sale_items = cursor.fetchall()
-                    for sale_item in sale_items:
-                        inv_id = sale_item.get("inventory_id")
-                        if str(sale_item.get("item_type") or "WEIGHT").upper() == "PIECE":
-                            cursor.execute(
-                                "UPDATE Inventory SET remaining_quantity = COALESCE(remaining_quantity, 0) + %s WHERE id = %s",
-                                (int(sale_item.get("sold_quantity") or 1), inv_id),
-                            )
-                        else:
-                            cursor.execute(
-                                "UPDATE Inventory SET remaining_weight = COALESCE(remaining_weight, 0) + %s WHERE id = %s",
-                                (float(sale_item.get("sold_weight_g") or 0), inv_id),
-                            )
-                    cursor.execute("DELETE FROM Sales WHERE id = %s", (sale["id"],))
+                cursor.execute("""
+                    SELECT id, status FROM Sales 
+                    WHERE (receipt_number = %s OR notes LIKE %s)
+                """, (receipt_number, f"%{receipt_number}%"))
+                linked_sales = cursor.fetchall()
+                for sale in linked_sales:
+                    if sale.get("status") == "COMPLETED":
+                        cursor.execute("""
+                            SELECT inventory_id, item_type, sold_weight_g, sold_quantity
+                            FROM SaleItems WHERE sale_id = %s AND inventory_id IS NOT NULL
+                        """, (sale["id"],))
+                        sale_items = cursor.fetchall()
+                        for sale_item in sale_items:
+                            inv_id = sale_item.get("inventory_id")
+                            if not inv_id:
+                                continue
+                            if str(sale_item.get("item_type") or "WEIGHT").upper() == "PIECE":
+                                cursor.execute("""
+                                    UPDATE Inventory 
+                                    SET status = IF(reserved_for_client_id IS NOT NULL, 'Reserved',
+                                                IF(LEAST(quantity, COALESCE(remaining_quantity, 0) + %s) >= quantity, 'Available', 'Partially_Sold')),
+                                        remaining_quantity = LEAST(quantity, COALESCE(remaining_quantity, 0) + %s)
+                                    WHERE id = %s
+                                """, (int(sale_item.get("sold_quantity") or 1), int(sale_item.get("sold_quantity") or 1), inv_id))
+                            else:
+                                cursor.execute("""
+                                    UPDATE Inventory 
+                                    SET status = IF(reserved_for_client_id IS NOT NULL, 'Reserved',
+                                                IF(LEAST(weight, COALESCE(remaining_weight, 0) + %s) >= weight, 'Available', 'Partially_Sold')),
+                                        remaining_weight = LEAST(weight, COALESCE(remaining_weight, 0) + %s)
+                                    WHERE id = %s
+                                """, (float(sale_item.get("sold_weight_g") or 0), float(sale_item.get("sold_weight_g") or 0), inv_id))
+                            closure_inventory_ids.append(inv_id)
+                        cursor.execute("DELETE FROM Sales WHERE id = %s", (sale["id"],))
+                    else:
+                        cursor.execute("DELETE FROM Sales WHERE id = %s", (sale["id"],))
 
                 cursor.execute(
                     "UPDATE Versement_Items SET item_status = 'EN_COURS' "
                     "WHERE versement_id = %s AND item_status = 'RETIRE'",
                     (versement_id,),
                 )
-                for sale_item in sale_items:
-                    self._sync_inventory_status(cursor, sale_item.get("inventory_id"))
+                cursor.execute(
+                    "SELECT DISTINCT inventory_id FROM Versement_Items WHERE versement_id = %s AND inventory_id IS NOT NULL",
+                    (versement_id,)
+                )
+                for vi_row in cursor.fetchall():
+                    self._sync_inventory_status(cursor, vi_row.get("inventory_id"))
 
             elif current_status == 'ANNULE':
                 cursor.execute("""
@@ -770,9 +850,12 @@ class VersementManager:
 
             current_status = item.get("item_status")
             if current_status == "EN_COURS":
-                return False, "L'article est dÃ©jÃ  en cours."
+                return False, "L'article est déjà en cours."
 
             inv_id = item.get("inventory_id")
+            v_id = int(item.get("versement_id") or 0)
+            receipt_tag = f"VRS-{v_id:05d}"
+
             if current_status == "ANNULE" and inv_id:
                 self._lock_inventory_for_reservation(
                     cursor, inv_id, item.get("reserved_quantity", 1)
@@ -784,20 +867,26 @@ class VersementManager:
                     FROM Sales s
                     JOIN SaleItems si ON si.sale_id = s.id
                     WHERE si.inventory_id = %s AND s.status = 'COMPLETED'
-                      AND s.notes LIKE %s
-                """, (inv_id, f"%VRS-{int(item.get('versement_id') or 0):05d}%"))
+                      AND (s.receipt_number = %s OR s.notes LIKE %s)
+                """, (inv_id, receipt_tag, f"%{receipt_tag}%"))
                 delivered_sales = cursor.fetchall()
                 for sale in delivered_sales:
                     if str(sale.get("item_type") or "WEIGHT").upper() == "PIECE":
-                        cursor.execute(
-                            "UPDATE Inventory SET remaining_quantity = COALESCE(remaining_quantity, 0) + %s WHERE id = %s",
-                            (int(sale.get("sold_quantity") or 1), inv_id),
-                        )
+                        cursor.execute("""
+                            UPDATE Inventory 
+                            SET status = IF(reserved_for_client_id IS NOT NULL, 'Reserved',
+                                        IF(LEAST(quantity, COALESCE(remaining_quantity, 0) + %s) >= quantity, 'Available', 'Partially_Sold')),
+                                remaining_quantity = LEAST(quantity, COALESCE(remaining_quantity, 0) + %s)
+                            WHERE id = %s
+                        """, (int(sale.get("sold_quantity") or 1), int(sale.get("sold_quantity") or 1), inv_id))
                     else:
-                        cursor.execute(
-                            "UPDATE Inventory SET remaining_weight = COALESCE(remaining_weight, 0) + %s WHERE id = %s",
-                            (float(sale.get("sold_weight_g") or 0), inv_id),
-                        )
+                        cursor.execute("""
+                            UPDATE Inventory 
+                            SET status = IF(reserved_for_client_id IS NOT NULL, 'Reserved',
+                                        IF(LEAST(weight, COALESCE(remaining_weight, 0) + %s) >= weight, 'Available', 'Partially_Sold')),
+                                remaining_weight = LEAST(weight, COALESCE(remaining_weight, 0) + %s)
+                            WHERE id = %s
+                        """, (float(sale.get("sold_weight_g") or 0), float(sale.get("sold_weight_g") or 0), inv_id))
                     cursor.execute("UPDATE Sales SET status = 'CANCELLED' WHERE id = %s", (sale["id"],))
 
             cursor.execute("UPDATE Versement_Items SET item_status = 'EN_COURS' WHERE id = %s", (item_id,))
@@ -809,7 +898,7 @@ class VersementManager:
             )
 
             conn.commit()
-            return True, "SuccÃ¨s"
+            return True, "Succès"
         except ValueError as e:
             if conn:
                 conn.rollback()
