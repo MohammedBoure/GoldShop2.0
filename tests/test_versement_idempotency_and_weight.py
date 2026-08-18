@@ -215,6 +215,54 @@ class VersementIdempotencyAndWeightTests(unittest.TestCase):
         # Ensure new sale was inserted
         self.assertTrue(any(q.startswith("INSERT INTO Sales") for q, _ in cursor.executions))
 
+    def test_negative_payment_cash_refund_summary(self):
+        """A versement with 5g gold payment (50k DA) and a -10k DA cash refund yields net 40k DA paid."""
+        from database.versement.versement_invoice_summary import build_versement_payment_summary
+        from database.versement.versement_pricing import payment_value_da
+
+        payments = [
+            {
+                "id": 1,
+                "montant_da": 50000.0,
+                "tpe_da": 0.0,
+                "montant_euro": 0.0,
+                "taux_change_euro": 0.0,
+                "montant_dollar": 0.0,
+                "taux_change_dollar": 0.0,
+                "or_casse_g": 5.0,
+                "prix_gramme_jour_da": 10000.0,
+                "poids_deduit_g": 5.0,
+                "remise_da": 0.0,
+                "notes": "Paiement en or cassé",
+            },
+            {
+                "id": 2,
+                "montant_da": -10000.0,
+                "tpe_da": 0.0,
+                "montant_euro": 0.0,
+                "taux_change_euro": 0.0,
+                "montant_dollar": 0.0,
+                "taux_change_dollar": 0.0,
+                "or_casse_g": 0.0,
+                "prix_gramme_jour_da": 0.0,
+                "poids_deduit_g": 0.0,
+                "remise_da": 0.0,
+                "notes": "Rendu surplus au client (différence or cassé)",
+            }
+        ]
+
+        val1 = payment_value_da(payments[0])
+        val2 = payment_value_da(payments[1])
+        self.assertEqual(val1, 50000.0)
+        self.assertEqual(val2, -10000.0)
+
+        summary = build_versement_payment_summary(payments)
+        self.assertEqual(summary["cash_paid_da"], -10000.0)
+        self.assertEqual(summary["old_gold_weight_g"], 5.0)
+        self.assertEqual(summary["old_gold_equivalent_da"], 50000.0)
+        self.assertEqual(summary["total_paid_da"], 40000.0)
+        self.assertEqual(summary["net_to_pay_da"], 40000.0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,6 +12,7 @@ from PySide6.QtGui import QFont, QColor, QBrush
 
 from ui.tools.virtual_numpad import VirtualNumpad
 from ui.tools.virtual_keyboard import VirtualKeyboardDialog
+from database.versement import payment_value_da as calculate_payment_value_da
 
 
 class EditPaymentDialog(QDialog):
@@ -236,6 +237,24 @@ class EditPaymentDialog(QDialog):
         pay_layout.setContentsMargins(10, 14, 10, 10)
         pay_layout.setSpacing(10)
 
+        # لافتة مساعدة في حالة وجود فائض دفع سابق (Or cassé / Devises)
+        self.surplus_amount = self._calculate_current_surplus()
+        self.banner_surplus = QFrame()
+        self.banner_surplus.setStyleSheet("background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; padding: 6px;")
+        lay_banner = QHBoxLayout(self.banner_surplus)
+        lay_banner.setContentsMargins(8, 4, 8, 4)
+        lbl_s = QLabel(f"💡 <b>Surplus payé par le client :</b> <span style='color: #b45309; font-size: 14px;'>+{self.surplus_amount:,.0f} DA</span>")
+        lbl_s.setStyleSheet("font-size: 13px; color: #92400e;")
+        btn_auto_refund = QPushButton("💸 Rendre la monnaie")
+        btn_auto_refund.setStyleSheet("background-color: #d97706; color: white; font-weight: bold; padding: 4px 10px; border-radius: 4px; font-size: 12px;")
+        btn_auto_refund.setCursor(Qt.PointingHandCursor)
+        btn_auto_refund.clicked.connect(self._auto_fill_surplus_refund)
+        lay_banner.addWidget(lbl_s, stretch=1)
+        lay_banner.addWidget(btn_auto_refund)
+        pay_layout.addWidget(self.banner_surplus)
+        if self.surplus_amount <= 0:
+            self.banner_surplus.hide()
+
         # اختيار طريقة الدفع
         self.combo_method = QComboBox()
         self.combo_method.addItems([
@@ -257,7 +276,7 @@ class EditPaymentDialog(QDialog):
         form_dinar.setContentsMargins(0, 0, 0, 0)
         form_dinar.setSpacing(6)
         self.inp_cash = QLineEdit()
-        self.inp_cash.setPlaceholderText("0.00")
+        self.inp_cash.setPlaceholderText("0.00 (valeur négative acceptée)")
         self.inp_cash.setStyleSheet(inp_style + "color: #27ae60;")
         self.inp_cash.textChanged.connect(lambda _: self.auto_calculate_poids_deduit())
 
@@ -268,6 +287,13 @@ class EditPaymentDialog(QDialog):
 
         form_dinar.addRow(self._styled_lbl("Espèces (Cash) :"), self._wrap_with_numpad(self.inp_cash))
         form_dinar.addRow(self._styled_lbl("Carte (TPE) :"), self._wrap_with_numpad(self.inp_tpe))
+
+        btn_refund_helper = QPushButton("🔄 Rendre la monnaie / Remboursement (Montant négatif)")
+        btn_refund_helper.setStyleSheet("background-color: #fff3cd; color: #856404; font-size: 12px; font-weight: bold; border: 1px solid #ffeeba; border-radius: 4px; padding: 5px;")
+        btn_refund_helper.setCursor(Qt.PointingHandCursor)
+        btn_refund_helper.clicked.connect(self._apply_refund_helper)
+        form_dinar.addRow("", btn_refund_helper)
+
         self.stacked_pay.addWidget(self.page_dinar)
 
         # --- الصفحة 1: الأورو ---
@@ -587,6 +613,53 @@ class EditPaymentDialog(QDialog):
                     self.auto_calculate_poids_deduit()
                 else:
                     QMessageBox.warning(self, "Erreur", f"Le prix final doit être entre 0 et {base_amount:,.2f} DA.")
+
+    def _calculate_current_surplus(self):
+        """Calculate if customer has overpaid in prior payments (e.g. scrap gold / devises)"""
+        if not self.v_data:
+            return 0.0
+        items = self.v_data.get('items', [])
+        payments = self.v_data.get('payments', [])
+        total_estimated = sum(float(it.get('display_price') or it.get('selling_price') or 0) for it in items if it.get('item_status') != 'ANNULE')
+        total_paid = sum(calculate_payment_value_da(p) for p in payments)
+        return max(0.0, total_paid - total_estimated)
+
+    def _auto_fill_surplus_refund(self):
+        """Automatically pre-fill cash refund with current overpayment surplus"""
+        surplus = self._calculate_current_surplus()
+        if surplus > 0:
+            self.combo_method.setCurrentIndex(0)
+            self.inp_cash.setText(f"-{surplus:.2f}")
+            self.inp_tpe.setText("0.00")
+            if not self.inp_notes.text().strip():
+                self.inp_notes.setText("Rendu surplus au client (différence or/devises)")
+            self.inp_poids_deduit.setText("0.000")
+            self.auto_calculate_poids_deduit()
+
+    def _apply_refund_helper(self):
+        """Open numpad to easily enter negative cash refund without forcing specific mode"""
+        surplus = self._calculate_current_surplus()
+        init_val = surplus if surplus > 0 else 0.0
+        pad = VirtualNumpad(
+            title="Saisir le montant à rendre au client (DA)",
+            mode="dialog",
+            allow_decimal=True,
+            allow_negative=True,
+            initial_value=init_val,
+            parent=self
+        )
+        if pad.exec() == QDialog.Accepted:
+            val = pad.get_value()
+            if val:
+                amount = float(val)
+                refund_val = -abs(amount) if amount > 0 else amount
+                self.combo_method.setCurrentIndex(0)
+                self.inp_cash.setText(f"{refund_val:.2f}")
+                self.inp_tpe.setText("0.00")
+                if not self.inp_notes.text().strip():
+                    self.inp_notes.setText("Rendu surplus / Remboursement espèces")
+                self.inp_poids_deduit.setText("0.000")
+                self.auto_calculate_poids_deduit()
 
     def open_discount_price_per_gram(self):
         current_ppg, base_weight = self._get_price_per_gram_context()
@@ -939,14 +1012,8 @@ class EditPaymentDialog(QDialog):
 
             if any(value < 0 for value in (cash, tpe, euro, dollar, oc, poids_deduit, montant_total_da)):
                 if not notes:
-                    QMessageBox.warning(
-                        self,
-                        "Note Obligatoire",
-                        "Vous saisissez une valeur négative (Sortie/Correction du dossier).\n\n"
-                        "Veuillez obligatoirement écrire une note explicative dans le champ 'Notes'."
-                    )
-                    self.inp_notes.setFocus()
-                    return
+                    notes = "Remboursement / Rendu espèces au client"
+                    self.inp_notes.setText(notes)
 
             success = self.manager.versements.update_payment(
                 payment_id=self.payment_id,
