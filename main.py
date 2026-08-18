@@ -20,7 +20,7 @@ from database import LabDataManager
 
 # Load PySide after mysql.connector to avoid Shiboken inspecting mysql's async deps.
 from PySide6.QtWidgets import QApplication, QMessageBox, QDialog
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, QtMsgType, qInstallMessageHandler
 
 from ui.login_dialog import LoginDialog 
 from ui.tools.focus_filter import GlobalFocusSelectFilter
@@ -35,6 +35,24 @@ logging.basicConfig(
 )
 
 logging.getLogger("mysql.connector").setLevel(logging.WARNING)
+
+
+def qt_message_handler(mode, context, message):
+    """Filter out noisy and harmless Qt internal warnings from terminal output."""
+    if mode in (QtMsgType.QtWarningMsg, QtMsgType.QtInfoMsg):
+        if any(ign in message for ign in (
+            "Could not parse stylesheet",
+            "SetProcessDpiAwarenessContext",
+            "QFontDatabase",
+            "Note that Qt no longer ships fonts",
+        )):
+            return
+        logging.debug(f"Qt Warning: {message}")
+    elif mode == QtMsgType.QtCriticalMsg:
+        logging.error(f"Qt Critical: {message}")
+    elif mode == QtMsgType.QtFatalMsg:
+        logging.critical(f"Qt Fatal: {message}")
+
 
 def run_flask_server():
     from app import flask_app
@@ -55,6 +73,7 @@ def start_flask_server(qt_app):
 
 
 def main():
+    qInstallMessageHandler(qt_message_handler)
     qt_app = QApplication(sys.argv)
 
     focus_filter = GlobalFocusSelectFilter()
