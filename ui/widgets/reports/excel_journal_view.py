@@ -932,6 +932,20 @@ class ExcelJournalView(QWidget):
     # ──────────────────────────────────────────────────────────────
     # القائمة المنسدلة (كليك يمين) - 3 خيارات طباعة
     # ──────────────────────────────────────────────────────────────
+    def _is_versement_row(self, item0):
+        if not item0:
+            return False
+        sale_id = item0.data(Qt.UserRole)
+        rec_num = str(item0.data(Qt.UserRole + 12) or "")
+        raw_obs = str(item0.data(Qt.UserRole + 9) or "")
+        if isinstance(sale_id, str) and sale_id.startswith("VRS_"):
+            return True
+        if rec_num.startswith("VRS-"):
+            return True
+        if "VRS-" in raw_obs or "Clôture Versement" in raw_obs or "Facturé depuis Versement" in raw_obs:
+            return True
+        return False
+
     def show_context_menu(self, pos):
         row = self.table.rowAt(pos.y())
         if row < 0: return
@@ -941,7 +955,8 @@ class ExcelJournalView(QWidget):
         sale_id = item.data(Qt.UserRole)
         if not sale_id: return 
         
-        is_versement = isinstance(sale_id, str) and sale_id.startswith("VRS_")
+        is_versement = self._is_versement_row(item)
+        is_pure_vp = isinstance(sale_id, str) and str(sale_id).startswith("VRS_")
         item_id = item.data(Qt.UserRole + 1)
         
         cash = item.data(Qt.UserRole + 2)
@@ -974,22 +989,25 @@ class ExcelJournalView(QWidget):
             act_copy_bc = menu.addAction(f"📋 Copier le Code-barres : {barcode}")
 
         act_view_products = menu.addAction("📦 Afficher la liste des produits & Codes-barres")
-        act_edit_weight = menu.addAction("⚖️ Modifier le Poids Sorti (P.S)")
-        menu.addSeparator()
 
         if is_versement:
-            act_edit_obs = menu.addAction("Modifier l'observation")
+            menu.addSeparator()
+            act_edit_obs = menu.addAction("📝 Modifier l'observation")
             action = menu.exec_(self.table.viewport().mapToGlobal(pos))
             if not action: return
             if action == act_copy_bc:
                 self.copy_barcode_to_clipboard(barcode)
             elif action == act_view_products:
                 self.show_sale_products(sale_id)
-            elif action == act_edit_weight:
-                self.edit_p_s(row)
             elif action == act_edit_obs:
-                self.edit_versement_observation(item_id, current_obs)
+                if is_pure_vp:
+                    self.edit_versement_observation(item_id, current_obs)
+                else:
+                    self.edit_observation(sale_id, item_id, current_obs)
             return
+
+        act_edit_weight = menu.addAction("⚖️ Modifier le Poids Sorti (P.S)")
+        menu.addSeparator()
 
         # ── خيار 1: تحميل PDF ──
         act_print_pdf = menu.addAction("📄 Télécharger PDF (Aperçu)")
@@ -1076,7 +1094,8 @@ class ExcelJournalView(QWidget):
         sale_id = item.data(Qt.UserRole)
         if not sale_id: return 
         
-        is_versement = isinstance(sale_id, str) and sale_id.startswith("VRS_")
+        is_versement = self._is_versement_row(item)
+        is_pure_vp = isinstance(sale_id, str) and str(sale_id).startswith("VRS_")
         item_id = item.data(Qt.UserRole + 1)
         
         raw_obs = item.data(Qt.UserRole + 9)
@@ -1085,17 +1104,20 @@ class ExcelJournalView(QWidget):
         # زر عرض المنتجات والباركودات
         self._add_action_btn("fa5s.boxes", "Afficher la liste des produits & Codes-barres", "#8e44ad", "#9b59b6", lambda: self.show_sale_products(sale_id))
 
-        # زر تعديل الوزن P.S
-        self._add_action_btn("fa5s.weight-hanging", "Modifier le Poids Sorti (P.S)", "#16a085", "#1abc9c", lambda: self.edit_p_s(row))
-
         # زر نسخ الباركود مباشرة
         if barcode:
             self._add_action_btn("fa5s.copy", f"Copier le Code-barres ({barcode})", "#2c3e50", "#34495e", lambda: self.copy_barcode_to_clipboard(barcode))
 
         if is_versement:
             current_vrs_obs = str(raw_obs if raw_obs is not None else (self.table.item(row, 8).text() if self.table.item(row, 8) else ""))
-            self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_versement_observation(item_id, current_vrs_obs))
+            if is_pure_vp:
+                self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_versement_observation(item_id, current_vrs_obs))
+            else:
+                self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, item_id, current_vrs_obs))
             return
+
+        # زر تعديل الوزن P.S للمبيعات العادية فقط
+        self._add_action_btn("fa5s.weight-hanging", "Modifier le Poids Sorti (P.S)", "#16a085", "#1abc9c", lambda: self.edit_p_s(row))
 
         cash = item.data(Qt.UserRole + 2)
         tpe = item.data(Qt.UserRole + 3)
@@ -1343,7 +1365,15 @@ class ExcelJournalView(QWidget):
         item_id = item0.data(Qt.UserRole + 1)
         if not sale_id or not item_id: return
         
-        is_versement = isinstance(sale_id, str) and str(sale_id).startswith("VRS_")
+        if self._is_versement_row(item0):
+            QMessageBox.information(
+                self,
+                "Information",
+                "Le poids de cet article est géré dans son dossier de versement.\n\n"
+                "Pour modifier la composition ou le poids, veuillez utiliser le module 'Gestion des Versements'."
+            )
+            return
+
         cur_p_s = item0.data(Qt.UserRole + 11)
         if cur_p_s is None:
             item_p_s = self.table.item(row, 1)
@@ -1357,13 +1387,8 @@ class ExcelJournalView(QWidget):
         if dlg.exec() == QDialog.Accepted:
             new_w = dlg.get_weight()
             updated = False
-            if is_versement:
-                if hasattr(self.manager.versements, "update_payment_poids_deduit"):
-                    actual_pay_id = item_id
-                    updated = self.manager.versements.update_payment_poids_deduit(actual_pay_id, new_w)
-            else:
-                if hasattr(self.manager.sales, "update_sale_item_weight"):
-                    updated = self.manager.sales.update_sale_item_weight(item_id, new_w)
+            if hasattr(self.manager.sales, "update_sale_item_weight"):
+                updated = self.manager.sales.update_sale_item_weight(item_id, new_w)
             
             if updated:
                 self.load_data()
@@ -1412,12 +1437,13 @@ class ExcelJournalView(QWidget):
         if dlg.exec() == QDialog.Accepted:
             seller_id = dlg.get_seller_id()
             if seller_id is None:
-                QMessageBox.warning(self, "Erreur", "Veuillez sÃ©lectionner un vendeur.")
+                QMessageBox.warning(self, "Erreur", "Veuillez sélectionner un vendeur.")
                 return
             if self.manager.sales.update_sale_seller(sale_id, seller_id):
                 self.load_data()
             else:
-                QMessageBox.warning(self, "Erreur", "Erreur lors de la mise Ã  jour du vendeur.")
+                QMessageBox.warning(self, "Erreur", "Erreur lors de la mise à jour du vendeur.")
+
     def edit_observation(self, sale_id, sale_item_id, current_obs):
         dlg = EditObservationDialog(current_obs, self)
         if dlg.exec() == QDialog.Accepted:
@@ -1444,6 +1470,28 @@ class ExcelJournalView(QWidget):
                 QMessageBox.warning(self, "Erreur", "Erreur lors de la mise à jour de l'observation.")
 
     def delete_sale(self, sale_id):
+        if isinstance(sale_id, str) and sale_id.startswith("VRS_"):
+            QMessageBox.warning(
+                self,
+                "Action Non Autorisée",
+                "Les opérations de versements ne peuvent pas être supprimées depuis le journal.\n\n"
+                "Veuillez utiliser le module 'Gestion des Versements'."
+            )
+            return
+
+        if isinstance(sale_id, int):
+            sale = self.manager.sales.get_sale_details(sale_id)
+            rec_num = str((sale or {}).get("receipt_number") or "")
+            notes = str((sale or {}).get("notes") or "")
+            if rec_num.startswith("VRS-") or "VRS-" in notes or "Clôture Versement" in notes:
+                QMessageBox.warning(
+                    self,
+                    "Action Non Autorisée",
+                    "Cette ligne provient d'une clôture de versement (VRS).\n\n"
+                    "Pour annuler ou modifier ce versement, veuillez utiliser le module 'Gestion des Versements'."
+                )
+                return
+
         reply = QMessageBox.question(self, "Confirmation", "Voulez-vous vraiment annuler cette vente ?\n\n(Les articles seront automatiquement remis en stock)", QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             if self.manager.sales.cancel_sale(sale_id): 
@@ -1682,6 +1730,7 @@ class ExcelJournalView(QWidget):
                             item.setData(Qt.UserRole + 9, r.get('raw_notes') or '')
                             item.setData(Qt.UserRole + 10, r.get('barcode') or '')
                             item.setData(Qt.UserRole + 11, float(r.get('P_S') or 0))
+                            item.setData(Qt.UserRole + 12, str(r.get('receipt_number') or ''))
                             
                             bc = str(r.get('barcode') or '').strip()
                             if bc:

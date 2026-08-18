@@ -321,8 +321,12 @@ class VersementManager:
 
             if items_to_retire:
                 receipt_tag = f"VRS-{versement_id:05d}"
-                cursor.execute("SELECT id FROM Sales WHERE receipt_number = %s AND status = 'COMPLETED'", (receipt_tag,))
+                cursor.execute("SELECT id, status FROM Sales WHERE receipt_number = %s", (receipt_tag,))
                 existing_sale = cursor.fetchone()
+                if existing_sale and existing_sale.get("status") == "CANCELLED":
+                    cursor.execute("DELETE FROM SaleItems WHERE sale_id = %s", (existing_sale["id"],))
+                    cursor.execute("DELETE FROM Sales WHERE id = %s", (existing_sale["id"],))
+                    existing_sale = None
                 if not existing_sale:
                     cursor.execute("""
                         INSERT INTO Sales (receipt_number, journee_id, client_id, user_id, total_amount_da, discount_da, net_to_pay_da, cash_paid_da, tpe_paid_da, old_gold_weight_g, impos_weight_g, status, notes, created_at)

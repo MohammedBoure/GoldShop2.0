@@ -242,6 +242,7 @@ class SalesManager:
                     SELECT 
                         s.journee_id,
                         s.id as sale_id,
+                        s.receipt_number as receipt_number,
                         si.id as item_id,
                         COALESCE(NULLIF(si.barcode, ''), i.barcode, '') as barcode,
                         c.name as client_name,
@@ -277,6 +278,7 @@ class SalesManager:
                     SELECT 
                         vp.journee_id,
                         CONCAT('VRS_', vp.versement_id) as sale_id,
+                        CONCAT('VRS-', vp.versement_id) as receipt_number,
                         vp.id as item_id,
                         COALESCE(vi_inv.barcode, '') as barcode,
                         c.name as client_name,

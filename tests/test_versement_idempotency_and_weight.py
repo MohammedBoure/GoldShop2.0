@@ -37,7 +37,7 @@ class _MockCursor:
         elif "FROM Sales" in compact and ("receipt_number" in compact or "notes LIKE" in compact):
             tag = str(params[0]) if params else ""
             matching = [s for s in self.sales if s.get("receipt_number") == tag or tag.strip("%") in str(s.get("notes", ""))]
-            if "SELECT id FROM Sales" in compact:
+            if "SELECT id" in compact and "WHERE receipt_number" in compact:
                 self._one = dict(matching[0]) if matching else None
             else:
                 self._all = [dict(s) for s in matching]
@@ -179,6 +179,41 @@ class VersementIdempotencyAndWeightTests(unittest.TestCase):
         self.assertTrue(any("LEAST(weight" in q for q in inv_updates))
         # Check versement is synced to EN_COURS
         self.assertTrue(any("UPDATE Versements SET status = 'EN_COURS'" in query for query, _ in cursor.executions))
+
+    def test_cloture_versement_cleans_up_stale_cancelled_sale(self):
+        """If an old cancelled sale with receipt_number VRS-00012 exists, it is deleted and re-inserted cleanly."""
+        items = [
+            {
+                "inventory_id": 10,
+                "designation": "Bague Or",
+                "custom_note": "",
+                "reserved_quantity": 1,
+                "item_type": "WEIGHT",
+                "weight": 1.32,
+                "remaining_weight": 1.32,
+                "quantity": 1,
+                "remaining_quantity": 1,
+                "selling_price": 10000,
+                "barcode": "BG-01",
+                "item_status": "EN_COURS",
+            }
+        ]
+        sales = [
+            {"id": 99, "receipt_number": "VRS-00012", "notes": "Ancienne clôture", "status": "CANCELLED"}
+        ]
+        cursor = _MockCursor(
+            versement={"client_id": 5, "status": "EN_COURS"},
+            items=items,
+            sales=sales,
+        )
+        conn = _MockConnection(cursor)
+        manager = VersementManager(SimpleNamespace(get_raw_connection=lambda: conn))
+
+        self.assertTrue(manager.cloture_versement(versement_id=12, journee_id=1))
+        # Ensure stale cancelled sale was deleted
+        self.assertTrue(any("DELETE FROM Sales WHERE id = %s" in q for q, _ in cursor.executions))
+        # Ensure new sale was inserted
+        self.assertTrue(any(q.startswith("INSERT INTO Sales") for q, _ in cursor.executions))
 
 
 if __name__ == "__main__":
