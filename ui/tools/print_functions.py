@@ -777,6 +777,11 @@ def _draw_thermal_receipt(painter, width, data, tc, doc_type):
                 draw_text_absolute(d_str, m, y, f_small)
                 draw_text_absolute(f"{amt:,.2f} {currency}", totals_x, y, f_small, align_right=True, limit=totals_w); y += f_small + 5
 
+        general_note = str(data.get('general_note') or data.get('invoice_note') or data.get('note') or data.get('notes') or '').strip()
+        if general_note:
+            painter.drawLine(m, y, width - m, y); y += 10
+            draw_text_absolute(f"Note / Obs : {general_note}", m, y, f_small, bold=True); y += f_small + 5
+
         y += 10
         draw_text_absolute("Arrêter la présente facture à la somme de:", m, y, f_small-2); y += f_small + 5
         draw_text_center(str(data.get('amount_in_words', '.............................................')), f_small)

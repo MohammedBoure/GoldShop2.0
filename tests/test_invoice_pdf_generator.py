@@ -165,6 +165,34 @@ class InvoicePdfGeneratorTests(unittest.TestCase):
             self.assertIn("3.000 g", html)
             self.assertNotIn("6.000 g", html)
 
+    def test_generate_invoice_pdf_renders_custom_invoice_note(self):
+        items = [
+            {
+                "name": "Bague Diamant",
+                "barcode": "8888",
+                "item_type": "WEIGHT",
+                "cart_sold_weight": 3.0,
+                "cart_line_total": 120000.0,
+            }
+        ]
+
+        with patch("ui.tools.invoice_generator._render_html_document") as mock_render:
+            generate_invoice_pdf(
+                sale_id=99,
+                client_name="Madame Leila",
+                items=items,
+                total_brut=120000.0,
+                discount=0.0,
+                net=120000.0,
+                cash_paid=120000.0,
+                invoice_note="Garantie 2 ans avec certificat d'authenticité",
+                open_pdf=False,
+            )
+            self.assertTrue(mock_render.called)
+            html = mock_render.call_args[0][0]
+            self.assertIn("Note / Observation :", html)
+            self.assertIn("Garantie 2 ans avec certificat d&#x27;authenticité", html)
+
 
 if __name__ == "__main__":
     unittest.main()

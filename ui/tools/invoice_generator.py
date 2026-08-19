@@ -455,6 +455,7 @@ def generate_invoice_pdf(
     open_pdf=True,
     payment_details=None,
     payments_history=None,
+    invoice_note="",
 ):
     global_cfg, pdf_cfg = PdfHelper.load_pdf_config()
 
@@ -611,6 +612,15 @@ def generate_invoice_pdf(
     policy = pdf_cfg["texts"].get("policy_paid", "Le produit vendu n'est ni repris ni échangé.")
     rc_nif_txt = f"{'RC: '+rc+' | NIF: '+nif if pdf_cfg['display'].get('show_rc_nif', True) else ''}"
 
+    invoice_note_html = ""
+    if invoice_note and str(invoice_note).strip():
+        clean_note = escape(str(invoice_note).strip())
+        invoice_note_html = f"""
+        <div style="margin-top:10px; margin-bottom:12px; padding:7px 12px; border-left:4px solid #0f8f83; background-color:#e8f7f4; border-radius:4px; font-size:{int(f_norm*0.9)}px; color:#075f58;">
+            <b>Note / Observation :</b> {clean_note}
+        </div>
+        """
+
     html = f"""
     <html><head><style>
         body {{ font-family: Arial, sans-serif; color: {c_txt}; font-size: {f_norm}px; }}
@@ -640,6 +650,7 @@ def generate_invoice_pdf(
             <tr>{table_headers}</tr>
             {items_html}
         </table>
+        {invoice_note_html}
 
         <table width="100%" style="border: none;">
             <tr>

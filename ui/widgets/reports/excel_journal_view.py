@@ -5,7 +5,7 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QFrame,
-    QInputDialog, QMessageBox, QLineEdit, QMenu, QDialog, QFormLayout, QGridLayout
+    QInputDialog, QMessageBox, QLineEdit, QTextEdit, QMenu, QDialog, QFormLayout, QGridLayout
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QBrush
@@ -47,6 +47,136 @@ class ColorOverrideDelegate(QStyledItemDelegate):
             option.palette.setColor(QPalette.ButtonText, color)
 
         super().paint(painter, option, index)
+
+
+class InvoiceCustomNoteDialog(QDialog):
+    """
+    نافذة مخصصة لإدخال ملاحظة عامة مخصصة للفاتورة / التذكرة
+    مع دعم الكيبورد الافتراضي لشاشات اللمس وخيارات الطباعة المتعددة.
+    """
+    def __init__(self, parent=None, client_name="", facture_num="", default_note="", has_pdf_printer=False, has_thermal_printer=False):
+        super().__init__(parent)
+        self.setWindowTitle("Note Personnalisée pour Facture / Ticket")
+        self.setMinimumWidth(500)
+        self.setStyleSheet("""
+            QDialog { background-color: #f8f9fa; border-radius: 8px; }
+            QLabel { font-size: 13px; color: #2c3e50; font-weight: bold; }
+            QTextEdit { font-size: 14px; padding: 8px; border: 2px solid #bdc3c7; border-radius: 6px; background-color: white; color: #2c3e50; }
+            QTextEdit:focus { border-color: #0f8f83; }
+            QPushButton { font-size: 13px; font-weight: bold; padding: 8px 14px; border-radius: 6px; }
+        """)
+        
+        self.selected_action = "pdf_preview"
+        self.note_text = ""
+        self.has_pdf_printer = has_pdf_printer
+        self.has_thermal_printer = has_thermal_printer
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        header_text = f"📄 Facture {facture_num} — Client : {client_name}" if facture_num else f"📄 Facture — Client : {client_name}"
+        lbl_header = QLabel(header_text)
+        lbl_header.setStyleSheet("color: #0f8f83; font-size: 15px; font-weight: bold;")
+        layout.addWidget(lbl_header)
+
+        lbl_prompt = QLabel("Entrez une note ou observation générale à afficher sur la facture :")
+        layout.addWidget(lbl_prompt)
+
+        self.txt_note = QTextEdit()
+        self.txt_note.setPlaceholderText("Ex: Garantie 1 an / Remis en mains propres / Certificat d'authenticité...")
+        self.txt_note.setPlainText(default_note)
+        self.txt_note.setMinimumHeight(100)
+        layout.addWidget(self.txt_note)
+
+        btn_tools_layout = QHBoxLayout()
+        self.btn_keyboard = QPushButton()
+        self.btn_keyboard.setIcon(qta.icon("fa5s.keyboard", color="white"))
+        self.btn_keyboard.setText(" Clavier Tactile (Touch)")
+        self.btn_keyboard.setCursor(Qt.PointingHandCursor)
+        self.btn_keyboard.setStyleSheet("""
+            QPushButton { background-color: #2c3e50; color: white; border: none; padding: 6px 12px; }
+            QPushButton:hover { background-color: #34495e; }
+        """)
+        self.btn_keyboard.clicked.connect(self._open_virtual_keyboard)
+        btn_tools_layout.addWidget(self.btn_keyboard)
+
+        self.btn_clear = QPushButton("Effacer")
+        self.btn_clear.setCursor(Qt.PointingHandCursor)
+        self.btn_clear.setStyleSheet("""
+            QPushButton { background-color: #95a5a6; color: white; border: none; padding: 6px 12px; }
+            QPushButton:hover { background-color: #7f8c8d; }
+        """)
+        self.btn_clear.clicked.connect(self.txt_note.clear)
+        btn_tools_layout.addWidget(self.btn_clear)
+        btn_tools_layout.addStretch()
+        layout.addLayout(btn_tools_layout)
+
+        layout.addSpacing(10)
+
+        actions_layout = QHBoxLayout()
+        actions_layout.setSpacing(10)
+
+        self.btn_pdf_preview = QPushButton("📄 Aperçu PDF")
+        self.btn_pdf_preview.setIcon(qta.icon("fa5s.file-pdf", color="white"))
+        self.btn_pdf_preview.setCursor(Qt.PointingHandCursor)
+        self.btn_pdf_preview.setStyleSheet("""
+            QPushButton { background-color: #e74c3c; color: white; border: none; padding: 10px 14px; }
+            QPushButton:hover { background-color: #c0392b; }
+        """)
+        self.btn_pdf_preview.clicked.connect(lambda: self._apply_and_close("pdf_preview"))
+        actions_layout.addWidget(self.btn_pdf_preview)
+
+        if self.has_pdf_printer:
+            self.btn_pdf_direct = QPushButton("🖨️ PDF Direct")
+            self.btn_pdf_direct.setIcon(qta.icon("fa5s.print", color="white"))
+            self.btn_pdf_direct.setCursor(Qt.PointingHandCursor)
+            self.btn_pdf_direct.setStyleSheet("""
+                QPushButton { background-color: #9b59b6; color: white; border: none; padding: 10px 14px; }
+                QPushButton:hover { background-color: #8e44ad; }
+            """)
+            self.btn_pdf_direct.clicked.connect(lambda: self._apply_and_close("pdf_direct"))
+            actions_layout.addWidget(self.btn_pdf_direct)
+
+        if self.has_thermal_printer:
+            self.btn_thermal = QPushButton("🧾 Ticket Thermique")
+            self.btn_thermal.setIcon(qta.icon("fa5s.receipt", color="white"))
+            self.btn_thermal.setCursor(Qt.PointingHandCursor)
+            self.btn_thermal.setStyleSheet("""
+                QPushButton { background-color: #e67e22; color: white; border: none; padding: 10px 14px; }
+                QPushButton:hover { background-color: #d35400; }
+            """)
+            self.btn_thermal.clicked.connect(lambda: self._apply_and_close("thermal"))
+            actions_layout.addWidget(self.btn_thermal)
+
+        self.btn_cancel = QPushButton("Annuler")
+        self.btn_cancel.setCursor(Qt.PointingHandCursor)
+        self.btn_cancel.setStyleSheet("""
+            QPushButton { background-color: #bdc3c7; color: #2c3e50; border: none; padding: 10px 14px; }
+            QPushButton:hover { background-color: #95a5a6; }
+        """)
+        self.btn_cancel.clicked.connect(self.reject)
+        actions_layout.addWidget(self.btn_cancel)
+
+        layout.addLayout(actions_layout)
+
+    def _open_virtual_keyboard(self):
+        try:
+            from ui.tools.virtual_keyboard import VirtualKeyboardDialog, KeyboardFocusTracker
+            self.txt_note.setFocus()
+            KeyboardFocusTracker.last_input_widget = self.txt_note
+            kb = VirtualKeyboardDialog._instance
+            if not kb:
+                kb = VirtualKeyboardDialog(parent=self)
+            kb.set_active_parent(self)
+            kb.show()
+        except Exception as e:
+            print(f"Error opening virtual keyboard: {e}")
+
+    def _apply_and_close(self, action_type):
+        self.selected_action = action_type
+        self.note_text = self.txt_note.toPlainText().strip()
+        self.accept()
 
 
 class SaleDetailsDialog(QDialog):
@@ -1026,6 +1156,9 @@ class ExcelJournalView(QWidget):
             act_print_thermal = menu.addAction("🧾 Imprimer sur thermique (non configurée)")
             act_print_thermal.setEnabled(False)
 
+        # ── خيار 4: طباعة مع ملاحظة مخصصة ──
+        act_print_custom_note = menu.addAction("📝 Imprimer avec Note / Observation...")
+
         menu.addSeparator()
 
         # ── باقي الخيارات ──
@@ -1052,6 +1185,8 @@ class ExcelJournalView(QWidget):
             self.print_invoice_pdf(sale_id, open_pdf=False, direct=True)
         elif action == act_print_thermal:
             self.print_invoice_thermal(sale_id)
+        elif action == act_print_custom_note:
+            self.prompt_custom_note_and_print(sale_id)
         elif action == act_details:
             self.show_sale_details(sale_id)
         elif action == act_edit:
@@ -1137,6 +1272,7 @@ class ExcelJournalView(QWidget):
         self._add_action_btn("fa5s.file-pdf", "Télécharger PDF (Aperçu)", "#e74c3c", "#c0392b", lambda: self.print_invoice_pdf(sale_id))
         self._add_action_btn("fa5s.print", f"Imprimer directement → {pdf_printer}" if pdf_printer else "Imprimer directement (non configurée)", "#9b59b6", "#8e44ad", lambda: self.print_invoice_pdf(sale_id, open_pdf=False, direct=True), enabled=bool(pdf_printer))
         self._add_action_btn("fa5s.receipt", f"Imprimer sur thermique → {thermal_printer}" if thermal_printer else "Imprimer sur thermique (non configurée)", "#e67e22", "#d35400", lambda: self.print_invoice_thermal(sale_id), enabled=bool(thermal_printer))
+        self._add_action_btn("fa5s.file-signature", "Imprimer avec Note personnalisée (Tactile)", "#16a085", "#1abc9c", lambda: self.prompt_custom_note_and_print(sale_id))
         self._add_action_btn("fa5s.edit", "Modifier les montants de cette vente", "#27ae60", "#2ecc71", lambda: self.edit_sale(sale_id, cash, tpe, oc, euro, dollar, impos))
         self._add_action_btn("fa5s.user-edit", "Modifier le vendeur", "#16a085", "#1abc9c", lambda: self.edit_seller(sale_id, seller_id))
         self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, item_id, current_obs))
@@ -1145,7 +1281,7 @@ class ExcelJournalView(QWidget):
     # ──────────────────────────────────────────────────────────────
     # طباعة PDF (تحميل أو مباشرة على طابعة PDF)
     # ──────────────────────────────────────────────────────────────
-    def print_invoice_pdf(self, sale_id, open_pdf=True, direct=False):
+    def print_invoice_pdf(self, sale_id, open_pdf=True, direct=False, invoice_note=""):
         sale = self.manager.sales.get_sale_details(sale_id)
         if not sale:
             QMessageBox.warning(self, "Erreur", "Détails de la vente introuvables.")
@@ -1231,6 +1367,7 @@ class ExcelJournalView(QWidget):
                 direct_printer_name=direct_printer,
                 payment_details=sale.get('versement_payment_summary'),
                 payments_history=sale.get('payments_history'),
+                invoice_note=invoice_note,
             )
 
             if direct:
@@ -1253,7 +1390,7 @@ class ExcelJournalView(QWidget):
     # ──────────────────────────────────────────────────────────────
     # طباعة حرارية مباشرة (QPainter → الطابعة الحرارية)
     # ──────────────────────────────────────────────────────────────
-    def print_invoice_thermal(self, sale_id):
+    def print_invoice_thermal(self, sale_id, invoice_note=""):
         sale = self.manager.sales.get_sale_details(sale_id)
         if not sale:
             QMessageBox.warning(self, "Erreur", "Détails de la vente introuvables.")
@@ -1322,6 +1459,8 @@ class ExcelJournalView(QWidget):
             'printed_at': sale.get('created_at'),
             'payments_history': sale.get('payments_history', []),
             'amount_in_words': '.............................................',
+            'general_note': invoice_note,
+            'invoice_note': invoice_note,
         }
 
         try:
@@ -1352,6 +1491,42 @@ class ExcelJournalView(QWidget):
                 self, "Erreur thermique",
                 f"Erreur lors de l'impression thermique :\n{e}"
             )
+
+    # ──────────────────────────────────────────────────────────────
+    # طباعة مع ملاحظة مخصصة (تدعم شاشات اللمس عبر الكيبورد الافتراضي)
+    # ──────────────────────────────────────────────────────────────
+    def prompt_custom_note_and_print(self, sale_id):
+        sale = self.manager.sales.get_sale_details(sale_id)
+        if not sale:
+            QMessageBox.warning(self, "Erreur", "Détails de la vente introuvables.")
+            return
+
+        from ui.tools.invoice_generator import _clean_facture_number
+        clean_fac_num = _clean_facture_number(sale.get('receipt_number', ''), sale_id=sale_id)
+        client_name = sale.get('client_name') or 'Passager'
+        default_note = str(sale.get('notes') or sale.get('observation') or '').strip()
+
+        pdf_printer = self._get_pdf_printer_name()
+        thermal_printer = self._get_thermal_printer_name()
+
+        dlg = InvoiceCustomNoteDialog(
+            parent=self,
+            client_name=client_name,
+            facture_num=clean_fac_num,
+            default_note=default_note,
+            has_pdf_printer=bool(pdf_printer),
+            has_thermal_printer=bool(thermal_printer),
+        )
+
+        if dlg.exec_() == QDialog.Accepted:
+            action_type = dlg.selected_action
+            note = dlg.note_text
+            if action_type == "pdf_preview":
+                self.print_invoice_pdf(sale_id, open_pdf=True, direct=False, invoice_note=note)
+            elif action_type == "pdf_direct":
+                self.print_invoice_pdf(sale_id, open_pdf=False, direct=True, invoice_note=note)
+            elif action_type == "thermal":
+                self.print_invoice_thermal(sale_id, invoice_note=note)
 
     def on_cell_double_clicked(self, row, col):
         if col == 1:
