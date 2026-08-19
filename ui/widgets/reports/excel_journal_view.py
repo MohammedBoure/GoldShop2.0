@@ -1652,8 +1652,9 @@ class ExcelJournalView(QWidget):
                     obs = str(r.get('Observation', '')).lower()
                     des = str(r.get('Designation', '')).lower()
                     c_name = str(r.get('client_name', '')).lower()
+                    rec_num = str(r.get('receipt_number', '')).lower()
                     vend = str(r.get('Vendeur_Name') or r.get('Vendeur_Sofiane', ''))
-                    if client_search and (client_search not in obs and client_search not in des and client_search not in c_name): 
+                    if client_search and (client_search not in obs and client_search not in des and client_search not in c_name and client_search not in rec_num): 
                         continue
                     if seller_filter_id != 0 and vend != seller_filter_name: 
                         continue

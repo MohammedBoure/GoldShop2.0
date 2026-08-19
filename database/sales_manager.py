@@ -278,11 +278,11 @@ class SalesManager:
                     SELECT 
                         vp.journee_id,
                         CONCAT('VRS_', vp.versement_id) as sale_id,
-                        CONCAT('VRS-', vp.versement_id) as receipt_number,
+                        CONCAT('VRS-', LPAD(vp.versement_id, 5, '0')) as receipt_number,
                         vp.id as item_id,
                         COALESCE(vi_inv.barcode, '') as barcode,
                         c.name as client_name,
-                        COALESCE(NULLIF(vi.designation, ''), CONCAT('Versement N° VRS-', vp.versement_id)) as Designation,
+                        CONCAT('Versement N° VRS-', LPAD(vp.versement_id, 5, '0'), IF(vi.designation IS NOT NULL AND vi.designation != '', CONCAT(' | ', vi.designation), '')) as Designation,
                         0.0 as P_S,
                         IF(COALESCE(vp.montant_euro, 0) > 0 OR COALESCE(vp.montant_dollar, 0) > 0 OR COALESCE(vp.or_casse_g, 0) > 0, 0.0, vp.montant_da) as Recette,
                         vp.or_casse_g as OC,
@@ -292,7 +292,7 @@ class SalesManager:
                         vp.montant_dollar as Dollar,
                         '' as Vendeur_Name,
                         NULL as vendeur_id,
-                        COALESCE(NULLIF(vp.notes, ''), CONCAT('Versement N° VRS-', vp.versement_id)) as raw_notes,
+                        COALESCE(NULLIF(vp.notes, ''), CONCAT('Versement N° VRS-', LPAD(vp.versement_id, 5, '0'))) as raw_notes,
                         vp.payment_date as timestamp
                     FROM Versement_Payments vp
                     JOIN Versements v ON vp.versement_id = v.id
