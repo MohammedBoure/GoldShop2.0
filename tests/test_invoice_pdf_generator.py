@@ -158,6 +158,9 @@ class InvoicePdfGeneratorTests(unittest.TestCase):
             self.assertIn("30,000.00 DA", html)
             # Verify negative row (-30,000.00 DA) was absorbed into preceding payment and does NOT appear
             self.assertNotIn("-30,000.00 DA", html)
+            # Verify Montant dû is displayed with montant payé + remise (30,000.00 DA)
+            self.assertIn("Montant dû :", html)
+            self.assertNotIn("Montant facture :", html)
             # Verify acquired weight is 3.000 g and NOT 6.000 g
             self.assertIn("3.000 g", html)
             self.assertNotIn("6.000 g", html)

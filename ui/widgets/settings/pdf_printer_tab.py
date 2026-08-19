@@ -105,7 +105,7 @@ class PdfPrinterTab(QWidget):
             "logo": {"path": "", "width": 100, "use_bw_filter": False, "threshold": 127, "align": "À gauche du nom"},
             "codes": {"qr_link": "", "qr_text": "Notre Page", "qr_size": 60, "show_qr": True, "invoice_barcode_mode": "Code-Barres + Texte"},
             "display": {"show_rc_nif": True, "show_history": True, "show_weight_balance": True, "show_item_note": True, "show_item_code_column": True, "item_code_format": "Code-Barres", "reste_in_weight": True, "item_barcode_w": 70, "item_barcode_h": 20, "show_versement_items_section": True, "show_versement_payment_rate": True},
-            "texts": {"title_facture": "FACTURE", "title_versement": "BON DE VERSEMENT", "title_versement_libre": "BON DE VERSEMENT LIBRE", "title_versement_produit": "BON DE VERSEMENT SUR PRODUIT", "title_credit_client": "DOCUMENT CREDIT CLIENT", "text_arrete": "Arrêté la présente somme de :", "policy_paid": "Le produit vendu n'est ni repris ni échangé.", "policy_debt": "Les versements ne sont ni remboursés ni échangés.", "arabic_paid": "الوزن المدفوع", "arabic_debt": "هذه الوثيقة تثبت الدفعات المسبقة الخاصة بالزبون، ومن الضروري إحضارها.", "versement_items_section_title": "Détail des produits réservés", "versement_payments_section_title": "Versements sur produit", "versement_label_article": "Article", "versement_label_code": "Code Produit", "versement_label_total_weight": "Poids total", "versement_label_total_amount": "Montant total", "versement_label_paid_amount": "Montant payé", "versement_label_paid_weight": "Poids payé", "versement_label_remaining_amount": "Reste montant", "versement_label_remaining_weight": "Reste poids", "versement_label_payment_date": "Date", "versement_label_payment_amount": "Montant Versé", "versement_label_payment_weight": "Poids (غرام)", "versement_label_payment_rate": "Prix/g paiement", "versement_summary_invoice_amount": "Montant facture", "versement_summary_total_weight": "Poids Total d'article", "versement_summary_total_quantity": "Quantite totale", "versement_summary_remaining_quantity": "Reste quantite", "versement_summary_total_paid": "Total Payé", "versement_summary_paid_weight": "Poids Acquis", "versement_summary_remaining_weight": "Reste en Poids (الغرام المتبقي)"}
+            "texts": {"title_facture": "FACTURE", "title_versement": "BON DE VERSEMENT", "title_versement_libre": "BON DE VERSEMENT LIBRE", "title_versement_produit": "BON DE VERSEMENT SUR PRODUIT", "title_credit_client": "DOCUMENT CREDIT CLIENT", "text_arrete": "Arrêté la présente somme de :", "policy_paid": "Le produit vendu n'est ni repris ni échangé.", "policy_debt": "Les versements ne sont ni remboursés ni échangés.", "arabic_paid": "الوزن المدفوع", "arabic_debt": "هذه الوثيقة تثبت الدفعات المسبقة الخاصة بالزبون، ومن الضروري إحضارها.", "versement_items_section_title": "Détail des produits réservés", "versement_payments_section_title": "Versements sur produit", "versement_label_article": "Article", "versement_label_code": "Code Produit", "versement_label_total_weight": "Poids total", "versement_label_total_amount": "Montant total", "versement_label_paid_amount": "Montant payé", "versement_label_paid_weight": "Poids payé", "versement_label_remaining_amount": "Reste montant", "versement_label_remaining_weight": "Reste poids", "versement_label_payment_date": "Date", "versement_label_payment_amount": "Montant Versé", "versement_label_payment_weight": "Poids (غرام)", "versement_label_payment_rate": "Prix/g paiement", "versement_summary_invoice_amount": "Montant dû", "versement_summary_total_weight": "Poids Total d'article", "versement_summary_total_quantity": "Quantite totale", "versement_summary_remaining_quantity": "Reste quantite", "versement_summary_total_paid": "Total Payé", "versement_summary_paid_weight": "Poids Acquis", "versement_summary_remaining_weight": "Reste en Poids (الغرام المتبقي)"}
         })
         self.pdf_config = PdfHelper.normalize_pdf_config(self.pdf_config)
         self.config["pdf_config"] = self.pdf_config
@@ -402,7 +402,7 @@ class PdfPrinterTab(QWidget):
         self.inp_v_label_payment_amount = QLineEdit(texts.get("versement_label_payment_amount", "Montant Versé"))
         self.inp_v_label_payment_weight = QLineEdit(texts.get("versement_label_payment_weight", "Poids (غرام)"))
         self.inp_v_label_payment_rate = QLineEdit(texts.get("versement_label_payment_rate", "Prix/g paiement"))
-        self.inp_v_summary_invoice = QLineEdit(texts.get("versement_summary_invoice_amount", "Montant facture"))
+        self.inp_v_summary_invoice = QLineEdit(texts.get("versement_summary_invoice_amount", "Montant dû"))
         self.inp_v_summary_total_weight = QLineEdit(texts.get("versement_summary_total_weight", "Poids Total d'article"))
         self.inp_v_summary_total_paid = QLineEdit(texts.get("versement_summary_total_paid", "Total Payé"))
         self.inp_v_summary_paid_weight = QLineEdit(texts.get("versement_summary_paid_weight", "Poids Acquis"))
@@ -561,7 +561,7 @@ class PdfPrinterTab(QWidget):
             "versement_label_payment_amount": _text("inp_v_label_payment_amount", "Montant Versé"),
             "versement_label_payment_weight": _text("inp_v_label_payment_weight", "Poids (غرام)"),
             "versement_label_payment_rate": _text("inp_v_label_payment_rate", "Prix/g paiement"),
-            "versement_summary_invoice_amount": _text("inp_v_summary_invoice", "Montant facture"),
+            "versement_summary_invoice_amount": _text("inp_v_summary_invoice", "Montant dû"),
             "versement_summary_total_weight": _text("inp_v_summary_total_weight", "Poids Total d'article"),
             "versement_summary_total_paid": _text("inp_v_summary_total_paid", "Total Payé"),
             "versement_summary_paid_weight": _text("inp_v_summary_paid_weight", "Poids Acquis"),
@@ -646,7 +646,7 @@ class PdfPrinterTab(QWidget):
             self.inp_v_label_payment_amount.setText(texts.get("versement_label_payment_amount", "Montant Versé"))
             self.inp_v_label_payment_weight.setText(texts.get("versement_label_payment_weight", "Poids (غرام)"))
             self.inp_v_label_payment_rate.setText(texts.get("versement_label_payment_rate", "Prix/g paiement"))
-            self.inp_v_summary_invoice.setText(texts.get("versement_summary_invoice_amount", "Montant facture"))
+            self.inp_v_summary_invoice.setText(texts.get("versement_summary_invoice_amount", "Montant dû"))
             self.inp_v_summary_total_weight.setText(texts.get("versement_summary_total_weight", "Poids Total d'article"))
             self.inp_v_summary_total_paid.setText(texts.get("versement_summary_total_paid", "Total Payé"))
             self.inp_v_summary_paid_weight.setText(texts.get("versement_summary_paid_weight", "Poids Acquis"))
@@ -846,7 +846,7 @@ class PdfPrinterTab(QWidget):
         lbl_payment_amount = _txt("versement_label_payment_amount", "Montant Versé")
         lbl_payment_weight = _txt("versement_label_payment_weight", "Poids (غرام)")
         lbl_payment_rate = _txt("versement_label_payment_rate", "Prix/g paiement")
-        lbl_summary_invoice = _txt("versement_summary_invoice_amount", "Montant facture")
+        lbl_summary_invoice = _txt("versement_summary_invoice_amount", "Montant dû")
         lbl_summary_total_weight = _txt("versement_summary_total_weight", "Poids Total d'article")
         lbl_summary_total_paid = _txt("versement_summary_total_paid", "Total Payé")
         lbl_summary_paid_weight = _txt("versement_summary_paid_weight", "Poids Acquis")

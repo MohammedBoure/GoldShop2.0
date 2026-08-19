@@ -295,7 +295,7 @@ class PdfHelper:
                 "versement_label_payment_amount": "Montant Versé",
                 "versement_label_payment_weight": "Poids (غرام)",
                 "versement_label_payment_rate": "Prix/g paiement",
-                "versement_summary_invoice_amount": "Montant facture",
+                "versement_summary_invoice_amount": "Montant dû",
                 "versement_summary_total_weight": "Poids Total d'article",
                 "versement_summary_total_quantity": "Quantite totale",
                 "versement_summary_remaining_quantity": "Reste quantite",
@@ -1153,14 +1153,17 @@ class ReceiptGenerator:
         total_remise = _safe_float(
             payment_summary_data.get("total_remise_da", data.get("total_remise_da", 0.0))
         )
+        montant_du = total_paid + total_remise
 
-        lbl_summary_invoice = _label("versement_summary_invoice_amount", "Montant facture")
+        lbl_summary_invoice = _label("versement_summary_invoice_amount", "Montant dû")
+        if lbl_summary_invoice in ("Montant facture", "Montant Facture"):
+            lbl_summary_invoice = "Montant dû"
+
         txt_arabic_paid = pdf_cfg["texts"].get("arabic_paid", "")
         
         summary_rows = ""
-        total_estimated = _safe_float(data.get("total_estimated_price_da", data.get("total_amount", 0)))
-        if total_estimated > 0:
-            summary_rows += f"<tr><td style='padding:5px; text-align:right; font-size:{int(f_norm*0.9)}px;'>{lbl_summary_invoice} :</td><td style='padding:5px; text-align:right; font-weight:bold;'>{total_estimated:,.2f} {currency}</td></tr>"
+        if montant_du > 0:
+            summary_rows += f"<tr><td style='padding:5px; text-align:right; font-size:{int(f_norm*0.9)}px;'>{lbl_summary_invoice} :</td><td style='padding:5px; text-align:right; font-weight:bold;'>{montant_du:,.2f} {currency}</td></tr>"
         
         summary_rows += f"<tr><td style='padding:5px; text-align:right; font-size:{int(f_norm*0.9)}px;'>{lbl_summary_total_weight} :</td><td style='padding:5px; text-align:right; font-weight:bold;'>{total_weight:.3f} g</td></tr>"
         summary_rows += f"<tr><td style='padding:5px; text-align:right; font-size:{int(f_norm*0.9)}px;'>{lbl_summary_total_paid} :</td><td style='padding:5px; text-align:right; color:{c_grn}; font-weight:bold;'>{total_paid:,.2f} {currency}</td></tr>"
