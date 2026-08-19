@@ -154,11 +154,10 @@ class InvoicePdfGeneratorTests(unittest.TestCase):
             ReceiptGenerator.generate_product_versement_receipt(data, output_path="test.pdf")
             self.assertTrue(mock_render.called)
             html = mock_render.call_args[0][0]
-            # Verify 60,000 and -30,000 appear
-            self.assertIn("60,000.00 DA", html)
-            self.assertIn("-30,000.00 DA", html)
-            # Verify net total paid appears
+            # Verify net consolidated payment of 30,000.00 DA appears
             self.assertIn("30,000.00 DA", html)
+            # Verify negative row (-30,000.00 DA) was absorbed into preceding payment and does NOT appear
+            self.assertNotIn("-30,000.00 DA", html)
             # Verify acquired weight is 3.000 g and NOT 6.000 g
             self.assertIn("3.000 g", html)
             self.assertNotIn("6.000 g", html)

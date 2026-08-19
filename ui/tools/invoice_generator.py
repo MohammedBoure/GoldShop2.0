@@ -129,6 +129,42 @@ def _payment_rate_reference(payment: dict) -> float:
     return round(amount / weight, 2) if amount > 0 and weight > 0 else 0.0
 
 
+def _consolidate_versements_for_receipt(versements_list):
+    """
+    Consolidates negative payments (refunds/cash returns) directly into preceding payments
+    so that negative values never appear as standalone rows in customer-facing PDF receipts.
+    """
+    if not versements_list:
+        return []
+    
+    consolidated = []
+    for v in versements_list:
+        item_copy = dict(v)
+        amt = _safe_float(item_copy.get('amount') or item_copy.get('paid_amount') or 0)
+        
+        if amt < 0:
+            remaining_refund = abs(amt)
+            for prev in reversed(consolidated):
+                prev_amt = _safe_float(prev.get('amount') or prev.get('paid_amount') or 0)
+                if prev_amt > 0:
+                    deduct = min(prev_amt, remaining_refund)
+                    prev['amount'] = prev_amt - deduct
+                    if 'paid_amount' in prev:
+                        prev['paid_amount'] = prev_amt - deduct
+                    remaining_refund -= deduct
+                    if remaining_refund <= 0.001:
+                        break
+        else:
+            consolidated.append(item_copy)
+
+    filtered = [
+        v for v in consolidated
+        if _safe_float(v.get('amount') or v.get('paid_amount') or 0) > 0.001
+        or _safe_float(v.get('weight') or v.get('purchased_weight') or v.get('paid_weight') or 0) > 0.001
+    ]
+    return filtered if filtered else consolidated
+
+
 def _format_document_datetime(value) -> str:
     if hasattr(value, "strftime"):
         return value.strftime("%Y-%m-%d %H:%M")
@@ -798,8 +834,9 @@ class ReceiptGenerator:
 
         versements_html = ""
         total_versements = 0.0
-        if data.get('versements'):
-            for v in data['versements']:
+        versements_list = _consolidate_versements_for_receipt(data.get('versements') or [])
+        if versements_list:
+            for v in versements_list:
                 date_val = v.get('payment_date') or v.get('activity_date') or v.get('sale_date') or datetime.now()
                 date_str = date_val.strftime("%Y-%m-%d") if hasattr(date_val, 'strftime') else str(date_val).split(' ')[0]
                 amount = _safe_float(
@@ -1012,9 +1049,10 @@ class ReceiptGenerator:
         versements_html = ""
         total_paid = 0.0
         total_paid_weight = 0.0
+        versements_list = _consolidate_versements_for_receipt(data.get('versements') or [])
 
-        if data.get('versements'):
-            for v in data['versements']:
+        if versements_list:
+            for v in versements_list:
                 date_val = v.get('payment_date') or v.get('activity_date') or v.get('date') or datetime.now()
                 date_str = date_val.strftime("%Y-%m-%d") if hasattr(date_val, 'strftime') else str(date_val).split(' ')[0]
                 amount = _safe_float(v.get('amount'))

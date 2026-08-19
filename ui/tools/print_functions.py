@@ -47,7 +47,38 @@ def _thermal_is_credit_client_entry(entry):
 
 
 def _thermal_payment_entries(data):
-    return data.get("versements") or data.get("payments_history") or data.get("payments") or []
+    entries = data.get("versements") or data.get("payments_history") or data.get("payments") or []
+    return _consolidate_thermal_versements(entries)
+
+
+def _consolidate_thermal_versements(versements_list):
+    """Consolidates negative payments (refunds/cash returns) directly into preceding payments."""
+    if not versements_list:
+        return []
+    consolidated = []
+    for v in versements_list:
+        item_copy = dict(v)
+        amt = _thermal_payment_amount(item_copy)
+        if amt < 0:
+            rem_ref = abs(amt)
+            for prev in reversed(consolidated):
+                prev_amt = _thermal_payment_amount(prev)
+                if prev_amt > 0:
+                    deduct = min(prev_amt, rem_ref)
+                    new_amt = prev_amt - deduct
+                    prev['amount'] = new_amt
+                    if 'paid_amount' in prev:
+                        prev['paid_amount'] = new_amt
+                    rem_ref -= deduct
+                    if rem_ref <= 0.001:
+                        break
+        else:
+            consolidated.append(item_copy)
+    filtered = [
+        v for v in consolidated
+        if _thermal_payment_amount(v) > 0.001 or _thermal_payment_weight(v) > 0.001
+    ]
+    return filtered if filtered else consolidated
 
 
 def _thermal_first_value(entry, *keys, default=None):
@@ -762,11 +793,12 @@ def _draw_thermal_receipt(painter, width, data, tc, doc_type):
         # 🟢 قراءة الإعداد ديناميكياً من thermal_config
         show_rate = tc.get("show_versement_rate", False)
         
+        thermal_versements = _consolidate_thermal_versements(data.get('versements', []))
         if versement_kind == "VERSEMENT_LIBRE":
             headers = ["Date", "Montant"]
             ratios = [0.45, 0.55]
             rows = []
-            for v in data.get('versements', []):
+            for v in thermal_versements:
                 d_str = _thermal_payment_datetime(v)[:10]
                 amt = f"{_thermal_payment_amount(v):,.2f} {currency}"
                 rows.append([d_str, amt])
@@ -779,17 +811,14 @@ def _draw_thermal_receipt(painter, width, data, tc, doc_type):
                 ratios = [0.25, 0.35, 0.20, 0.20]
 
             rows = []
-            for v in data.get('versements', []):
+            for v in thermal_versements:
                 d_str = _thermal_payment_datetime(v)[:10]
                 op_num = _thermal_entry_versement_number(v)
                 amt_val = _thermal_payment_amount(v)
-                if amt_val < 0:
-                    label = "Remboursement / Rendu"
-                else:
-                    label = "Versement sur produit" if versement_kind == "VERSEMENT_PRODUIT" else "Versement libre"
+                label = "Versement sur produit" if versement_kind == "VERSEMENT_PRODUIT" else "Versement libre"
                 op = f"{label} {op_num}" if op_num else label
                 w = _thermal_payment_weight(v)
-                w_str = f"+{w:.2f} Gr" if w > 0 else (f"-{abs(w):.2f} Gr" if w < 0 else "-")
+                w_str = f"+{w:.2f} Gr" if w > 0 else "-"
                 amt = f"{amt_val:,.2f} {currency}"
                 
                 if show_rate:

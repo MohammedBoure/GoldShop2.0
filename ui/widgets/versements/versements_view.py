@@ -578,7 +578,7 @@ class VersementsView(QWidget):
                 else:
                     item_desig = "Paiement Espèces / TPE"
 
-            pdf_data['versements'].append({
+            raw_payment_entry = {
                 "id": p.get('id', ''),
                 "payment_date": p.get('payment_date'),
                 "amount": total_money,
@@ -594,7 +594,29 @@ class VersementsView(QWidget):
                 "product_name": item_desig,
                 "item_name": item_desig,
                 "operation_number": v_num
-            })
+            }
+
+            if total_money < 0:
+                # Deduct negative amount directly from preceding positive payment(s)
+                remaining_refund = abs(total_money)
+                for prev in reversed(pdf_data['versements']):
+                    prev_amt = float(prev.get('amount') or 0)
+                    if prev_amt > 0:
+                        deduction = min(prev_amt, remaining_refund)
+                        prev['amount'] = prev_amt - deduction
+                        remaining_refund -= deduction
+                        if remaining_refund <= 0.001:
+                            break
+            else:
+                pdf_data['versements'].append(raw_payment_entry)
+
+        # Filter out any entries fully zeroed out unless it's the only one
+        positive_versements = [
+            v for v in pdf_data['versements']
+            if float(v.get('amount') or 0) > 0.001 or float(v.get('weight') or 0) > 0.001
+        ]
+        if positive_versements:
+            pdf_data['versements'] = positive_versements
 
         total_estimated_price = float(v_data.get('total_estimated_price_da', 0))
         pdf_data['total_weight'] = float(v_data.get('total_weight_g', 0))
