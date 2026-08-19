@@ -1120,23 +1120,10 @@ class ExcelJournalView(QWidget):
 
         act_view_products = menu.addAction("📦 Afficher la liste des produits & Codes-barres")
 
-        if is_versement:
-            menu.addSeparator()
-            act_edit_obs = menu.addAction("📝 Modifier l'observation")
-            action = menu.exec_(self.table.viewport().mapToGlobal(pos))
-            if not action: return
-            if action == act_copy_bc:
-                self.copy_barcode_to_clipboard(barcode)
-            elif action == act_view_products:
-                self.show_sale_products(sale_id)
-            elif action == act_edit_obs:
-                if is_pure_vp:
-                    self.edit_versement_observation(item_id, current_obs)
-                else:
-                    self.edit_observation(sale_id, item_id, current_obs)
-            return
+        act_edit_weight = None
+        if not is_versement:
+            act_edit_weight = menu.addAction("⚖️ Modifier le Poids Sorti (P.S)")
 
-        act_edit_weight = menu.addAction("⚖️ Modifier le Poids Sorti (P.S)")
         menu.addSeparator()
 
         # ── خيار 1: تحميل PDF ──
@@ -1164,11 +1151,18 @@ class ExcelJournalView(QWidget):
         # ── باقي الخيارات ──
         act_details = menu.addAction("ℹ️ Détails complets et Bénéfice (Faaida)")
         menu.addSeparator()
-        act_edit = menu.addAction("✏️ Modifier les montants de cette vente")
-        act_edit_seller = menu.addAction("Modifier le vendeur")
-        act_edit_obs = menu.addAction("📝 Modifier l'observation")
-        menu.addSeparator()
-        act_del = menu.addAction("🗑️ Supprimer (Annuler) cette vente")
+
+        act_edit = None
+        act_edit_seller = None
+        act_del = None
+        if not is_versement:
+            act_edit = menu.addAction("✏️ Modifier les montants de cette vente")
+            act_edit_seller = menu.addAction("Modifier le vendeur")
+            act_edit_obs = menu.addAction("📝 Modifier l'observation")
+            menu.addSeparator()
+            act_del = menu.addAction("🗑️ Supprimer (Annuler) cette vente")
+        else:
+            act_edit_obs = menu.addAction("📝 Modifier l'observation")
 
         action = menu.exec_(self.table.viewport().mapToGlobal(pos))
         if not action: return
@@ -1177,7 +1171,7 @@ class ExcelJournalView(QWidget):
             self.copy_barcode_to_clipboard(barcode)
         elif action == act_view_products:
             self.show_sale_products(sale_id)
-        elif action == act_edit_weight:
+        elif act_edit_weight and action == act_edit_weight:
             self.edit_p_s(row)
         elif action == act_print_pdf:
             self.print_invoice_pdf(sale_id)
@@ -1189,13 +1183,16 @@ class ExcelJournalView(QWidget):
             self.prompt_custom_note_and_print(sale_id)
         elif action == act_details:
             self.show_sale_details(sale_id)
-        elif action == act_edit:
+        elif act_edit and action == act_edit:
             self.edit_sale(sale_id, cash, tpe, oc, euro, dollar, impos)
-        elif action == act_edit_seller:
+        elif act_edit_seller and action == act_edit_seller:
             self.edit_seller(sale_id, seller_id)
         elif action == act_edit_obs:
-            self.edit_observation(sale_id, item_id, current_obs)
-        elif action == act_del:
+            if is_pure_vp:
+                self.edit_versement_observation(item_id, current_obs)
+            else:
+                self.edit_observation(sale_id, item_id, current_obs)
+        elif act_del and action == act_del:
             self.delete_sale(sale_id)
 
     def _add_action_btn(self, icon_name, tooltip, bg_color, hover_color, callback, enabled=True):
@@ -1243,45 +1240,75 @@ class ExcelJournalView(QWidget):
         if barcode:
             self._add_action_btn("fa5s.copy", f"Copier le Code-barres ({barcode})", "#2c3e50", "#34495e", lambda: self.copy_barcode_to_clipboard(barcode))
 
-        if is_versement:
+        if not is_versement:
+            # زر تعديل الوزن P.S للمبيعات العادية فقط
+            self._add_action_btn("fa5s.weight-hanging", "Modifier le Poids Sorti (P.S)", "#16a085", "#1abc9c", lambda: self.edit_p_s(row))
+
+        self._add_action_btn("fa5s.info-circle", "Détails complets et Bénéfice (Faaida)", "#3498db", "#2980b9", lambda: self.show_sale_details(sale_id))
+
+        # أزرار الطباعة لكافة العمليات (بما فيها الفواتير وعمليات العربون)
+        self._add_action_btn("fa5s.file-pdf", "Télécharger PDF (Aperçu)", "#e74c3c", "#c0392b", lambda: self.print_invoice_pdf(sale_id))
+        self._add_action_btn("fa5s.print", f"Imprimer directement → {pdf_printer}" if pdf_printer else "Imprimer directement (non configurée)", "#9b59b6", "#8e44ad", lambda: self.print_invoice_pdf(sale_id, open_pdf=False, direct=True), enabled=bool(pdf_printer))
+        self._add_action_btn("fa5s.receipt", f"Imprimer sur thermique → {thermal_printer}" if thermal_printer else "Imprimer sur thermique (non configurée)", "#e67e22", "#d35400", lambda: self.print_invoice_thermal(sale_id), enabled=bool(thermal_printer))
+        self._add_action_btn("fa5s.file-signature", "Imprimer avec Note personnalisée (Tactile)", "#16a085", "#1abc9c", lambda: self.prompt_custom_note_and_print(sale_id))
+
+        if not is_versement:
+            cash = item.data(Qt.UserRole + 2)
+            tpe = item.data(Qt.UserRole + 3)
+            oc = item.data(Qt.UserRole + 4)
+            euro = item.data(Qt.UserRole + 5)
+            dollar = item.data(Qt.UserRole + 6)
+            impos = item.data(Qt.UserRole + 7)
+            seller_id = item.data(Qt.UserRole + 8)
+            self._add_action_btn("fa5s.edit", "Modifier les montants de cette vente", "#27ae60", "#2ecc71", lambda: self.edit_sale(sale_id, cash, tpe, oc, euro, dollar, impos))
+            self._add_action_btn("fa5s.user-edit", "Modifier le vendeur", "#16a085", "#1abc9c", lambda: self.edit_seller(sale_id, seller_id))
+            self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, item_id, current_obs))
+            self._add_action_btn("fa5s.trash-alt", "Supprimer (Annuler) cette vente", "#c0392b", "#962d2d", lambda: self.delete_sale(sale_id))
+        else:
             current_vrs_obs = str(raw_obs if raw_obs is not None else (self.table.item(row, 8).text() if self.table.item(row, 8) else ""))
             if is_pure_vp:
                 self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_versement_observation(item_id, current_vrs_obs))
             else:
                 self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, item_id, current_vrs_obs))
-            return
-
-        # زر تعديل الوزن P.S للمبيعات العادية فقط
-        self._add_action_btn("fa5s.weight-hanging", "Modifier le Poids Sorti (P.S)", "#16a085", "#1abc9c", lambda: self.edit_p_s(row))
-
-        cash = item.data(Qt.UserRole + 2)
-        tpe = item.data(Qt.UserRole + 3)
-        oc = item.data(Qt.UserRole + 4)
-        euro = item.data(Qt.UserRole + 5)
-        dollar = item.data(Qt.UserRole + 6)
-        impos = item.data(Qt.UserRole + 7)
-        seller_id = item.data(Qt.UserRole + 8)
-
-        item_obs = self.table.item(row, 8)
-        current_obs = str(raw_obs if raw_obs is not None else (item_obs.text() if item_obs else ""))
-
-        pdf_printer = self._get_pdf_printer_name()
-        thermal_printer = self._get_thermal_printer_name()
-
-        self._add_action_btn("fa5s.info-circle", "Détails complets et Bénéfice (Faaida)", "#3498db", "#2980b9", lambda: self.show_sale_details(sale_id))
-        self._add_action_btn("fa5s.file-pdf", "Télécharger PDF (Aperçu)", "#e74c3c", "#c0392b", lambda: self.print_invoice_pdf(sale_id))
-        self._add_action_btn("fa5s.print", f"Imprimer directement → {pdf_printer}" if pdf_printer else "Imprimer directement (non configurée)", "#9b59b6", "#8e44ad", lambda: self.print_invoice_pdf(sale_id, open_pdf=False, direct=True), enabled=bool(pdf_printer))
-        self._add_action_btn("fa5s.receipt", f"Imprimer sur thermique → {thermal_printer}" if thermal_printer else "Imprimer sur thermique (non configurée)", "#e67e22", "#d35400", lambda: self.print_invoice_thermal(sale_id), enabled=bool(thermal_printer))
-        self._add_action_btn("fa5s.file-signature", "Imprimer avec Note personnalisée (Tactile)", "#16a085", "#1abc9c", lambda: self.prompt_custom_note_and_print(sale_id))
-        self._add_action_btn("fa5s.edit", "Modifier les montants de cette vente", "#27ae60", "#2ecc71", lambda: self.edit_sale(sale_id, cash, tpe, oc, euro, dollar, impos))
-        self._add_action_btn("fa5s.user-edit", "Modifier le vendeur", "#16a085", "#1abc9c", lambda: self.edit_seller(sale_id, seller_id))
-        self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, item_id, current_obs))
-        self._add_action_btn("fa5s.trash-alt", "Supprimer (Annuler) cette vente", "#c0392b", "#962d2d", lambda: self.delete_sale(sale_id))
 
     # ──────────────────────────────────────────────────────────────
     # طباعة PDF (تحميل أو مباشرة على طابعة PDF)
     # ──────────────────────────────────────────────────────────────
     def print_invoice_pdf(self, sale_id, open_pdf=True, direct=False, invoice_note=""):
+        if isinstance(sale_id, str) and str(sale_id).startswith("VRS_"):
+            v_id = int(str(sale_id).replace("VRS_", ""))
+            try:
+                from ui.widgets.versements.versements_view import VersementsView
+                from ui.tools.invoice_generator import ReceiptGenerator
+                v_view = VersementsView(self.manager)
+                pdf_data, v_data = v_view._prepare_versement_data(v_id)
+                if not v_data:
+                    QMessageBox.warning(self, "Erreur", "Données du versement introuvables.")
+                    return
+                output_dir = os.path.abspath("factures/versements")
+                os.makedirs(output_dir, exist_ok=True)
+                output_path = os.path.join(output_dir, f"Bon_Versement_{v_id}.pdf")
+                direct_printer = self._get_pdf_printer_name() if direct else ""
+                if direct and not direct_printer:
+                    QMessageBox.warning(self, "Aucune imprimante PDF", "Aucune imprimante PDF n'est configurée.")
+                    return
+                if not pdf_data.get('items') or v_data.get('type_versement') == 'A_VIDE':
+                    ReceiptGenerator.generate_global_versement_receipt(pdf_data, output_path=output_path, direct_printer_name=direct_printer)
+                else:
+                    ReceiptGenerator.generate_product_versement_receipt(pdf_data, output_path=output_path, direct_printer_name=direct_printer)
+                if open_pdf:
+                    from PySide6.QtGui import QDesktopServices
+                    from PySide6.QtCore import QUrl
+                    QDesktopServices.openUrl(QUrl.fromLocalFile(output_path))
+                elif direct:
+                    QMessageBox.information(self, "Impression PDF envoyée", f"Le Bon de versement a été envoyé à :\n{direct_printer}")
+                return
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                QMessageBox.critical(self, "Erreur d'impression", f"Impossible de générer le Bon de versement :\n{e}")
+                return
+
         sale = self.manager.sales.get_sale_details(sale_id)
         if not sale:
             QMessageBox.warning(self, "Erreur", "Détails de la vente introuvables.")
@@ -1391,6 +1418,43 @@ class ExcelJournalView(QWidget):
     # طباعة حرارية مباشرة (QPainter → الطابعة الحرارية)
     # ──────────────────────────────────────────────────────────────
     def print_invoice_thermal(self, sale_id, invoice_note=""):
+        if isinstance(sale_id, str) and str(sale_id).startswith("VRS_"):
+            v_id = int(str(sale_id).replace("VRS_", ""))
+            thermal_printer = self._get_thermal_printer_name()
+            if not thermal_printer:
+                QMessageBox.warning(
+                    self, "Aucune imprimante thermique",
+                    "Aucune imprimante thermique n'est configurée.\n\n"
+                    "Veuillez aller dans Paramètres → Impression Thermique\n"
+                    "et sélectionner une imprimante."
+                )
+                return
+            try:
+                from ui.widgets.versements.versements_view import VersementsView
+                from ui.tools.print_functions import print_thermal_bon_versement
+                v_view = VersementsView(self.manager)
+                pdf_data, v_data = v_view._prepare_versement_data(v_id)
+                if not v_data:
+                    QMessageBox.warning(self, "Erreur", "Données du versement introuvables.")
+                    return
+                if invoice_note:
+                    pdf_data['general_note'] = invoice_note
+                    pdf_data['invoice_note'] = invoice_note
+                print_thermal_bon_versement(pdf_data, calculate_only=False, printer_name=thermal_printer)
+                QMessageBox.information(
+                    self, "Impression thermique envoyée",
+                    f"Le ticket de versement a été envoyé à l'imprimante thermique :\n{thermal_printer}"
+                )
+                return
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                QMessageBox.critical(
+                    self, "Erreur thermique",
+                    f"Erreur lors de l'impression thermique :\n{e}"
+                )
+                return
+
         sale = self.manager.sales.get_sale_details(sale_id)
         if not sale:
             QMessageBox.warning(self, "Erreur", "Détails de la vente introuvables.")
@@ -1496,15 +1560,35 @@ class ExcelJournalView(QWidget):
     # طباعة مع ملاحظة مخصصة (تدعم شاشات اللمس عبر الكيبورد الافتراضي)
     # ──────────────────────────────────────────────────────────────
     def prompt_custom_note_and_print(self, sale_id):
-        sale = self.manager.sales.get_sale_details(sale_id)
-        if not sale:
-            QMessageBox.warning(self, "Erreur", "Détails de la vente introuvables.")
-            return
-
-        from ui.tools.invoice_generator import _clean_facture_number
-        clean_fac_num = _clean_facture_number(sale.get('receipt_number', ''), sale_id=sale_id)
-        client_name = sale.get('client_name') or 'Passager'
-        default_note = str(sale.get('notes') or sale.get('observation') or '').strip()
+        if isinstance(sale_id, str) and str(sale_id).startswith("VRS_"):
+            v_id = int(str(sale_id).replace("VRS_", ""))
+            client_name = "Passager"
+            default_note = ""
+            try:
+                with self.manager.db.get_db_connection() as conn:
+                    cursor = conn.cursor(dictionary=True)
+                    cursor.execute("""
+                        SELECT v.id, c.name as client_name, v.notes
+                        FROM Versements v
+                        LEFT JOIN Clients c ON v.client_id = c.id
+                        WHERE v.id = %s
+                    """, (v_id,))
+                    v_row = cursor.fetchone()
+                    if v_row:
+                        client_name = v_row.get('client_name') or 'Passager'
+                        default_note = str(v_row.get('notes') or '').strip()
+            except Exception:
+                pass
+            clean_fac_num = f"VRS-{v_id:05d}"
+        else:
+            sale = self.manager.sales.get_sale_details(sale_id)
+            if not sale:
+                QMessageBox.warning(self, "Erreur", "Détails de la vente introuvables.")
+                return
+            from ui.tools.invoice_generator import _clean_facture_number
+            clean_fac_num = _clean_facture_number(sale.get('receipt_number', ''), sale_id=sale_id)
+            client_name = sale.get('client_name') or 'Passager'
+            default_note = str(sale.get('notes') or sale.get('observation') or '').strip()
 
         pdf_printer = self._get_pdf_printer_name()
         thermal_printer = self._get_thermal_printer_name()
