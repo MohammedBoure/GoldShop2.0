@@ -200,10 +200,10 @@
         "domain": "rtxa",
         "token": "7c592332-77e7-4f81-b7a0-ba14f03cf0e5",
         "interval_minutes": 30.0,
-        "last_ip": "105.110.199.71",
+        "last_ip": "105.111.10.61",
         "last_status": "ok",
         "last_message": "DuckDNS updated successfully.",
-        "last_update_at": "2026-08-19T13:50:23"
+        "last_update_at": "2026-08-19T19:31:11"
     },
     "print_settings": {
         "default": {

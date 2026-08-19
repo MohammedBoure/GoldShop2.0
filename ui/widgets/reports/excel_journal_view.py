@@ -1233,6 +1233,9 @@ class ExcelJournalView(QWidget):
         raw_obs = item.data(Qt.UserRole + 9)
         barcode = str(item.data(Qt.UserRole + 10) or "").strip()
 
+        pdf_printer = self._get_pdf_printer_name()
+        thermal_printer = self._get_thermal_printer_name()
+
         # زر عرض المنتجات والباركودات
         self._add_action_btn("fa5s.boxes", "Afficher la liste des produits & Codes-barres", "#8e44ad", "#9b59b6", lambda: self.show_sale_products(sale_id))
 
@@ -1246,7 +1249,7 @@ class ExcelJournalView(QWidget):
 
         self._add_action_btn("fa5s.info-circle", "Détails complets et Bénéfice (Faaida)", "#3498db", "#2980b9", lambda: self.show_sale_details(sale_id))
 
-        # أزرار الطباعة لكافة العمليات (بما فيها الفواتير وعمليات العربون)
+        # أزرار الطباعة لكافة العمليات (بما فيها الفواتير وعمليات العربون - مخرجات فاتورة بيع قياسية)
         self._add_action_btn("fa5s.file-pdf", "Télécharger PDF (Aperçu)", "#e74c3c", "#c0392b", lambda: self.print_invoice_pdf(sale_id))
         self._add_action_btn("fa5s.print", f"Imprimer directement → {pdf_printer}" if pdf_printer else "Imprimer directement (non configurée)", "#9b59b6", "#8e44ad", lambda: self.print_invoice_pdf(sale_id, open_pdf=False, direct=True), enabled=bool(pdf_printer))
         self._add_action_btn("fa5s.receipt", f"Imprimer sur thermique → {thermal_printer}" if thermal_printer else "Imprimer sur thermique (non configurée)", "#e67e22", "#d35400", lambda: self.print_invoice_thermal(sale_id), enabled=bool(thermal_printer))
@@ -1271,45 +1274,117 @@ class ExcelJournalView(QWidget):
             else:
                 self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, item_id, current_vrs_obs))
 
-    # ──────────────────────────────────────────────────────────────
-    # طباعة PDF (تحميل أو مباشرة على طابعة PDF)
-    # ──────────────────────────────────────────────────────────────
-    def print_invoice_pdf(self, sale_id, open_pdf=True, direct=False, invoice_note=""):
+    def _get_sale_or_versement_details(self, sale_id):
+        """
+        جلب أو تجهيز بيانات الفاتورة القياسية لعملية بيع عادية أو عملية عربون (Versement)
+        بحيث يتم دائماً استخراج فاتورة بيع متكاملة (Facture) للزبون من واجهة اليومية.
+        """
         if isinstance(sale_id, str) and str(sale_id).startswith("VRS_"):
             v_id = int(str(sale_id).replace("VRS_", ""))
+            # 1. البحث عما إذا كانت هناك فاتورة بيع نهائية مسجلة لعملية العربون
             try:
-                from ui.widgets.versements.versements_view import VersementsView
-                from ui.tools.invoice_generator import ReceiptGenerator
-                v_view = VersementsView(self.manager)
-                pdf_data, v_data = v_view._prepare_versement_data(v_id)
-                if not v_data:
-                    QMessageBox.warning(self, "Erreur", "Données du versement introuvables.")
-                    return
-                output_dir = os.path.abspath("factures/versements")
-                os.makedirs(output_dir, exist_ok=True)
-                output_path = os.path.join(output_dir, f"Bon_Versement_{v_id}.pdf")
-                direct_printer = self._get_pdf_printer_name() if direct else ""
-                if direct and not direct_printer:
-                    QMessageBox.warning(self, "Aucune imprimante PDF", "Aucune imprimante PDF n'est configurée.")
-                    return
-                if not pdf_data.get('items') or v_data.get('type_versement') == 'A_VIDE':
-                    ReceiptGenerator.generate_global_versement_receipt(pdf_data, output_path=output_path, direct_printer_name=direct_printer)
-                else:
-                    ReceiptGenerator.generate_product_versement_receipt(pdf_data, output_path=output_path, direct_printer_name=direct_printer)
-                if open_pdf:
-                    from PySide6.QtGui import QDesktopServices
-                    from PySide6.QtCore import QUrl
-                    QDesktopServices.openUrl(QUrl.fromLocalFile(output_path))
-                elif direct:
-                    QMessageBox.information(self, "Impression PDF envoyée", f"Le Bon de versement a été envoyé à :\n{direct_printer}")
-                return
+                with self.manager.db.get_db_connection() as conn:
+                    cursor = conn.cursor(dictionary=True)
+                    cursor.execute("SELECT id FROM Sales WHERE receipt_number = %s ORDER BY id DESC LIMIT 1", (f"VRS-{v_id:05d}",))
+                    sale_row = cursor.fetchone()
+                    if sale_row:
+                        sale_details = self.manager.sales.get_sale_details(sale_row['id'])
+                        if sale_details:
+                            return sale_details
+            except Exception:
+                pass
+
+            # 2. إذا لم تُسجل فاتورة نهائية بعد، تجهيز كائن فاتورة بيع كامل من بيانات العربون
+            try:
+                with self.manager.db.get_db_connection() as conn:
+                    cursor = conn.cursor(dictionary=True)
+                    cursor.execute("""
+                        SELECT v.*, c.name as client_name, c.phone as client_phone
+                        FROM Versements v
+                        LEFT JOIN Clients c ON v.client_id = c.id
+                        WHERE v.id = %s
+                    """, (v_id,))
+                    v_row = cursor.fetchone()
+                    if not v_row:
+                        return None
+
+                    cursor.execute("""
+                        SELECT vi.*, COALESCE(i.barcode, '') as barcode,
+                               COALESCE(i.selling_price, 0) as inventory_selling_price,
+                               COALESCE(i.weight, 0) as inventory_weight
+                        FROM Versement_Items vi
+                        LEFT JOIN Inventory i ON vi.inventory_id = i.id
+                        WHERE vi.versement_id = %s AND vi.item_status != 'ANNULE'
+                    """, (v_id,))
+                    v_items = cursor.fetchall()
+
+                    cursor.execute("""
+                        SELECT p.*
+                        FROM Versement_Payments p
+                        WHERE p.versement_id = %s
+                        ORDER BY p.payment_date ASC, p.id ASC
+                    """, (v_id,))
+                    v_payments = cursor.fetchall()
+
+                from database.versement import build_versement_payment_summary
+                payment_summary = build_versement_payment_summary(v_payments)
+
+                mapped_items = []
+                total_items_price = 0.0
+                for it in v_items:
+                    item_type = str(it.get('item_type') or 'WEIGHT').upper()
+                    qty = max(1, int(it.get('reserved_quantity') or 1)) if item_type == 'PIECE' else 1
+                    w = float(it.get('weight') or it.get('inventory_weight') or 0.0)
+                    sp = float(it.get('selling_price') or it.get('inventory_selling_price') or 0.0)
+                    total_price = sp * qty if item_type == 'PIECE' else sp
+                    total_items_price += total_price
+                    mapped_items.append({
+                        'id': it.get('id'),
+                        'name': it.get('designation') or 'Article Versement',
+                        'item_name': it.get('designation') or 'Article Versement',
+                        'barcode': it.get('barcode', ''),
+                        'item_type': item_type,
+                        'sold_weight_g': w,
+                        'sold_quantity': qty,
+                        'unit_price_da': sp,
+                        'total_price_da': total_price,
+                        'custom_note': str(it.get('notes') or ''),
+                    })
+
+                total_brut = total_items_price if total_items_price > 0 else float(payment_summary.get('total_brut_da', 0))
+                discount = float(payment_summary.get('total_remise_da', 0))
+                net = max(0.0, total_brut - discount) if total_brut > 0 else float(payment_summary.get('net_to_pay_da', 0))
+
+                return {
+                    'id': v_id,
+                    'receipt_number': f"VRS-{v_id:05d}",
+                    'client_name': v_row.get('client_name') or 'Passager',
+                    'client_phone': v_row.get('client_phone') or '',
+                    'total_amount_da': total_brut,
+                    'discount_da': discount,
+                    'net_to_pay_da': net,
+                    'cash_paid_da': float(payment_summary.get('cash_paid_da', 0)),
+                    'tpe_paid_da': float(payment_summary.get('tpe_paid_da', 0)),
+                    'old_gold_weight_g': float(payment_summary.get('old_gold_weight_g', 0)),
+                    'items': mapped_items,
+                    'notes': v_row.get('notes') or '',
+                    'created_at': v_row.get('created_at'),
+                    'versement_payment_summary': payment_summary,
+                    'payments_history': v_payments,
+                }
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                QMessageBox.critical(self, "Erreur d'impression", f"Impossible de générer le Bon de versement :\n{e}")
-                return
+                return None
 
-        sale = self.manager.sales.get_sale_details(sale_id)
+        # عملية بيع عادية
+        return self.manager.sales.get_sale_details(sale_id)
+
+    # ──────────────────────────────────────────────────────────────
+    # طباعة فاتورة PDF (تحميل أو مباشرة على طابعة PDF)
+    # ──────────────────────────────────────────────────────────────
+    def print_invoice_pdf(self, sale_id, open_pdf=True, direct=False, invoice_note=""):
+        sale = self._get_sale_or_versement_details(sale_id)
         if not sale:
             QMessageBox.warning(self, "Erreur", "Détails de la vente introuvables.")
             return
@@ -1415,47 +1490,10 @@ class ExcelJournalView(QWidget):
             QMessageBox.critical(self, "Erreur", f"Impossible de générer la facture:\n{e}")
 
     # ──────────────────────────────────────────────────────────────
-    # طباعة حرارية مباشرة (QPainter → الطابعة الحرارية)
+    # طباعة حرارية مباشرة لفاتورة البيع (QPainter → الطابعة الحرارية)
     # ──────────────────────────────────────────────────────────────
     def print_invoice_thermal(self, sale_id, invoice_note=""):
-        if isinstance(sale_id, str) and str(sale_id).startswith("VRS_"):
-            v_id = int(str(sale_id).replace("VRS_", ""))
-            thermal_printer = self._get_thermal_printer_name()
-            if not thermal_printer:
-                QMessageBox.warning(
-                    self, "Aucune imprimante thermique",
-                    "Aucune imprimante thermique n'est configurée.\n\n"
-                    "Veuillez aller dans Paramètres → Impression Thermique\n"
-                    "et sélectionner une imprimante."
-                )
-                return
-            try:
-                from ui.widgets.versements.versements_view import VersementsView
-                from ui.tools.print_functions import print_thermal_bon_versement
-                v_view = VersementsView(self.manager)
-                pdf_data, v_data = v_view._prepare_versement_data(v_id)
-                if not v_data:
-                    QMessageBox.warning(self, "Erreur", "Données du versement introuvables.")
-                    return
-                if invoice_note:
-                    pdf_data['general_note'] = invoice_note
-                    pdf_data['invoice_note'] = invoice_note
-                print_thermal_bon_versement(pdf_data, calculate_only=False, printer_name=thermal_printer)
-                QMessageBox.information(
-                    self, "Impression thermique envoyée",
-                    f"Le ticket de versement a été envoyé à l'imprimante thermique :\n{thermal_printer}"
-                )
-                return
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                QMessageBox.critical(
-                    self, "Erreur thermique",
-                    f"Erreur lors de l'impression thermique :\n{e}"
-                )
-                return
-
-        sale = self.manager.sales.get_sale_details(sale_id)
+        sale = self._get_sale_or_versement_details(sale_id)
         if not sale:
             QMessageBox.warning(self, "Erreur", "Détails de la vente introuvables.")
             return
@@ -1560,35 +1598,15 @@ class ExcelJournalView(QWidget):
     # طباعة مع ملاحظة مخصصة (تدعم شاشات اللمس عبر الكيبورد الافتراضي)
     # ──────────────────────────────────────────────────────────────
     def prompt_custom_note_and_print(self, sale_id):
-        if isinstance(sale_id, str) and str(sale_id).startswith("VRS_"):
-            v_id = int(str(sale_id).replace("VRS_", ""))
-            client_name = "Passager"
-            default_note = ""
-            try:
-                with self.manager.db.get_db_connection() as conn:
-                    cursor = conn.cursor(dictionary=True)
-                    cursor.execute("""
-                        SELECT v.id, c.name as client_name, v.notes
-                        FROM Versements v
-                        LEFT JOIN Clients c ON v.client_id = c.id
-                        WHERE v.id = %s
-                    """, (v_id,))
-                    v_row = cursor.fetchone()
-                    if v_row:
-                        client_name = v_row.get('client_name') or 'Passager'
-                        default_note = str(v_row.get('notes') or '').strip()
-            except Exception:
-                pass
-            clean_fac_num = f"VRS-{v_id:05d}"
-        else:
-            sale = self.manager.sales.get_sale_details(sale_id)
-            if not sale:
-                QMessageBox.warning(self, "Erreur", "Détails de la vente introuvables.")
-                return
-            from ui.tools.invoice_generator import _clean_facture_number
-            clean_fac_num = _clean_facture_number(sale.get('receipt_number', ''), sale_id=sale_id)
-            client_name = sale.get('client_name') or 'Passager'
-            default_note = str(sale.get('notes') or sale.get('observation') or '').strip()
+        sale = self._get_sale_or_versement_details(sale_id)
+        if not sale:
+            QMessageBox.warning(self, "Erreur", "Détails de la vente introuvables.")
+            return
+
+        from ui.tools.invoice_generator import _clean_facture_number
+        clean_fac_num = _clean_facture_number(sale.get('receipt_number', ''), sale_id=sale_id)
+        client_name = sale.get('client_name') or 'Passager'
+        default_note = str(sale.get('notes') or sale.get('observation') or '').strip()
 
         pdf_printer = self._get_pdf_printer_name()
         thermal_printer = self._get_thermal_printer_name()
