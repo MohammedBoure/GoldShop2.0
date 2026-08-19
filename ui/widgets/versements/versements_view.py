@@ -553,7 +553,7 @@ class VersementsView(QWidget):
                 shop_ppg, payment_value, remise_da
             )
             total_money = payment_value
-            total_weight_pay = poids_casse + poids_deduit
+            total_weight_pay = poids_deduit
 
             item_desig = p.get('item_designation', '')
             if item_desig:
@@ -563,6 +563,20 @@ class VersementsView(QWidget):
                         if w > 0 and f"({w:.2f}g)" not in item_desig and not item_desig.strip().endswith("g)"):
                             item_desig = f"{item_desig} ({w:.2f}g)"
                         break
+            else:
+                notes = str(p.get('notes') or '').strip()
+                if notes:
+                    item_desig = notes
+                elif total_money < 0:
+                    item_desig = "Rendu surplus / Remboursement"
+                elif poids_casse > 0:
+                    item_desig = f"Paiement Or Cassé ({poids_casse:.2f}g)"
+                elif montant_euro > 0:
+                    item_desig = f"Paiement Euro ({montant_euro:,.0f}€)"
+                elif montant_dollar > 0:
+                    item_desig = f"Paiement Dollar ({montant_dollar:,.0f}$)"
+                else:
+                    item_desig = "Paiement Espèces / TPE"
 
             pdf_data['versements'].append({
                 "id": p.get('id', ''),

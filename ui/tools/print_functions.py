@@ -782,15 +782,19 @@ def _draw_thermal_receipt(painter, width, data, tc, doc_type):
             for v in data.get('versements', []):
                 d_str = _thermal_payment_datetime(v)[:10]
                 op_num = _thermal_entry_versement_number(v)
-                label = "Versement sur produit" if versement_kind == "VERSEMENT_PRODUIT" else "Versement libre"
+                amt_val = _thermal_payment_amount(v)
+                if amt_val < 0:
+                    label = "Remboursement / Rendu"
+                else:
+                    label = "Versement sur produit" if versement_kind == "VERSEMENT_PRODUIT" else "Versement libre"
                 op = f"{label} {op_num}" if op_num else label
                 w = _thermal_payment_weight(v)
-                w_str = f"+{w:.2f} Gr" if w > 0 else "-"
-                amt = f"{_thermal_payment_amount(v):,.2f} {currency}"
+                w_str = f"+{w:.2f} Gr" if w > 0 else (f"-{abs(w):.2f} Gr" if w < 0 else "-")
+                amt = f"{amt_val:,.2f} {currency}"
                 
                 if show_rate:
                     rate = _thermal_payment_rate(v)
-                    rate_str = f"{rate:,.0f}" if rate > 0 else "-"
+                    rate_str = f"{rate:,.0f}" if (rate > 0 and amt_val > 0 and w > 0) else "-"
                     rows.append([d_str, op, w_str, rate_str, amt])
                 else:
                     rows.append([d_str, op, w_str, amt])

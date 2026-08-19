@@ -816,9 +816,9 @@ class ReceiptGenerator:
                 rate = _safe_float(v.get('metal_rate_at_payment'))
                 weight_str = ""
                 used_str = ""
-                raw_id = v.get('id', '')
-                v_id = abs(int(raw_id)) if str(raw_id).lstrip('-').isdigit() else ''
-                versements_html += f"<tr><td style='vertical-align:middle;'>{date_str}</td><td style='text-align:center; vertical-align:middle; font-weight:bold;'>{amount:,.2f} {currency} {used_str}</td></tr>"
+                amount_color = c_red if amount < 0 else c_grn
+                amount_str = f"{amount:,.2f} {currency}"
+                versements_html += f"<tr><td style='vertical-align:middle;'>{date_str}</td><td style='text-align:center; vertical-align:middle; font-weight:bold; color:{amount_color};'>{amount_str} {used_str}</td></tr>"
 
             versements_html += f"""
             <tr style="background-color:{c_th}; font-weight:bold; border-top:2px solid {c_txt};">
@@ -1037,18 +1037,36 @@ class ReceiptGenerator:
                             td_code_content_v = f"<img src='{b64_prod}' width='{bc_w}' height='{bc_h}'/><br><span style='font-size:{int(f_norm*0.8)}px;'>{v_barcode}</span>"
 
                 code_td_v = f"<td style='text-align:center; padding:4px 5px; border-bottom:1px solid #eee;'>{td_code_content_v}</td>" if show_code else ""
-                rate_td_v = (
-                    f"<td style=\"padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#555; text-align:center;\">{rate:,.2f} {currency}/g</td>"
-                    if show_payment_rate else ""
-                )
+                
+                if show_payment_rate:
+                    if amount <= 0 or weight <= 0 or rate <= 0:
+                        rate_str = "-"
+                    else:
+                        rate_str = f"{rate:,.2f} {currency}/g"
+                    rate_td_v = f'<td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#555; text-align:center;">{rate_str}</td>'
+                else:
+                    rate_td_v = ""
+
+                amount_color = c_red if amount < 0 else c_grn
+                amount_str = f"{amount:,.2f} {currency}"
+
+                if weight > 0:
+                    weight_str = f"+ {weight:.3f} g"
+                    weight_color = "#2980b9"
+                elif weight < 0:
+                    weight_str = f"- {abs(weight):.3f} g"
+                    weight_color = c_red
+                else:
+                    weight_str = "-"
+                    weight_color = "#7f8c8d"
 
                 versements_html += f"""
                 <tr>
                     <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#333333;">{date_str}</td>
                     <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#2c3e50; font-weight:bold;">{v_name}</td>
                     {code_td_v}
-                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:{c_grn}; text-align:center; font-weight:bold;">{amount:,.2f} {currency}</td>
-                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#2980b9; text-align:center;">+ {weight:.3f} g</td>
+                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:{amount_color}; text-align:center; font-weight:bold;">{amount_str}</td>
+                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:{weight_color}; text-align:center;">{weight_str}</td>
                     {rate_td_v}
                 </tr>
                 """

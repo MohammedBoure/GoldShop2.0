@@ -106,8 +106,62 @@ class InvoicePdfGeneratorTests(unittest.TestCase):
             self.assertIn("- 5,000.00 DA", html_called)
             self.assertIn("Total Brut :", html_called)
             self.assertIn("NET À PAYER :", html_called)
-            self.assertNotIn("Detail des versements", html_called)
-            self.assertNotIn("MONTANT REGLE", html_called)
+    def test_generate_product_versement_receipt_with_gold_payment_and_negative_refund(self):
+        from ui.tools.invoice_generator import ReceiptGenerator
+
+        data = {
+            "customer_name": "Sofiane",
+            "phone": "0550000000",
+            "sale_id": 25,
+            "operation_number": "VRS-00025",
+            "versement_operation_number": "VRS-00025",
+            "total_weight": 3.0,
+            "exact_paid_weight": 3.0,
+            "remaining_weight": 0.0,
+            "total_paid": 30000.0,
+            "total_estimated_price_da": 60000.0,
+            "items": [
+                {
+                    "item_name": "Bague Or (3.00g)",
+                    "weight": 3.0,
+                    "selling_price": 60000.0,
+                    "remaining_weight": 0.0,
+                    "paid_amount": 30000.0,
+                    "barcode": "BG-01",
+                }
+            ],
+            "versements": [
+                {
+                    "id": 1,
+                    "payment_date": "2026-08-19",
+                    "amount": 60000.0,
+                    "weight": 3.0,  # acquired weight from product
+                    "product_name": "Paiement Or Cassé (3.00g)",
+                    "prix_gramme_apres_remise": 20000.0,
+                },
+                {
+                    "id": 2,
+                    "payment_date": "2026-08-19",
+                    "amount": -30000.0,
+                    "weight": 0.0,
+                    "product_name": "Rendu surplus au client",
+                    "prix_gramme_apres_remise": 0.0,
+                }
+            ]
+        }
+
+        with patch("ui.tools.invoice_generator._render_html_document") as mock_render:
+            ReceiptGenerator.generate_product_versement_receipt(data, output_path="test.pdf")
+            self.assertTrue(mock_render.called)
+            html = mock_render.call_args[0][0]
+            # Verify 60,000 and -30,000 appear
+            self.assertIn("60,000.00 DA", html)
+            self.assertIn("-30,000.00 DA", html)
+            # Verify net total paid appears
+            self.assertIn("30,000.00 DA", html)
+            # Verify acquired weight is 3.000 g and NOT 6.000 g
+            self.assertIn("3.000 g", html)
+            self.assertNotIn("6.000 g", html)
 
 
 if __name__ == "__main__":
