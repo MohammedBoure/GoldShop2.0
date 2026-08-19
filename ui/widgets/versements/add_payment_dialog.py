@@ -12,7 +12,10 @@ from PySide6.QtGui import QFont, QColor, QBrush
 
 from ui.tools.virtual_numpad import VirtualNumpad
 from ui.tools.virtual_keyboard import VirtualKeyboardDialog
-from database.versement import payment_value_da as calculate_payment_value_da
+from database.versement import (
+    payment_value_da as calculate_payment_value_da,
+    shop_price_per_gram,
+)
 
 
 class AddPaymentDialog(QDialog):
@@ -222,6 +225,7 @@ class AddPaymentDialog(QDialog):
         self.combo_target.addItem("📦 Dossier Global (Aucun article spécifique)", None)
         self._populate_target_combo()
         self.combo_target.currentIndexChanged.connect(lambda _: self.auto_calculate_poids_deduit())
+        self.combo_target.currentIndexChanged.connect(lambda _: self._refresh_surplus_banner())
 
         btn_details = QPushButton("ℹ️ Détails")
         btn_details.setStyleSheet("background-color: #2980b9; color: white; font-weight: bold; font-size: 13px; padding: 6px 12px; border-radius: 6px;")
@@ -245,16 +249,16 @@ class AddPaymentDialog(QDialog):
         self.banner_surplus.setStyleSheet("background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; padding: 6px;")
         lay_banner = QHBoxLayout(self.banner_surplus)
         lay_banner.setContentsMargins(8, 4, 8, 4)
-        lbl_s = QLabel(f"💡 <b>Surplus payé par le client :</b> <span style='color: #b45309; font-size: 14px;'>+{self.surplus_amount:,.0f} DA</span>")
-        lbl_s.setStyleSheet("font-size: 13px; color: #92400e;")
+        self.lbl_surplus_text = QLabel(f"💡 <b>Surplus payé par le client :</b> <span style='color: #b45309; font-size: 14px;'>+{self.surplus_amount:,.2f} DA</span>")
+        self.lbl_surplus_text.setStyleSheet("font-size: 13px; color: #92400e;")
         btn_auto_refund = QPushButton("💸 Rendre la monnaie")
         btn_auto_refund.setStyleSheet("background-color: #d97706; color: white; font-weight: bold; padding: 4px 10px; border-radius: 4px; font-size: 12px;")
         btn_auto_refund.setCursor(Qt.PointingHandCursor)
         btn_auto_refund.clicked.connect(self._auto_fill_surplus_refund)
-        lay_banner.addWidget(lbl_s, stretch=1)
+        lay_banner.addWidget(self.lbl_surplus_text, stretch=1)
         lay_banner.addWidget(btn_auto_refund)
         pay_layout.addWidget(self.banner_surplus)
-        if self.surplus_amount <= 0:
+        if self.surplus_amount <= 0.001:
             self.banner_surplus.hide()
 
         # اختيار طريقة الدفع
@@ -566,14 +570,65 @@ class AddPaymentDialog(QDialog):
                     QMessageBox.warning(self, "Erreur", f"Le prix final doit être entre 0 et {base_amount:,.2f} DA.")
 
     def _calculate_current_surplus(self):
-        """Calculate if customer has overpaid in prior payments (e.g. scrap gold / devises)"""
+        """Calculate if customer has overpaid in prior payments (e.g. scrap gold / devises) accurately based on net due."""
         if not self.v_data:
             return 0.0
         items = self.v_data.get('items', [])
         payments = self.v_data.get('payments', [])
-        total_estimated = sum(float(it.get('display_price') or it.get('selling_price') or 0) for it in items if it.get('item_status') != 'ANNULE')
+        selected_item_id = self.combo_target.currentData() if hasattr(self, 'combo_target') else None
+
+        if selected_item_id is not None:
+            # If target item is selected and has item-specific payments, calculate for this item
+            selected_item = next((it for it in items if it.get('item_id', it.get('id')) == selected_item_id), None)
+            if selected_item:
+                item_type = str(selected_item.get('item_type') or 'WEIGHT').upper()
+                w = float(selected_item.get('display_weight') or selected_item.get('weight') or 0)
+                ppg = shop_price_per_gram(items, selected_item_id)
+                if ppg <= 0:
+                    ppg = (float(selected_item.get('display_price') or selected_item.get('selling_price') or 0) / w) if w > 0 else 0
+                item_gross = (w * ppg) if item_type == 'WEIGHT' else float(selected_item.get('display_price') or selected_item.get('selling_price') or 0)
+                item_remise = sum(float(p.get('remise_da') or 0) for p in payments if p.get('versement_item_id') == selected_item_id)
+                item_net_due = max(0.0, item_gross - item_remise)
+                item_paid = sum(calculate_payment_value_da(p) for p in payments if p.get('versement_item_id') == selected_item_id)
+                if item_paid > 0:
+                    return max(0.0, round(item_paid - item_net_due, 2))
+
+        # Global dossier surplus calculation
+        gross_due = 0.0
+        for it in items:
+            if it.get('item_status') == 'ANNULE':
+                continue
+            item_type = str(it.get('item_type') or 'WEIGHT').upper()
+            w = float(it.get('display_weight') or it.get('weight') or 0)
+            it_id = it.get('item_id', it.get('id'))
+            ppg = shop_price_per_gram(items, it_id)
+            if ppg <= 0:
+                ppg = (float(it.get('display_price') or it.get('selling_price') or 0) / w) if w > 0 else 0
+            if item_type == 'WEIGHT':
+                gross_due += (w * ppg)
+            else:
+                gross_due += float(it.get('display_price') or it.get('selling_price') or 0)
+
+        if gross_due <= 0:
+            gross_due = float(self.v_data.get('total_estimated_price_da') or 0)
+
+        total_remise = sum(float(p.get('remise_da') or 0) for p in payments)
+        net_due = max(0.0, gross_due - total_remise)
         total_paid = sum(calculate_payment_value_da(p) for p in payments)
-        return max(0.0, total_paid - total_estimated)
+
+        return max(0.0, round(total_paid - net_due, 2))
+
+    def _refresh_surplus_banner(self):
+        self.surplus_amount = self._calculate_current_surplus()
+        if hasattr(self, 'lbl_surplus_text'):
+            self.lbl_surplus_text.setText(
+                f"💡 <b>Surplus payé par le client :</b> <span style='color: #b45309; font-size: 14px;'>+{self.surplus_amount:,.2f} DA</span>"
+            )
+        if hasattr(self, 'banner_surplus'):
+            if self.surplus_amount > 0.001:
+                self.banner_surplus.show()
+            else:
+                self.banner_surplus.hide()
 
     def _auto_fill_surplus_refund(self):
         """Automatically pre-fill cash refund with current overpayment surplus"""

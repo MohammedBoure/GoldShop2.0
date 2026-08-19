@@ -107,6 +107,32 @@ class VersementPricingTests(unittest.TestCase):
         self.assertEqual(summary["total_remise_da"], 500.0)
         self.assertAlmostEqual(summary["deducted_weight_g"], 1.55)
 
+    def test_scrap_gold_overpayment_surplus(self):
+        # User scenario: 4g scrap gold paid = 92,000 DA, due amount was 84,178.43 DA
+        items = [
+            {"item_id": 1, "item_status": "EN_COURS", "item_type": "WEIGHT", "weight": 4.20892, "selling_price": 84178.43}
+        ]
+        payments = [
+            {
+                "id": 1,
+                "montant_da": 92000,
+                "or_casse_g": 4.0,
+                "prix_gramme_jour_da": 23000,
+                "remise_da": 0,
+            }
+        ]
+        total_paid = sum(payment_value_da(p) for p in payments)
+        self.assertEqual(total_paid, 92000.0)
+
+        # Net due calculated from items and remises
+        ppg = shop_price_per_gram(items, 1)
+        gross_due = items[0]["weight"] * ppg
+        net_due = gross_due - sum(float(p.get("remise_da") or 0) for p in payments)
+        surplus = max(0.0, round(total_paid - net_due, 2))
+
+        self.assertAlmostEqual(net_due, 84178.43, places=2)
+        self.assertAlmostEqual(surplus, 7821.57, places=2)
+
 
 if __name__ == "__main__":
     unittest.main()
