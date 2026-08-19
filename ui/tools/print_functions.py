@@ -746,44 +746,55 @@ def _draw_thermal_receipt(painter, width, data, tc, doc_type):
         remise = float(data.get('discount', 0))
         net = float(data.get('net', data.get('net_to_pay', total_brut - remise)))
 
-        draw_text_absolute("Total TTC :", totals_x, y, f_norm)
-        draw_text_absolute(f"{total_brut:,.2f} {currency}", totals_x, y, f_norm, align_right=True, limit=totals_w); y += f_norm + 10
-        if remise > 0:
+        if remise > 0.001 and total_brut <= net:
+            total_brut = net + remise
+        elif total_brut <= 0 and data.get('items'):
+            total_brut = sum(float(it.get('cart_line_total', it.get('amount', 0))) for it in data['items'])
+            if remise > 0.001 and net <= 0:
+                net = max(0.0, total_brut - remise)
+        elif net <= 0 and total_brut > 0:
+            net = max(0.0, total_brut - remise)
+
+        if remise > 0.001:
+            draw_text_absolute("Total Brut :", totals_x, y, f_norm)
+            draw_text_absolute(f"{total_brut:,.2f} {currency}", totals_x, y, f_norm, align_right=True, limit=totals_w); y += f_norm + 10
             draw_text_absolute("Remise :", totals_x, y, f_norm)
-            draw_text_absolute(f"{remise:,.2f} {currency}", totals_x, y, f_norm, align_right=True, limit=totals_w); y += f_norm + 10
-        draw_text_absolute("Net à payer :", totals_x, y, f_norm)
-        draw_text_absolute(f"{net:,.2f} {currency}", totals_x, y, f_norm, align_right=True, limit=totals_w); y += f_norm + 25
+            draw_text_absolute(f"- {remise:,.2f} {currency}", totals_x, y, f_norm, align_right=True, limit=totals_w); y += f_norm + 10
+
+        draw_text_absolute("NET À PAYER :", totals_x, y, f_norm, bold=True)
+        draw_text_absolute(f"{net:,.2f} {currency}", totals_x, y, f_norm, bold=True, align_right=True, limit=totals_w); y += f_norm + 15
+
+        total_paid = float(data.get('total_paid') if data.get('total_paid') is not None else (float(data.get('cash_paid', 0)) + float(data.get('tpe_paid', 0))))
+        if total_paid > 0.001:
+            draw_text_absolute("Total Payé :", totals_x, y, f_norm)
+            draw_text_absolute(f"{total_paid:,.2f} {currency}", totals_x, y, f_norm, align_right=True, limit=totals_w); y += f_norm + 15
 
         t_weight = float(data.get('total_weight', 0))
-        if tc.get("show_weight", True) and t_weight > 0:
+        if tc.get("show_weight", True) and t_weight > 0.0001:
             painter.drawLine(m, y, width - m, y); y += 10
-            draw_text_center("Bilan Poids / ميزان الوزن", f_norm, bold=True)
-            p_weight = float(data.get('paid_weight_equiv', 0))
-            r_weight = float(data.get('remainder_weight', t_weight - p_weight))
-            
-            draw_text_absolute("Poids Payé (الوزن المدفوع):", m, y, f_norm)
-            draw_text_absolute(f"{p_weight:.2f} Gr", m, y, f_norm, align_right=True, limit=width-(2*m)); y += f_norm + 5
-            
-            draw_text_absolute("Poids Reste (الوزن الباقي):", m, y, f_norm)
-            draw_text_absolute(f"{r_weight:.2f} Gr", m, y, f_norm, align_right=True, limit=width-(2*m)); y += f_norm + 15
+            draw_text_absolute("Poids réglé en totalité :", m, y, f_norm, bold=True)
+            draw_text_absolute(f"{t_weight:.3f} g", m, y, f_norm, bold=True, align_right=True, limit=width-(2*m)); y += f_norm + 5
+            draw_text_absolute(f"الوزن مدفوع بالكامل ({t_weight:.3f} غرام)", m, y, f_norm, bold=True, align_right=True, limit=width-(2*m)); y += f_norm + 15
 
         history = data.get('payments_history', [])
         if tc.get("show_history", True) and history:
             painter.drawLine(m, y, width - m, y); y += 10
             draw_text_center("Historique des versements sur produit", f_norm, bold=True)
-            for p in history:
-                d_str = str(p.get('payment_date', ''))[:10]
-                amt = float(p.get('amount', 0))
-                draw_text_absolute(d_str, m, y, f_small)
-                draw_text_absolute(f"{amt:,.2f} {currency}", totals_x, y, f_small, align_right=True, limit=totals_w); y += f_small + 5
+            consolidated_hist = _consolidate_thermal_versements(history)
+            for p in consolidated_hist:
+                d_str = _thermal_payment_datetime(p)[:10]
+                amt = _thermal_payment_amount(p)
+                if amt > 0.001:
+                    draw_text_absolute(d_str, m, y, f_small)
+                    draw_text_absolute(f"{amt:,.2f} {currency}", totals_x, y, f_small, align_right=True, limit=totals_w); y += f_small + 5
 
         general_note = str(data.get('general_note') or data.get('invoice_note') or data.get('note') or data.get('notes') or '').strip()
         if general_note:
             painter.drawLine(m, y, width - m, y); y += 10
-            draw_text_absolute(f"Note / Obs : {general_note}", m, y, f_small, bold=True); y += f_small + 5
+            draw_text_absolute(f"Note / Observation : {general_note}", m, y, f_small, bold=True); y += f_small + 10
 
         y += 10
-        draw_text_absolute("Arrêter la présente facture à la somme de:", m, y, f_small-2); y += f_small + 5
+        draw_text_absolute("Arrêté la présente facture à la somme de:", m, y, f_small-2); y += f_small + 5
         draw_text_center(str(data.get('amount_in_words', '.............................................')), f_small)
 
     elif doc_type == "Versement":

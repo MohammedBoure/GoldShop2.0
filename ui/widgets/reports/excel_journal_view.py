@@ -1515,32 +1515,21 @@ class ExcelJournalView(QWidget):
         t_disc = max(float(sale.get('discount_da', 0)), v_remise)
         t_brut = float(sale.get('total_amount_da', 0))
         t_net = float(sale.get('net_to_pay_da', 0))
+        # ضبط Total Brut و Net في حال وجود تخفيض
         if t_disc > 0 and t_brut <= t_net:
             t_brut = t_net + t_disc
+        elif t_brut <= 0 and thermal_items:
+            t_brut = sum(float(it['cart_line_total']) for it in thermal_items)
+            if t_disc > 0 and t_net <= 0:
+                t_net = max(0.0, t_brut - t_disc)
+        elif t_net <= 0 and t_brut > 0:
+            t_net = max(0.0, t_brut - t_disc)
 
-        # تجهيز البيانات بالشكل الذي يتوقعه print_functions.py
-        thermal_items = []
-        total_weight = 0.0
-        for it in sale.get('items', []):
-            is_w = (it.get('item_type', 'WEIGHT') == 'WEIGHT')
-            w = float(it.get('sold_weight_g', 0)) if is_w else 0.0
-            q = float(it.get('sold_quantity', 1)) if not is_w else 0.0
-            if is_w:
-                total_weight += w
+        if t_disc > 0 and t_brut > 0 and len(thermal_items) == 1:
+            thermal_items[0]['cart_line_total'] = t_brut
+            thermal_items[0]['amount'] = t_brut
 
-            thermal_items.append({
-                'barcode': str(it.get('barcode') or it.get('inventory_barcode') or ''),
-                'name': str(it.get('name') or it.get('item_name') or 'Article'),
-                'itemName': str(it.get('name') or it.get('item_name') or 'Article'),
-                'item_type': it.get('item_type', 'WEIGHT'),
-                'cart_sold_weight': w,
-                'cart_sold_qty': q,
-                'weight': w,
-                'cart_line_total': float(it.get('total_price_da', 0)),
-                'amount': float(it.get('total_price_da', 0)),
-                'custom_note': str(it.get('custom_note') or ''),
-                'note': str(it.get('custom_note') or ''),
-            })
+        total_paid = float(v_summary.get('total_paid_da', 0)) if v_summary else (float(sale.get('cash_paid_da', 0)) + float(sale.get('tpe_paid_da', 0)))
 
         thermal_data = {
             'items': thermal_items,
@@ -1550,6 +1539,9 @@ class ExcelJournalView(QWidget):
             'discount': t_disc,
             'net': t_net,
             'net_to_pay': t_net,
+            'total_paid': total_paid,
+            'cash_paid': float(sale.get('cash_paid_da', 0)),
+            'tpe_paid': float(sale.get('tpe_paid_da', 0)),
             'total_weight': total_weight,
             'paid_weight_equiv': total_weight,
             'remainder_weight': 0.0,
