@@ -133,6 +133,62 @@ class VersementPricingTests(unittest.TestCase):
         self.assertAlmostEqual(net_due, 84178.43, places=2)
         self.assertAlmostEqual(surplus, 7821.57, places=2)
 
+    def test_calculate_versement_item_balances_equal_distribution_and_overflow(self):
+        from database.versement import calculate_versement_item_balances
+
+        items = [
+            {"item_id": 1, "item_status": "EN_COURS", "weight": 5.0, "selling_price": 50000.0},
+            {"item_id": 2, "item_status": "EN_COURS", "weight": 10.0, "selling_price": 100000.0},
+        ]
+
+        # Payment 1: Global payment of 6g and 60,000 DA
+        # Equal share: 3g and 30,000 DA each
+        payments_1 = [
+            {"id": 1, "montant_da": 60000, "poids_deduit_g": 6.0, "versement_item_id": None}
+        ]
+        bal_1 = calculate_versement_item_balances(items, payments_1)
+        self.assertAlmostEqual(bal_1[1]["deducted_g"], 3.0)
+        self.assertAlmostEqual(bal_1[1]["remaining_g"], 2.0)
+        self.assertAlmostEqual(bal_1[1]["paid_da"], 30000.0)
+        self.assertAlmostEqual(bal_1[2]["deducted_g"], 3.0)
+        self.assertAlmostEqual(bal_1[2]["remaining_g"], 7.0)
+        self.assertAlmostEqual(bal_1[2]["paid_da"], 30000.0)
+
+        # Payment 2: Additional global payment of 6g and 60,000 DA
+        # Item 1 only needs 2g and 20,000 DA. Its surplus (1g, 10,000 DA) transfers to Item 2!
+        # So Item 1 gets 2g (total 5g, 0g remaining). Item 2 gets 3g + 1g surplus = 4g (total 7g, 3g remaining).
+        payments_2 = payments_1 + [
+            {"id": 2, "montant_da": 60000, "poids_deduit_g": 6.0, "versement_item_id": None}
+        ]
+        bal_2 = calculate_versement_item_balances(items, payments_2)
+        self.assertAlmostEqual(bal_2[1]["deducted_g"], 5.0)
+        self.assertAlmostEqual(bal_2[1]["remaining_g"], 0.0)
+        self.assertAlmostEqual(bal_2[1]["paid_da"], 50000.0)
+        self.assertAlmostEqual(bal_2[1]["remaining_da"], 0.0)
+        self.assertAlmostEqual(bal_2[2]["deducted_g"], 7.0)
+        self.assertAlmostEqual(bal_2[2]["remaining_g"], 3.0)
+        self.assertAlmostEqual(bal_2[2]["paid_da"], 70000.0)
+        self.assertAlmostEqual(bal_2[2]["remaining_da"], 30000.0)
+
+    def test_calculate_versement_item_balances_direct_payment_and_overflow(self):
+        from database.versement import calculate_versement_item_balances
+
+        items = [
+            {"item_id": 1, "item_status": "EN_COURS", "weight": 4.0, "selling_price": 40000.0},
+            {"item_id": 2, "item_status": "EN_COURS", "weight": 6.0, "selling_price": 60000.0},
+        ]
+        # Direct payment of 5g (50,000 DA) to Item 1 (which only needs 4g).
+        # Surplus of 1g (10,000 DA) transfers to Item 2!
+        payments = [
+            {"id": 1, "montant_da": 50000, "poids_deduit_g": 5.0, "versement_item_id": 1}
+        ]
+        bal = calculate_versement_item_balances(items, payments)
+        self.assertAlmostEqual(bal[1]["deducted_g"], 4.0)
+        self.assertAlmostEqual(bal[1]["remaining_g"], 0.0)
+        self.assertAlmostEqual(bal[2]["deducted_g"], 1.0)
+        self.assertAlmostEqual(bal[2]["remaining_g"], 5.0)
+        self.assertAlmostEqual(bal[2]["paid_da"], 10000.0)
+
 
 if __name__ == "__main__":
     unittest.main()

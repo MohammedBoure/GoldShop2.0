@@ -15,6 +15,7 @@ from ui.tools.virtual_keyboard import VirtualKeyboardDialog
 from database.versement import (
     payment_value_da as calculate_payment_value_da,
     shop_price_per_gram,
+    calculate_versement_item_balances,
 )
 
 
@@ -466,12 +467,11 @@ class AddPaymentDialog(QDialog):
             item_weight = float(self.item_weights[selected_item_id] or 0)
             if item_price > 0 and item_weight > 0:
                 unit_ppg = item_price / item_weight
-                deductions = sum(
-                    float(p.get('poids_deduit_g') or 0)
-                    for p in (self.v_data.get('payments', []) if self.v_data else [])
-                    if p.get('versement_item_id') == selected_item_id
+                balances = calculate_versement_item_balances(
+                    self.v_data.get('items', []) if self.v_data else [],
+                    self.v_data.get('payments', []) if self.v_data else []
                 )
-                rem_weight = max(0.0, item_weight - deductions)
+                rem_weight = balances.get(selected_item_id, {}).get('remaining_g', item_weight)
                 return unit_ppg, rem_weight
 
         if self.v_data:
@@ -712,6 +712,7 @@ class AddPaymentDialog(QDialog):
         # جدول القطع
         items = self.v_data.get('items', [])
         payments = self.v_data.get('payments', [])
+        balances = calculate_versement_item_balances(items, payments)
         self.table_items.setRowCount(0)
 
         for i, item in enumerate(items):
@@ -720,8 +721,9 @@ class AddPaymentDialog(QDialog):
             w = float(item.get('display_weight') or item.get('weight') or 0)
             item_id = item.get('item_id') or item.get('id')
 
-            deductions = sum(float(p.get('poids_deduit_g') or 0) for p in payments if p.get('versement_item_id') == item_id)
-            reste = max(0.0, w - deductions)
+            bal = balances.get(item_id, {})
+            deductions = bal.get('deducted_g', 0.0)
+            reste = bal.get('remaining_g', max(0.0, w - deductions))
             price = float(item.get('display_price') or item.get('selling_price') or 0)
 
             it_desig = QTableWidgetItem(desig)
@@ -885,11 +887,6 @@ class AddPaymentDialog(QDialog):
                 return
 
             notes = self.inp_notes.text().strip()
-            if remise_da > 0:
-                remise_tag = f"[Remise: {remise_da:,.2f} DA]"
-                if remise_tag not in notes:
-                    notes = f"{notes} | {remise_tag}".strip(" |")
-
             selected_item_id = self.combo_target.currentData()
             montant_da_for_storage = cash if method_idx == 0 else montant_total_da
 

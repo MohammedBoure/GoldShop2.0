@@ -31,8 +31,9 @@ def get_invoice_note_values(manager):
 
 
 def create_invoice_note_combo(manager, current_value="", parent=None):
-    """Build the Versement equivalent of the POS ``À Vendre`` selector."""
+    """Build the Versement equivalent of the POS ``À Vendre`` selector with free manual typing support."""
     combo = QComboBox(parent)
+    combo.setEditable(True)
     combo.addItem(EMPTY_NOTE_LABEL, "")
 
     available_notes = get_invoice_note_values(manager)
@@ -40,12 +41,20 @@ def create_invoice_note_combo(manager, current_value="", parent=None):
         combo.addItem(note, note)
 
     current_note = normalize_custom_note(current_value)
-    if current_note and current_note not in available_notes:
-        combo.addItem(f"{current_note} (valeur actuelle)", current_note)
-        combo.setItemData(combo.count() - 1, "Cette valeur historique n'existe plus dans InvoiceNotes.", Qt.ToolTipRole)
+    if current_note:
+        if current_note not in available_notes:
+            combo.addItem(current_note, current_note)
+        current_index = combo.findText(current_note)
+        if current_index >= 0:
+            combo.setCurrentIndex(current_index)
+        else:
+            combo.setEditText(current_note)
+    else:
+        combo.setCurrentIndex(0)
 
-    current_index = combo.findData(current_note)
-    combo.setCurrentIndex(current_index if current_index >= 0 else 0)
+    if combo.lineEdit():
+        combo.lineEdit().setPlaceholderText("Note, observation ou À Vendre...")
+
     combo.setMaxVisibleItems(20)
     combo.setStyleSheet("font-size: 14px; padding: 5px;")
     return combo
@@ -54,13 +63,14 @@ def create_invoice_note_combo(manager, current_value="", parent=None):
 def selected_custom_note(combo):
     if combo is None:
         return ""
-    data = combo.currentData()
-    if data is not None and str(data).strip():
-        return normalize_custom_note(data)
-
     text = combo.currentText().strip() if hasattr(combo, 'currentText') else ""
     if text.endswith("(valeur actuelle)"):
         text = text.replace("(valeur actuelle)", "").strip()
     if text and text != EMPTY_NOTE_LABEL:
         return normalize_custom_note(text)
+
+    data = combo.currentData()
+    if data is not None and str(data).strip() and str(data) != EMPTY_NOTE_LABEL:
+        return normalize_custom_note(data)
     return ""
+

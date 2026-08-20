@@ -12,9 +12,11 @@ from PySide6.QtGui import QFont, QColor, QBrush
 
 from ui.tools.virtual_numpad import VirtualNumpad
 from ui.tools.virtual_keyboard import VirtualKeyboardDialog
+import re
 from database.versement import (
     payment_value_da as calculate_payment_value_da,
     shop_price_per_gram,
+    calculate_versement_item_balances,
 )
 
 
@@ -485,7 +487,8 @@ class EditPaymentDialog(QDialog):
         if deduit > 0:
             self.inp_poids_deduit.setText(f"{deduit:.3f}")
         if notes:
-            self.inp_notes.setText(notes)
+            clean_notes = re.sub(r'\[Remise:[^\]]+\]', '', notes).strip(" |")
+            self.inp_notes.setText(clean_notes)
 
         # تحديد القطعة الهدف السابقة
         v_item_id = self.p_data.get('versement_item_id')
@@ -506,19 +509,20 @@ class EditPaymentDialog(QDialog):
         """إرجاع سعر الغرام والوزن المتاح قبل هذه الدفعة (بدون خصم هذه الدفعة نفسها)"""
         selected_item_id = self.combo_target.currentData()
         old_payment_id = self.payment_id
-        old_deduction = float(self.p_data.get('poids_deduit_g') or 0) if self.p_data.get('versement_item_id') == selected_item_id else 0.0
+
+        other_payments = [
+            p for p in (self.v_data.get('payments', []) if self.v_data else [])
+            if p.get('id') != old_payment_id
+        ]
+        items = self.v_data.get('items', []) if self.v_data else []
+        balances = calculate_versement_item_balances(items, other_payments)
 
         if selected_item_id and selected_item_id in self.item_prices and selected_item_id in self.item_weights:
             item_price = float(self.item_prices[selected_item_id] or 0)
             item_weight = float(self.item_weights[selected_item_id] or 0)
             if item_price > 0 and item_weight > 0:
                 unit_ppg = item_price / item_weight
-                deductions = sum(
-                    float(p.get('poids_deduit_g') or 0)
-                    for p in (self.v_data.get('payments', []) if self.v_data else [])
-                    if p.get('versement_item_id') == selected_item_id and p.get('id') != old_payment_id
-                )
-                rem_weight = max(0.0, item_weight - deductions)
+                rem_weight = balances.get(selected_item_id, {}).get('remaining_g', item_weight)
                 return unit_ppg, rem_weight
 
         if self.v_data:
@@ -526,8 +530,7 @@ class EditPaymentDialog(QDialog):
             total_weight = float(self.v_data.get('total_weight_g') or 0)
             if total_est > 0 and total_weight > 0:
                 unit_ppg = total_est / total_weight
-                current_payment_ded = float(self.p_data.get('poids_deduit_g') or 0)
-                rem_weight = float(self.v_data.get('reste_poids_g') or 0) + current_payment_ded
+                rem_weight = sum(bal.get('remaining_g', 0.0) for bal in balances.values())
                 return unit_ppg, max(0.0, rem_weight)
 
         return 0.0, 0.0
@@ -756,6 +759,7 @@ class EditPaymentDialog(QDialog):
 
         items = self.v_data.get('items', [])
         payments = self.v_data.get('payments', [])
+        balances = calculate_versement_item_balances(items, payments)
         self.table_items.setRowCount(0)
 
         for i, item in enumerate(items):
@@ -764,8 +768,9 @@ class EditPaymentDialog(QDialog):
             w = float(item.get('display_weight') or item.get('weight') or 0)
             item_id = item.get('item_id') or item.get('id')
 
-            deductions = sum(float(p.get('poids_deduit_g') or 0) for p in payments if p.get('versement_item_id') == item_id)
-            reste = max(0.0, w - deductions)
+            bal = balances.get(item_id, {})
+            deductions = bal.get('deducted_g', 0.0)
+            reste = bal.get('remaining_g', max(0.0, w - deductions))
             price = float(item.get('display_price') or item.get('selling_price') or 0)
 
             it_desig = QTableWidgetItem(desig)
@@ -934,11 +939,6 @@ class EditPaymentDialog(QDialog):
                 return
 
             notes = self.inp_notes.text().strip()
-            if remise_da > 0:
-                remise_tag = f"[Remise: {remise_da:,.2f} DA]"
-                if remise_tag not in notes:
-                    notes = f"{notes} | {remise_tag}".strip(" |")
-
             selected_item_id = self.combo_target.currentData()
             montant_da_for_storage = cash if method_idx == 0 else montant_total_da
 

@@ -89,3 +89,122 @@ def price_after_discount(shop_price: Any, payment_da: Any, discount_da: Any) -> 
     if shop <= 0 or payment <= 0 or gross_equivalent <= 0:
         return 0.0
     return shop * payment / gross_equivalent
+
+
+def _distribute_amount_equally(
+    amount: float,
+    item_records: list[dict[str, Any]],
+    field_allocated: str,
+    field_cap: str,
+) -> None:
+    """Distribute amount equally among candidate items up to each item's capacity, transferring surplus to the next incomplete items."""
+    remaining_amount = max(0.0, float(amount or 0.0))
+    if remaining_amount <= 1e-6:
+        return
+
+    while remaining_amount > 1e-6:
+        candidates = [
+            r for r in item_records
+            if r.get("item_status") == "EN_COURS" and (r[field_cap] - r[field_allocated]) > 1e-6
+        ]
+        if not candidates:
+            break
+
+        equal_share = remaining_amount / len(candidates)
+        capped = [
+            r for r in candidates
+            if (r[field_cap] - r[field_allocated]) < equal_share - 1e-6
+        ]
+        if not capped:
+            for r in candidates:
+                r[field_allocated] += equal_share
+            remaining_amount = 0.0
+            break
+        else:
+            for r in capped:
+                capacity = r[field_cap] - r[field_allocated]
+                r[field_allocated] += capacity
+                remaining_amount -= capacity
+
+
+def calculate_versement_item_balances(
+    items: Iterable[dict[str, Any]],
+    payments: Iterable[dict[str, Any]],
+) -> dict[Any, dict[str, Any]]:
+    """Calculate deducted weight, remaining weight, paid money, and balance for each item.
+
+    Financial value and deducted weights for global payments are divided equally among
+    active incomplete products. When an item reaches 100% completion, remaining amounts
+    automatically transfer to the next incomplete products.
+    """
+    item_records = []
+    item_map = {}
+
+    for item in items or []:
+        status = item.get("item_status", "EN_COURS")
+        if status == "ANNULE":
+            continue
+        item_id = item.get("item_id", item.get("id"))
+        weight = float(item.get("display_weight") or item.get("weight") or 0.0)
+        price = float(item.get("display_price") or item.get("selling_price") or 0.0)
+
+        record = {
+            "item_id": item_id,
+            "item_status": status,
+            "weight": weight,
+            "selling_price": price,
+            "deducted_g": 0.0,
+            "paid_da": 0.0,
+            "has_shared": False,
+        }
+        item_records.append(record)
+        if item_id is not None:
+            item_map[item_id] = record
+            item_map[str(item_id)] = record
+
+    for p in payments or []:
+        w_pay = max(0.0, number(p.get("poids_deduit_g")))
+        m_pay = max(0.0, payment_value_da(p))
+        target_id = p.get("versement_item_id")
+
+        if target_id is not None and target_id in item_map:
+            target = item_map[target_id]
+            rem_w = max(0.0, target["weight"] - target["deducted_g"])
+            rem_m = max(0.0, target["selling_price"] - target["paid_da"])
+
+            w_alloc = min(w_pay, rem_w)
+            m_alloc = min(m_pay, rem_m)
+            target["deducted_g"] += w_alloc
+            target["paid_da"] += m_alloc
+
+            w_surplus = w_pay - w_alloc
+            m_surplus = m_pay - m_alloc
+
+            if w_surplus > 1e-6:
+                other_candidates = [r for r in item_records if r["item_id"] != target["item_id"]]
+                _distribute_amount_equally(w_surplus, other_candidates, "deducted_g", "weight")
+            if m_surplus > 1e-6:
+                other_candidates = [r for r in item_records if r["item_id"] != target["item_id"]]
+                _distribute_amount_equally(m_surplus, other_candidates, "paid_da", "selling_price")
+        else:
+            if w_pay > 1e-6:
+                _distribute_amount_equally(w_pay, item_records, "deducted_g", "weight")
+                for r in item_records:
+                    if r.get("item_status") == "EN_COURS":
+                        r["has_shared"] = True
+            if m_pay > 1e-6:
+                _distribute_amount_equally(m_pay, item_records, "paid_da", "selling_price")
+                for r in item_records:
+                    if r.get("item_status") == "EN_COURS":
+                        r["has_shared"] = True
+
+    result = {}
+    for r in item_records:
+        r["deducted_g"] = min(r["weight"], r["deducted_g"])
+        r["remaining_g"] = max(0.0, r["weight"] - r["deducted_g"])
+        r["paid_da"] = min(r["selling_price"], r["paid_da"])
+        r["remaining_da"] = max(0.0, r["selling_price"] - r["paid_da"])
+        result[r["item_id"]] = r
+
+    return result
+

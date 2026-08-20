@@ -2,6 +2,7 @@
 
 import os
 import json
+import re
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget,
     QTableWidgetItem, QHeaderView, QStyledItemDelegate, QLabel, QLineEdit, QComboBox,
@@ -21,6 +22,7 @@ from database.versement import (
     payment_value_da as calculate_payment_value_da,
     price_after_discount,
     shop_price_per_gram,
+    calculate_versement_item_balances,
 )
 
 from ui.widgets.versements.invoice_note_selector import (
@@ -144,12 +146,15 @@ class AddItemToVersementDialog(QDialog):
         self.lbl_result.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.lbl_result)
 
-        lbl_note = QLabel("<b>Note / À Vendre pour cet article :</b>")
+        lbl_note = QLabel("<b>Note / Observation / À Vendre pour cet article :</b>")
         lbl_note.setStyleSheet("font-size: 13px; color: #2c3e50;")
         layout.addWidget(lbl_note)
         self.combo_note = create_invoice_note_combo(self.manager, "", self)
         self.combo_note.setEditable(True)
-        layout.addWidget(self.combo_note)
+        if self.combo_note.lineEdit():
+            layout.addWidget(_wrap_with_keyboard(self.combo_note.lineEdit(), self))
+        else:
+            layout.addWidget(self.combo_note)
         
         btn_layout = QHBoxLayout()
         self.btn_add = QPushButton(" Ajouter au dossier")
@@ -224,7 +229,7 @@ class VersementItemNoteDialog(QDialog):
         super().__init__(parent)
         self.manager = manager
         self.data = data
-        self.setWindowTitle("Modifier la Note du Produit")
+        self.setWindowTitle("Modifier l'Observation / Note du Produit")
         self.setMinimumWidth(540)
         self._init_ui()
 
@@ -242,8 +247,11 @@ class VersementItemNoteDialog(QDialog):
             self.manager, existing_note, self
         )
         self.combo_note.setEditable(True)
-        layout.addWidget(QLabel("<b>Note / À Vendre :</b> (Sélectionnez ou saisissez directement)"))
-        layout.addWidget(self.combo_note)
+        layout.addWidget(QLabel("<b>Observation / Note / À Vendre :</b> (Sélectionnez ou écrivez librement)"))
+        if self.combo_note.lineEdit():
+            layout.addWidget(_wrap_with_keyboard(self.combo_note.lineEdit(), self))
+        else:
+            layout.addWidget(self.combo_note)
 
         buttons = QHBoxLayout()
         btn_cancel = QPushButton("Annuler")
@@ -258,6 +266,47 @@ class VersementItemNoteDialog(QDialog):
 
     def get_product_note(self):
         return selected_custom_note(self.combo_note)
+
+
+class VersementPaymentNoteDialog(QDialog):
+    def __init__(self, manager, data, parent=None):
+        super().__init__(parent)
+        self.manager = manager
+        self.data = data
+        self.setWindowTitle("Modifier la Note / Observation du Paiement")
+        self.setMinimumWidth(520)
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+
+        p_id = self.data.get('payment_id')
+        title = QLabel(f"<b>Paiement N° :</b> #{p_id}")
+        title.setStyleSheet("font-size: 14px; color: #1e293b;")
+        layout.addWidget(title)
+
+        layout.addWidget(QLabel("<b>Observation / Note du Paiement :</b> (Texte libre)"))
+        self.inp_note = QLineEdit()
+        current_notes = str(self.data.get("notes") or "")
+        clean_notes = re.sub(r'\[Remise:[^\]]+\]', '', current_notes).strip(" |")
+        self.inp_note.setText(clean_notes)
+        self.inp_note.setStyleSheet("font-size: 14px; padding: 8px; border: 1px solid #cbd5df; border-radius: 6px;")
+        layout.addWidget(_wrap_with_keyboard(self.inp_note, self))
+
+        buttons = QHBoxLayout()
+        btn_cancel = QPushButton("Annuler")
+        btn_cancel.clicked.connect(self.reject)
+        btn_save = QPushButton("Enregistrer")
+        btn_save.setStyleSheet("background-color: #0f8f83; color: white; font-weight: bold; font-size: 14px; border-radius: 6px;")
+        btn_save.clicked.connect(self.accept)
+        for button in (btn_cancel, btn_save):
+            button.setFixedHeight(42)
+            buttons.addWidget(button)
+        layout.addLayout(buttons)
+
+    def get_payment_note(self):
+        return self.inp_note.text().strip()
 
 
 # ========================================================
@@ -498,8 +547,7 @@ class VersementsView(QWidget):
             "currency": "DA"
         }
 
-        total_active_w = sum(float(i.get('display_weight') or i.get('weight') or 0) for i in v_data.get('items', []) if i['item_status'] != 'ANNULE')
-        global_deductions = sum(float(p.get('poids_deduit_g') or 0) for p in v_data.get('payments', []) if p.get('versement_item_id') is None)
+        balances = calculate_versement_item_balances(v_data.get('items', []), v_data.get('payments', []))
 
         for item in v_data.get('items', []):
             if item.get('item_status') != 'ANNULE':
@@ -510,12 +558,10 @@ class VersementsView(QWidget):
                 quantity_suffix = f" x{quantity}" if item_type == 'PIECE' else ''
                 full_name = f"{desig}{quantity_suffix} ({w:.2f}g)" if (w > 0 and f"({w:.2f}g)" not in desig and not desig.strip().endswith("g)")) else desig
                 
-                item_specific_deduction = sum(float(p.get('poids_deduit_g') or 0) for p in v_data.get('payments', []) if p.get('versement_item_id') == item.get('item_id'))
-                item_global_share = global_deductions * (w / total_active_w) if total_active_w > 0 else 0
-                item_remaining_w = max(0.0, w - (item_specific_deduction + item_global_share))
-
-                item_share = (w / total_active_w) if total_active_w > 0 else 0.0
-                item_paid_amount = payment_summary['total_paid_da'] * item_share
+                item_id = item.get('item_id') or item.get('id')
+                bal = balances.get(item_id, {})
+                item_remaining_w = bal.get('remaining_g', max(0.0, w - bal.get('deducted_g', 0.0)))
+                item_paid_amount = bal.get('paid_da', 0.0)
                 selling_price = float(item.get('display_price') or item.get('selling_price') or 0.0)
                 pdf_data['items'].append({
                     "name": full_name,
@@ -564,9 +610,10 @@ class VersementsView(QWidget):
                             item_desig = f"{item_desig} ({w:.2f}g)"
                         break
             else:
-                notes = str(p.get('notes') or '').strip()
-                if notes:
-                    item_desig = notes
+                raw_notes = str(p.get('notes') or '').strip()
+                clean_notes = re.sub(r'\[Remise:[^\]]+\]', '', raw_notes).strip(" |")
+                if clean_notes:
+                    item_desig = clean_notes
                 elif total_money < 0:
                     item_desig = "Rendu surplus / Remboursement"
                 elif poids_casse > 0:
@@ -720,6 +767,7 @@ class VersementsView(QWidget):
 
         elif row_type == "PAYMENT" and v_statut == 'EN_COURS':
             act_edit_pay = menu.addAction("✏️ Modifier ce paiement")
+            act_edit_pay_note = menu.addAction("📝 Modifier Observation / Note")
             act_delete_pay = menu.addAction("🗑️ Supprimer ce paiement (Erreur de saisie)")
 
         if menu.isEmpty(): return
@@ -760,6 +808,18 @@ class VersementsView(QWidget):
             self._handle_delete_payment(data)
         elif action == act_edit_pay:
             self._handle_edit_payment(data)
+        elif action == act_edit_pay_note:
+            self._handle_edit_payment_note(data)
+
+    def _handle_edit_payment_note(self, data):
+        dlg = VersementPaymentNoteDialog(self.manager, data, self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        new_note = dlg.get_payment_note()
+        if self.manager.versements.update_payment_notes(data.get("payment_id"), new_note):
+            self.load_data()
+        else:
+            QMessageBox.warning(self, "Erreur", "Impossible d'enregistrer la note du paiement.")
 
     def _handle_edit_item_note(self, data):
         dlg = VersementItemNoteDialog(self.manager, data, self)
@@ -997,6 +1057,7 @@ class VersementsView(QWidget):
 
         elif row_type == "PAYMENT" and v_statut == 'EN_COURS':
             self._add_action_btn("fa5s.edit", "Modifier ce paiement", "#3498db", "#2980b9", lambda: self._handle_edit_payment(data))
+            self._add_action_btn("fa5s.comment-dots", "Modifier Observation / Note", "#0f8f83", "#08766e", lambda: self._handle_edit_payment_note(data))
             self._add_action_btn("fa5s.trash", "Supprimer ce paiement", "#e74c3c", "#c0392b", lambda: self._handle_delete_payment(data))
 
     def show_product_specs(self, data):
@@ -1126,7 +1187,14 @@ class VersementsView(QWidget):
         item = self.table.item(index.row(), 0)
         if not item: return
         data = item.data(Qt.UserRole)
-        if isinstance(data, dict) and data.get("v_id"):
+        if not isinstance(data, dict): return
+
+        row_type = data.get("type")
+        if row_type == "ITEM":
+            self._handle_edit_item_note(data)
+        elif row_type == "PAYMENT" and data.get("statut") == 'EN_COURS':
+            self._handle_edit_payment(data)
+        elif data.get("v_id"):
             self.open_full_details_dialog(data.get("v_id"))
 
     def open_full_details_dialog(self, versement_id):
@@ -1179,22 +1247,23 @@ class VersementsView(QWidget):
         if text_color: item.setForeground(QBrush(QColor(text_color)))
         self.table.setItem(row, col, item)
 
-    def _calculate_item_weight_balance(self, item, payments, total_active_weight):
+    def _calculate_item_weight_balance(self, item, payments, total_active_weight=None, precomputed_balances=None):
         item_id = item.get('item_id') or item.get('id')
         item_weight = float(item.get('display_weight') or item.get('weight') or 0)
+        if precomputed_balances and item_id in precomputed_balances:
+            bal = precomputed_balances[item_id]
+            return {
+                "deducted_g": bal.get("deducted_g", 0.0),
+                "remaining_g": bal.get("remaining_g", item_weight),
+                "has_shared": bal.get("has_shared", False),
+            }
 
-        direct_payments = [p for p in payments if p.get('versement_item_id') == item_id]
-        global_payments = [p for p in payments if p.get('versement_item_id') is None]
-
-        direct_deducted_g = sum(float(p.get('poids_deduit_g') or 0) for p in direct_payments)
-        global_deducted_g = sum(float(p.get('poids_deduit_g') or 0) for p in global_payments)
-        shared_deducted_g = global_deducted_g * (item_weight / total_active_weight) if total_active_weight > 0 else 0.0
-
-        deducted_g = direct_deducted_g + shared_deducted_g
+        balances = calculate_versement_item_balances([item], payments)
+        bal = balances.get(item_id, {})
         return {
-            "deducted_g": deducted_g,
-            "remaining_g": max(0.0, item_weight - deducted_g),
-            "has_shared": bool(global_payments),
+            "deducted_g": bal.get("deducted_g", 0.0),
+            "remaining_g": bal.get("remaining_g", item_weight),
+            "has_shared": bal.get("has_shared", False),
         }
 
     def load_data(self):
@@ -1308,8 +1377,7 @@ class VersementsView(QWidget):
 
                 payments = v.get('payments', [])
                 items = v.get('items', [])
-                active_items = [it for it in items if it.get('item_status') != 'ANNULE']
-                total_active_weight = sum(float(it.get('display_weight') or it.get('weight') or 0) for it in active_items)
+                balances = calculate_versement_item_balances(items, payments)
                 if items:
                     for item in items:
                         row = self.table.rowCount()
@@ -1318,7 +1386,9 @@ class VersementsView(QWidget):
                         item_type = str(item.get('item_type') or 'WEIGHT').upper()
                         reserved_quantity = max(1, int(item.get('reserved_quantity') or 1)) if item_type == 'PIECE' else 1
                         weight = float(item.get('display_weight') or item.get('weight') or 0)
-                        balance = self._calculate_item_weight_balance(item, payments, total_active_weight)
+                        balance = balances.get(item['item_id'], {
+                            "deducted_g": 0.0, "remaining_g": weight, "has_shared": False
+                        })
                         custom_note = normalize_custom_note(item.get('custom_note'))
                         i_data = {
                             "type": "ITEM", "v_id": v_id, "statut": statut, "item_id": item['item_id'],
@@ -1341,7 +1411,7 @@ class VersementsView(QWidget):
                         )
                         remain_g_str = f"Déduit: {balance['deducted_g']:.3f} g | Reste: {balance['remaining_g']:.3f} g"
                         obs_str = f"Reste poids produit: {balance['remaining_g']:.3f} g"
-                        if balance["has_shared"]:
+                        if balance.get("has_shared"):
                             obs_str += " (avec part poids globale)"
                         if custom_note:
                             obs_str += f" | À Vendre: {custom_note}"
@@ -1415,9 +1485,10 @@ class VersementsView(QWidget):
                         
                         self.create_and_set_item(row, 7, "Paiement", p_data, bg_color="#fff8e8", text_color="#27ae60")
                         
+                        clean_notes = re.sub(r'\[Remise:[^\]]+\]', '', p_notes).strip(" |")
                         obs_str = ""
                         if remise > 0: obs_str += f"[Remise: {remise:,.0f} DA] "
-                        obs_str += p_notes
+                        if clean_notes: obs_str += clean_notes
                         self.create_and_set_item(row, 8, obs_str if obs_str.strip() else "-", p_data, align_center=False, bg_color="#fff8e8", text_color="#7a4d08")
                         self.table.setRowHeight(row, 28)
 
@@ -1570,21 +1641,16 @@ class VersementFullDetailsDialog(QDialog):
 
         items = v.get('items', [])
         payments = v.get('payments', [])
-        active_items = [it for it in items if it.get('item_status') != 'ANNULE']
-        total_active_weight = sum(float(it.get('display_weight') or it.get('weight') or 0) for it in active_items)
+        balances = calculate_versement_item_balances(items, payments)
 
         table_articles.setRowCount(len(items))
         for row_idx, item in enumerate(items):
             item_weight = float(item.get('display_weight') or item.get('weight') or 0)
             item_id = item.get('item_id') or item.get('id')
             
-            direct_payments = [p for p in payments if p.get('versement_item_id') == item_id]
-            global_payments = [p for p in payments if p.get('versement_item_id') is None]
-            direct_deducted_g = sum(float(p.get('poids_deduit_g') or 0) for p in direct_payments)
-            global_deducted_g = sum(float(p.get('poids_deduit_g') or 0) for p in global_payments)
-            shared_deducted_g = global_deducted_g * (item_weight / total_active_weight) if total_active_weight > 0 else 0.0
-            deducted_g = direct_deducted_g + shared_deducted_g
-            remaining_g = max(0.0, item_weight - deducted_g)
+            bal = balances.get(item_id, {})
+            deducted_g = bal.get('deducted_g', 0.0)
+            remaining_g = bal.get('remaining_g', max(0.0, item_weight - deducted_g))
 
             barcode = item.get("barcode", "N/A")
             desig = item.get("designation", "Article Inconnu")
@@ -1614,7 +1680,7 @@ class VersementFullDetailsDialog(QDialog):
         layout.addWidget(table_articles)
 
         # Section 2: Tableau des Paiements (Versements)
-        lbl_payments = QLabel("💵 Historique des Paiements et Versements :")
+        lbl_payments = QLabel("💵 Historique des Paiements et Versements (Double-cliquez pour modifier) :")
         lbl_payments.setStyleSheet("font-size: 15px; font-weight: bold; color: #0284c7; margin-top: 5px;")
         layout.addWidget(lbl_payments)
 
@@ -1643,7 +1709,8 @@ class VersementFullDetailsDialog(QDialog):
             o_c = float(p.get('or_casse_g') or 0)
             deduit = float(p.get('poids_deduit_g') or 0)
             remise = float(p.get('remise_da') or 0)
-            p_notes = p.get('notes') or ""
+            raw_notes = p.get('notes') or ""
+            clean_notes = re.sub(r'\[Remise:[^\]]+\]', '', raw_notes).strip(" |")
 
             devise_str = []
             if m_eu != 0: devise_str.append(f"{m_eu:,.2f} €")
@@ -1657,7 +1724,7 @@ class VersementFullDetailsDialog(QDialog):
             it_oc = QTableWidgetItem(f"{o_c:.2f} g" if o_c != 0 else "-")
             it_ded = QTableWidgetItem(f"{deduit:.3f} g" if deduit != 0 else "-")
             it_rem = QTableWidgetItem(f"{remise:,.0f} DA" if remise != 0 else "-")
-            it_notes = QTableWidgetItem(str(p_notes)); it_notes.setToolTip(str(p_notes))
+            it_notes = QTableWidgetItem(str(clean_notes)); it_notes.setToolTip(str(clean_notes))
 
             table_payments.setItem(row_idx, 0, it_date)
             table_payments.setItem(row_idx, 1, it_da)
@@ -1668,6 +1735,10 @@ class VersementFullDetailsDialog(QDialog):
             table_payments.setItem(row_idx, 6, it_ded)
             table_payments.setItem(row_idx, 7, it_rem)
             table_payments.setItem(row_idx, 8, it_notes)
+
+        table_payments.setContextMenuPolicy(Qt.CustomContextMenu)
+        table_payments.customContextMenuRequested.connect(lambda pos: self._on_payment_context_menu(table_payments, payments, pos))
+        table_payments.doubleClicked.connect(lambda idx: self._on_payment_double_clicked(table_payments, payments, idx))
 
         layout.addWidget(table_payments)
 
@@ -1707,6 +1778,50 @@ class VersementFullDetailsDialog(QDialog):
                 item_data["custom_note"] = new_note
                 item_data["notes"] = new_note
                 it_note = table_articles.item(row, 6)
+                if it_note:
+                    it_note.setText(new_note)
+                    it_note.setToolTip(new_note)
+                if self.parent() and hasattr(self.parent(), "load_data"):
+                    self.parent().load_data()
+
+    def _on_payment_double_clicked(self, table_payments, payments, idx):
+        if not idx.isValid(): return
+        row = idx.row()
+        if 0 <= row < len(payments):
+            self._edit_dialog_payment(table_payments, payments[row], row)
+
+    def _on_payment_context_menu(self, table_payments, payments, pos):
+        row = table_payments.rowAt(pos.y())
+        if row < 0 or row >= len(payments): return
+        p_data = payments[row]
+        menu = QMenu(self)
+        act_edit = menu.addAction("✏️ Modifier ce paiement")
+        act_edit_note = menu.addAction("📝 Modifier Observation / Note")
+        action = menu.exec_(table_payments.viewport().mapToGlobal(pos))
+        if action == act_edit:
+            self._edit_dialog_payment(table_payments, p_data, row)
+        elif action == act_edit_note:
+            self._edit_dialog_payment_note(table_payments, p_data, row)
+
+    def _edit_dialog_payment(self, table_payments, p_data, row):
+        p_data_dict = dict(p_data)
+        p_data_dict["v_id"] = self.versement_id
+        p_data_dict["payment_id"] = p_data.get("id")
+        dlg = EditPaymentDialog(self.manager, p_data_dict, self)
+        if dlg.exec() == QDialog.Accepted:
+            self.accept()
+            if self.parent() and hasattr(self.parent(), "load_data"):
+                self.parent().load_data()
+
+    def _edit_dialog_payment_note(self, table_payments, p_data, row):
+        p_data_dict = dict(p_data)
+        p_data_dict["payment_id"] = p_data.get("id")
+        dlg = VersementPaymentNoteDialog(self.manager, p_data_dict, self)
+        if dlg.exec() == QDialog.Accepted:
+            new_note = dlg.get_payment_note()
+            if self.manager.versements.update_payment_notes(p_data.get("id"), new_note):
+                p_data["notes"] = new_note
+                it_note = table_payments.item(row, 8)
                 if it_note:
                     it_note.setText(new_note)
                     it_note.setToolTip(new_note)

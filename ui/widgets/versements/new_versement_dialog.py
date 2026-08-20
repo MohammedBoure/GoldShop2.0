@@ -862,6 +862,9 @@ class NewVersementDialog(QDialog):
             note_combo = create_invoice_note_combo(
                 self.manager, item.get("custom_note"), self.cart_table
             )
+            note_combo.editTextChanged.connect(
+                lambda text, cart_item=item: self._set_item_note(cart_item, text)
+            )
             note_combo.currentIndexChanged.connect(
                 lambda _index, cart_item=item, combo=note_combo:
                     self._set_item_note(cart_item, selected_custom_note(combo))
@@ -1007,11 +1010,6 @@ class NewVersementDialog(QDialog):
                     poids_deduit = 0.0
 
             notes = self.inp_notes.toPlainText().strip()
-            if remise_da > 0:
-                remise_tag = f"[Remise: {remise_da:,.2f} DA]"
-                if remise_tag not in notes:
-                    notes = f"{notes} | {remise_tag}".strip(" |")
-
             montant_da_for_storage = cash if method_idx == 1 else montant_total_da
 
             if any(value < 0 for value in (cash, tpe, euro, dollar, oc, poids_deduit, montant_total_da)):

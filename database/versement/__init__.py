@@ -6,6 +6,7 @@ from .versement_pricing import (
     shop_price_per_gram,
     discount_for_target_price,
     price_after_discount,
+    calculate_versement_item_balances,
 )
 from .versement_reservation import (
     normalize_reserved_quantity,
@@ -28,6 +29,7 @@ __all__ = [
     "shop_price_per_gram",
     "discount_for_target_price",
     "price_after_discount",
+    "calculate_versement_item_balances",
     "normalize_reserved_quantity",
     "available_piece_quantity",
     "is_piece_sellable",
