@@ -94,7 +94,8 @@ def _wrap_with_keyboard(widget, parent=None):
     btn.setFixedSize(38, 38)
     btn.setStyleSheet("background-color: #ecf0f1; border: 1px solid #bdc3c7; border-radius: 4px; font-size: 16px;")
     btn.setCursor(Qt.PointingHandCursor)
-    btn.clicked.connect(lambda: _open_vkb(widget, parent))
+    target = widget.lineEdit() if isinstance(widget, QComboBox) and widget.lineEdit() else widget
+    btn.clicked.connect(lambda: _open_vkb(target, parent))
     lay.addWidget(btn)
     return container
 
@@ -151,10 +152,7 @@ class AddItemToVersementDialog(QDialog):
         layout.addWidget(lbl_note)
         self.combo_note = create_invoice_note_combo(self.manager, "", self)
         self.combo_note.setEditable(True)
-        if self.combo_note.lineEdit():
-            layout.addWidget(_wrap_with_keyboard(self.combo_note.lineEdit(), self))
-        else:
-            layout.addWidget(self.combo_note)
+        layout.addWidget(_wrap_with_keyboard(self.combo_note, self))
         
         btn_layout = QHBoxLayout()
         self.btn_add = QPushButton(" Ajouter au dossier")
@@ -247,11 +245,8 @@ class VersementItemNoteDialog(QDialog):
             self.manager, existing_note, self
         )
         self.combo_note.setEditable(True)
-        layout.addWidget(QLabel("<b>Observation / Note / À Vendre :</b> (Sélectionnez ou écrivez librement)"))
-        if self.combo_note.lineEdit():
-            layout.addWidget(_wrap_with_keyboard(self.combo_note.lineEdit(), self))
-        else:
-            layout.addWidget(self.combo_note)
+        layout.addWidget(QLabel("<b>Observation / Note :</b> (Sélectionnez ou écrivez librement)"))
+        layout.addWidget(_wrap_with_keyboard(self.combo_note, self))
 
         buttons = QHBoxLayout()
         btn_cancel = QPushButton("Annuler")
@@ -749,7 +744,7 @@ class VersementsView(QWidget):
             
         elif row_type == "ITEM":
             act_show_details = menu.addAction("ℹ️ Afficher les spécifications détaillées du produit")
-            act_edit_item_note = menu.addAction("🏷️ Modifier Note / À Vendre")
+            act_edit_item_note = menu.addAction("🏷️ Modifier Observation / Note")
             menu.addSeparator()
             item_status = data.get("item_status")
             if item_status == 'EN_COURS' and v_statut == 'EN_COURS':
@@ -1046,8 +1041,9 @@ class VersementsView(QWidget):
         elif row_type == "ITEM":
             self._add_action_btn("fa5s.info-circle", "Spécifications détaillées du produit", "#3498db", "#2980b9", lambda: self.show_product_specs(data))
             item_status = data.get("item_status")
+            if v_statut == 'EN_COURS':
+                self._add_action_btn("fa5s.tag", "Modifier Observation / Note", "#0f8f83", "#08766e", lambda: self._handle_edit_item_note(data))
             if item_status == 'EN_COURS' and v_statut == 'EN_COURS':
-                self._add_action_btn("fa5s.tag", "Modifier À Vendre", "#0f8f83", "#08766e", lambda: self._handle_edit_item_note(data))
                 self._add_action_btn("fa5s.hand-holding-usd", "Ajouter un paiement pour CET ARTICLE", "#f1c40f", "#f39c12", lambda: self.open_add_payment_dialog(v_id, preselected_item_id=data.get("item_id")))
                 self._add_action_btn("fa5s.box-open", "Marquer comme RETIRÉ (Livré)", "#27ae60", "#2ecc71", lambda: self._handle_retirer_item(data))
                 self._add_action_btn("fa5s.store-slash", "Annuler l'article (Retour vitrine)", "#e74c3c", "#c0392b", lambda: self._handle_cancel_item(data))
@@ -1414,7 +1410,7 @@ class VersementsView(QWidget):
                         if balance.get("has_shared"):
                             obs_str += " (avec part poids globale)"
                         if custom_note:
-                            obs_str += f" | À Vendre: {custom_note}"
+                            obs_str += f" | Obs: {custom_note}"
                         
                         bg_c = None; fg_c = None
                         if i_statut == 'ANNULE': bg_c = "#fff5f3"; fg_c = "#be3528"
@@ -1628,7 +1624,7 @@ class VersementFullDetailsDialog(QDialog):
         table_articles = QTableWidget()
         table_articles.setColumnCount(7)
         table_articles.setHorizontalHeaderLabels([
-            "Code-barres", "Désignation Produit", "Poids Initial (g)", "Poids Déduit (g)", "Poids Restant (g)", "Statut", "Observation / À Vendre"
+            "Code-barres", "Désignation Produit", "Poids Initial (g)", "Poids Déduit (g)", "Poids Restant (g)", "Statut", "Observation / Note"
         ])
         table_articles.setStyleSheet("""
             QTableWidget { background-color: white; gridline-color: #cbd5e1; font-size: 13px; }
@@ -1764,7 +1760,7 @@ class VersementFullDetailsDialog(QDialog):
         if row < 0 or row >= len(items): return
         item_data = items[row]
         menu = QMenu(self)
-        act_edit = menu.addAction("🏷️ Modifier Note / À Vendre")
+        act_edit = menu.addAction("🏷️ Modifier Observation / Note")
         action = menu.exec_(table_articles.viewport().mapToGlobal(pos))
         if action == act_edit:
             self._edit_dialog_item_note(table_articles, item_data, row)

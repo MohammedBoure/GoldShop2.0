@@ -267,6 +267,15 @@ class VersementCustomNoteTests(unittest.TestCase):
         self.assertTrue(any("ALTER TABLE Versement_Items ADD COLUMN notes" in q for q in PAYMENT_TABLE_QUERIES))
         self.assertTrue(any("ALTER TABLE SaleItems ADD COLUMN custom_note" in q for q in DAILY_JOURNAL_TABLE_QUERIES))
 
+    def test_versement_item_note_dialog_get_product_note(self):
+        from ui.widgets.versements.versements_view import VersementItemNoteDialog
+        manager = SimpleNamespace(invoice_notes=_InvoiceNotes())
+        data = {"designation": "Collier", "custom_note": "A vendre"}
+        dlg = VersementItemNoteDialog(manager, data)
+        self.assertEqual(dlg.get_product_note(), "A vendre")
+        dlg.combo_note.setEditText("Gravure personnalisée")
+        self.assertEqual(dlg.get_product_note(), "Gravure personnalisée")
+
 
 if __name__ == "__main__":
     unittest.main()
