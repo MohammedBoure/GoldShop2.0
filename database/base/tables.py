@@ -234,7 +234,9 @@ DAILY_JOURNAL_TABLE_QUERIES = [
         
         FOREIGN KEY (sale_id) REFERENCES Sales(id) ON DELETE CASCADE,
         FOREIGN KEY (inventory_id) REFERENCES Inventory(id) ON DELETE SET NULL
-    );"""
+    );""",
+
+    "ALTER TABLE SaleItems ADD COLUMN custom_note VARCHAR(255) NULL;"
 ]
 
 INVENTORY_SALES_TABLE_QUERIES = [

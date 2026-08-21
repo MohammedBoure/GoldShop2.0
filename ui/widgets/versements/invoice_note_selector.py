@@ -10,6 +10,8 @@ EMPTY_NOTE_LABEL = "--- Note ---"
 
 def normalize_custom_note(value):
     """Return the persisted snapshot format used by SaleItems.custom_note."""
+    if not value or value == EMPTY_NOTE_LABEL:
+        return ""
     return str(value or "").strip()[:MAX_CUSTOM_NOTE_LENGTH]
 
 

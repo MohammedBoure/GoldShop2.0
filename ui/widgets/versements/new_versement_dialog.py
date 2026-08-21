@@ -16,6 +16,7 @@ from ui.widgets.versements.invoice_note_selector import (
     create_invoice_note_combo,
     normalize_custom_note,
     selected_custom_note,
+    EMPTY_NOTE_LABEL,
 )
 
 import qtawesome as qta
@@ -152,7 +153,7 @@ class NewVersementDialog(QDialog):
         left_layout.addLayout(barcode_layout)
 
         self.cart_table = QTableWidget(0, 7)
-        self.cart_table.setHorizontalHeaderLabels(["Code", "Désignation", "Quantité", "Poids (g)", "Prix Estimé", "À Vendre", "Action"])
+        self.cart_table.setHorizontalHeaderLabels(["Code", "Désignation", "Quantité", "Poids (g)", "Prix Estimé", "Observation", "Action"])
         self.cart_table.setStyleSheet("""
             QTableWidget { background-color: white; font-size: 14px; gridline-color: #eef2f6; }
             QHeaderView::section { background-color: #0f8f83; color: white; font-weight: bold; padding: 6px; font-size: 13px; border: none; }
@@ -869,7 +870,23 @@ class NewVersementDialog(QDialog):
                 lambda _index, cart_item=item, combo=note_combo:
                     self._set_item_note(cart_item, selected_custom_note(combo))
             )
-            self.cart_table.setCellWidget(i, 5, note_combo)
+
+            note_container = QWidget()
+            note_layout = QHBoxLayout(note_container)
+            note_layout.setContentsMargins(0, 0, 0, 0)
+            note_layout.setSpacing(4)
+            note_layout.addWidget(note_combo, stretch=1)
+
+            btn_kb = QPushButton("⌨️")
+            btn_kb.setFocusPolicy(Qt.NoFocus)
+            btn_kb.setFixedSize(32, 32)
+            btn_kb.setStyleSheet("background-color: #ecf0f1; border: 1px solid #bdc3c7; border-radius: 4px; font-size: 13px;")
+            btn_kb.setCursor(Qt.PointingHandCursor)
+            if note_combo.lineEdit():
+                btn_kb.clicked.connect(lambda _, le=note_combo.lineEdit(): self._open_vkb(le))
+            note_layout.addWidget(btn_kb)
+
+            self.cart_table.setCellWidget(i, 5, note_container)
 
             btn_del = QPushButton("Suppr.")
             btn_del.setStyleSheet("background-color: #e74c3c; color: white; border-radius: 4px;")
@@ -880,6 +897,8 @@ class NewVersementDialog(QDialog):
         self.auto_calculate_poids_deduit()
 
     def _set_item_note(self, item, value):
+        if value == EMPTY_NOTE_LABEL:
+            value = ""
         item["custom_note"] = normalize_custom_note(value)
 
     def remove_from_cart(self, index):
@@ -922,6 +941,8 @@ class NewVersementDialog(QDialog):
                         details_text += f"▪️ Fournisseur : {row['supplier_name'] or 'N/A'}\n"
                         details_text += f"▪️ Poids Initial : {float(row['weight'] or 0):.2f} g\n"
                         details_text += f"▪️ Prix de Vente Estimé : {float(row['selling_price'] or 0):,.2f} DA\n"
+                        if item.get('custom_note'):
+                            details_text += f"▪️ Observation : {item.get('custom_note')}\n"
                         details_text += f"▪️ Emplacement : {row['location_name'] or 'N/A'}\n"
                         details_text += f"▪️ Date d'entrée : {row['entry_date'] or 'N/A'}\n"
                         details_text += "────────────────────────────\n"

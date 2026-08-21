@@ -255,7 +255,19 @@ class VersementCustomNoteTests(unittest.TestCase):
         self.assertEqual(cart_items[0]["custom_note"], "Commande client")
         versements.revert_versement_item_status.assert_not_called()
 
+    def test_normalize_custom_note_clears_empty_placeholder(self):
+        from ui.widgets.versements.invoice_note_selector import EMPTY_NOTE_LABEL
+        self.assertEqual(normalize_custom_note(EMPTY_NOTE_LABEL), "")
+        self.assertEqual(normalize_custom_note(""), "")
+        self.assertEqual(normalize_custom_note(None), "")
+        self.assertEqual(normalize_custom_note("  Spéciale  "), "Spéciale")
+
+    def test_schema_queries_include_alters_for_notes(self):
+        from database.base.tables import PAYMENT_TABLE_QUERIES, DAILY_JOURNAL_TABLE_QUERIES
+        self.assertTrue(any("ALTER TABLE Versement_Items ADD COLUMN notes" in q for q in PAYMENT_TABLE_QUERIES))
+        self.assertTrue(any("ALTER TABLE SaleItems ADD COLUMN custom_note" in q for q in DAILY_JOURNAL_TABLE_QUERIES))
 
 
 if __name__ == "__main__":
     unittest.main()
+
