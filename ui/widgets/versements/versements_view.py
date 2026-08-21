@@ -989,17 +989,17 @@ class VersementsView(QWidget):
         dlg = EditPaymentDialog(self.manager, data, self)
         if dlg.exec() == QDialog.Accepted: self.load_data()
 
-    def _add_action_btn(self, icon_name, tooltip, bg_color, hover_color, callback, enabled=True):
-        btn = QPushButton()
+    def _add_action_btn(self, icon_name, text, bg_color, hover_color, callback, enabled=True):
+        btn = QPushButton(f" {text}")
         btn.setIcon(qta.icon(icon_name, color="white"))
         btn.setIconSize(QSize(16, 16))
-        btn.setToolTip(tooltip)
+        btn.setToolTip(text)
         btn.setCursor(Qt.PointingHandCursor if enabled else Qt.ArrowCursor)
         btn.setEnabled(enabled)
         btn.setStyleSheet(f"""
-            QPushButton {{ background-color: {bg_color}; border: none; padding: 5px 10px; border-radius: 4px; }}
+            QPushButton {{ background-color: {bg_color}; color: white; font-weight: bold; font-size: 12px; padding: 5px 10px; border-radius: 4px; border: none; }}
             QPushButton:hover {{ background-color: {hover_color}; }}
-            QPushButton:disabled {{ background-color: #bdc3c7; }}
+            QPushButton:disabled {{ background-color: #bdc3c7; color: white; }}
         """)
         btn.clicked.connect(callback)
         self.toolbar_actions_layout.addWidget(btn)
@@ -1023,38 +1023,37 @@ class VersementsView(QWidget):
         v_statut = data.get("statut")
 
         if row_type == "HEADER":
-            self._add_action_btn("fa5s.search-plus", "🔍 Afficher tout en détails (Sans coupures)", "#0f8f83", "#0b776d", lambda: self.open_full_details_dialog(v_id))
-            self._add_action_btn("fa5s.info-circle", "Spécifications détaillées", "#3498db", "#2980b9", lambda: self.show_product_specs(data))
-            self._add_action_btn("fa5s.file-pdf", "Télécharger Bon (PDF)", "#e74c3c", "#c0392b", lambda: self.print_versement_pdf(v_id, open_pdf=True, direct=False))
+            self._add_action_btn("fa5s.search-plus", "Détails Complets", "#0f8f83", "#0b776d", lambda: self.open_full_details_dialog(v_id))
+            self._add_action_btn("fa5s.info-circle", "Spécifications", "#3498db", "#2980b9", lambda: self.show_product_specs(data))
+            self._add_action_btn("fa5s.file-pdf", "Bon (PDF)", "#e74c3c", "#c0392b", lambda: self.print_versement_pdf(v_id, open_pdf=True, direct=False))
             pdf_printer = self._get_pdf_printer_name()
-            self._add_action_btn("fa5s.print", f"Imprimer direct → {pdf_printer}" if pdf_printer else "Imprimer direct (non configurée)", "#9b59b6", "#8e44ad", lambda: self.print_versement_pdf(v_id, open_pdf=False, direct=True), enabled=bool(pdf_printer))
+            self._add_action_btn("fa5s.print", f"Imprimer ({pdf_printer})" if pdf_printer else "Imprimer direct", "#9b59b6", "#8e44ad", lambda: self.print_versement_pdf(v_id, open_pdf=False, direct=True), enabled=bool(pdf_printer))
             thermal_printer = self._get_thermal_printer_name()
-            self._add_action_btn("fa5s.receipt", f"Imprimer thermique → {thermal_printer}" if thermal_printer else "Imprimer thermique (non config)", "#e67e22", "#d35400", lambda: self.print_versement_thermal(v_id), enabled=bool(thermal_printer))
+            self._add_action_btn("fa5s.receipt", f"Ticket ({thermal_printer})" if thermal_printer else "Ticket thermique", "#e67e22", "#d35400", lambda: self.print_versement_thermal(v_id), enabled=bool(thermal_printer))
             if v_statut == 'EN_COURS':
-                self._add_action_btn("fa5s.cart-plus", "Ajouter un nouvel article", "#27ae60", "#2ecc71", lambda: self.open_add_item_dialog(v_id))
-                self._add_action_btn("fa5s.money-bill-wave", "Ajouter un paiement (Global)", "#f1c40f", "#f39c12", lambda: self.open_add_payment_dialog(v_id))
-                self._add_action_btn("fa5s.check-circle", "Clôturer tout le dossier", "#2ecc71", "#27ae60", lambda: self._handle_close_versement(v_id))
-                self._add_action_btn("fa5s.times-circle", "Annuler tout le dossier", "#c0392b", "#962d2d", lambda: self._handle_cancel_versement(v_id))
+                self._add_action_btn("fa5s.cart-plus", "Ajouter Article", "#27ae60", "#2ecc71", lambda: self.open_add_item_dialog(v_id))
+                self._add_action_btn("fa5s.money-bill-wave", "Paiement Global", "#f1c40f", "#f39c12", lambda: self.open_add_payment_dialog(v_id))
+                self._add_action_btn("fa5s.check-circle", "Clôturer", "#2ecc71", "#27ae60", lambda: self._handle_close_versement(v_id))
+                self._add_action_btn("fa5s.times-circle", "Annuler", "#c0392b", "#962d2d", lambda: self._handle_cancel_versement(v_id))
             elif v_statut in ('CLOTURE', 'ANNULE'):
-                self._add_action_btn("fa5s.exchange-alt", "Changer état: remettre le dossier En Cours", "#e67e22", "#d35400", lambda: self._handle_change_versement_status(v_id, 'EN_COURS'))
+                self._add_action_btn("fa5s.exchange-alt", "Remettre En Cours", "#e67e22", "#d35400", lambda: self._handle_change_versement_status(v_id, 'EN_COURS'))
 
         elif row_type == "ITEM":
-            self._add_action_btn("fa5s.info-circle", "Spécifications détaillées du produit", "#3498db", "#2980b9", lambda: self.show_product_specs(data))
+            self._add_action_btn("fa5s.tag", "Modifier Observation", "#0f8f83", "#08766e", lambda: self._handle_edit_item_note(data))
+            self._add_action_btn("fa5s.info-circle", "Spécifications", "#3498db", "#2980b9", lambda: self.show_product_specs(data))
             item_status = data.get("item_status")
-            if v_statut == 'EN_COURS':
-                self._add_action_btn("fa5s.tag", "Modifier Observation / Note", "#0f8f83", "#08766e", lambda: self._handle_edit_item_note(data))
             if item_status == 'EN_COURS' and v_statut == 'EN_COURS':
-                self._add_action_btn("fa5s.hand-holding-usd", "Ajouter un paiement pour CET ARTICLE", "#f1c40f", "#f39c12", lambda: self.open_add_payment_dialog(v_id, preselected_item_id=data.get("item_id")))
-                self._add_action_btn("fa5s.box-open", "Marquer comme RETIRÉ (Livré)", "#27ae60", "#2ecc71", lambda: self._handle_retirer_item(data))
-                self._add_action_btn("fa5s.store-slash", "Annuler l'article (Retour vitrine)", "#e74c3c", "#c0392b", lambda: self._handle_cancel_item(data))
-                self._add_action_btn("fa5s.trash-alt", "Supprimer du dossier", "#7f8c8d", "#95a5a6", lambda: self._handle_delete_item(data))
+                self._add_action_btn("fa5s.hand-holding-usd", "Paiement Article", "#f1c40f", "#f39c12", lambda: self.open_add_payment_dialog(v_id, preselected_item_id=data.get("item_id")))
+                self._add_action_btn("fa5s.box-open", "Marquer Livré", "#27ae60", "#2ecc71", lambda: self._handle_retirer_item(data))
+                self._add_action_btn("fa5s.store-slash", "Annuler Article", "#e74c3c", "#c0392b", lambda: self._handle_cancel_item(data))
+                self._add_action_btn("fa5s.trash-alt", "Supprimer", "#7f8c8d", "#95a5a6", lambda: self._handle_delete_item(data))
             elif item_status == 'RETIRE' or item_status == 'ANNULE':
-                self._add_action_btn("fa5s.exchange-alt", "Changer état: remettre l'article En Cours", "#e67e22", "#d35400", lambda: self._handle_change_item_status(data))
+                self._add_action_btn("fa5s.exchange-alt", "Remettre En Cours", "#e67e22", "#d35400", lambda: self._handle_change_item_status(data))
 
         elif row_type == "PAYMENT" and v_statut == 'EN_COURS':
-            self._add_action_btn("fa5s.edit", "Modifier ce paiement", "#3498db", "#2980b9", lambda: self._handle_edit_payment(data))
-            self._add_action_btn("fa5s.comment-dots", "Modifier Observation / Note", "#0f8f83", "#08766e", lambda: self._handle_edit_payment_note(data))
-            self._add_action_btn("fa5s.trash", "Supprimer ce paiement", "#e74c3c", "#c0392b", lambda: self._handle_delete_payment(data))
+            self._add_action_btn("fa5s.edit", "Modifier Paiement", "#3498db", "#2980b9", lambda: self._handle_edit_payment(data))
+            self._add_action_btn("fa5s.comment-dots", "Modifier Observation", "#0f8f83", "#08766e", lambda: self._handle_edit_payment_note(data))
+            self._add_action_btn("fa5s.trash", "Supprimer", "#e74c3c", "#c0392b", lambda: self._handle_delete_payment(data))
 
     def show_product_specs(self, data):
         try:
