@@ -265,16 +265,20 @@ class VersementCustomNoteTests(unittest.TestCase):
     def test_schema_queries_include_alters_for_notes(self):
         from database.base.tables import PAYMENT_TABLE_QUERIES, DAILY_JOURNAL_TABLE_QUERIES
         self.assertTrue(any("ALTER TABLE Versement_Items ADD COLUMN notes" in q for q in PAYMENT_TABLE_QUERIES))
+        self.assertTrue(any("ALTER TABLE Versement_Items ADD COLUMN observation" in q for q in PAYMENT_TABLE_QUERIES))
         self.assertTrue(any("ALTER TABLE SaleItems ADD COLUMN custom_note" in q for q in DAILY_JOURNAL_TABLE_QUERIES))
 
-    def test_versement_item_note_dialog_get_product_note(self):
+    def test_versement_item_note_dialog_get_product_note_and_observation(self):
         from ui.widgets.versements.versements_view import VersementItemNoteDialog
         manager = SimpleNamespace(invoice_notes=_InvoiceNotes())
-        data = {"designation": "Collier", "custom_note": "A vendre"}
+        data = {"designation": "Collier", "custom_note": "A vendre", "observation": "Remarque interne client"}
         dlg = VersementItemNoteDialog(manager, data)
         self.assertEqual(dlg.get_product_note(), "A vendre")
+        self.assertEqual(dlg.get_observation(), "Remarque interne client")
         dlg.combo_note.setEditText("Gravure personnalisée")
+        dlg.inp_observation.setText("Attention fermoir délicat")
         self.assertEqual(dlg.get_product_note(), "Gravure personnalisée")
+        self.assertEqual(dlg.get_observation(), "Attention fermoir délicat")
 
 
 if __name__ == "__main__":

@@ -227,8 +227,8 @@ class VersementItemNoteDialog(QDialog):
         super().__init__(parent)
         self.manager = manager
         self.data = data
-        self.setWindowTitle("Modifier l'Observation / Note du Produit")
-        self.setMinimumWidth(540)
+        self.setWindowTitle("Notes & Observations du Produit")
+        self.setMinimumWidth(560)
         self._init_ui()
 
     def _init_ui(self):
@@ -240,13 +240,29 @@ class VersementItemNoteDialog(QDialog):
         title.setStyleSheet("font-size: 14px; color: #1e293b;")
         layout.addWidget(title)
 
+        # 1. Note pour facture (À Vendre)
+        lbl_inv = QLabel("<b>1. Note / Tag pour la Facture (Apparaît sur le bon de vente) :</b>")
+        lbl_inv.setStyleSheet("font-size: 13px; color: #0f8f83;")
+        layout.addWidget(lbl_inv)
+
         existing_note = self.data.get("custom_note") or self.data.get("notes") or ""
         self.combo_note = create_invoice_note_combo(
             self.manager, existing_note, self
         )
         self.combo_note.setEditable(True)
-        layout.addWidget(QLabel("<b>Observation / Note :</b> (Sélectionnez ou écrivez librement)"))
         layout.addWidget(_wrap_with_keyboard(self.combo_note, self))
+
+        # 2. Observation interne
+        lbl_obs = QLabel("<b>2. Observation Interne Utilisateur (Privée / Situations difficiles) :</b>")
+        lbl_obs.setStyleSheet("font-size: 13px; color: #2c3e50;")
+        layout.addWidget(lbl_obs)
+
+        existing_obs = self.data.get("observation") or ""
+        self.inp_observation = QLineEdit()
+        self.inp_observation.setText(existing_obs)
+        self.inp_observation.setPlaceholderText("Remarques internes, conditions particulières, avertissements...")
+        self.inp_observation.setStyleSheet("font-size: 13px; padding: 6px; border: 1px solid #cbd5df; border-radius: 4px;")
+        layout.addWidget(_wrap_with_keyboard(self.inp_observation, self))
 
         buttons = QHBoxLayout()
         btn_cancel = QPushButton("Annuler")
@@ -261,6 +277,9 @@ class VersementItemNoteDialog(QDialog):
 
     def get_product_note(self):
         return selected_custom_note(self.combo_note)
+
+    def get_observation(self):
+        return self.inp_observation.text().strip()
 
 
 class VersementPaymentNoteDialog(QDialog):
@@ -822,10 +841,11 @@ class VersementsView(QWidget):
             return
 
         product_note = dlg.get_product_note()
-        if self.manager.versements.update_versement_item_notes(data.get("item_id"), product_note):
+        observation = dlg.get_observation()
+        if self.manager.versements.update_versement_item_notes(data.get("item_id"), product_note, observation=observation):
             self.load_data()
         else:
-            QMessageBox.warning(self, "Erreur", "Impossible d'enregistrer À Vendre pour cet article.")
+            QMessageBox.warning(self, "Erreur", "Impossible d'enregistrer les notes pour cet article.")
 
     def _handle_retirer_item(self, data):
         item_desig = data.get("designation", "")
@@ -1405,49 +1425,27 @@ class VersementsView(QWidget):
                             if item_type == "PIECE" else f"Poids: {weight:.2f} g"
                         )
                         remain_g_str = f"Déduit: {balance['deducted_g']:.3f} g | Reste: {balance['remaining_g']:.3f} g"
-                        obs_str = f"Reste poids produit: {balance['remaining_g']:.3f} g"
+                        internal_obs = str(item.get("observation") or "").strip()
+                        obs_str = f"Reste poids: {balance['remaining_g']:.3f} g"
                         if balance.get("has_shared"):
-                            obs_str += " (avec part poids globale)"
+                            obs_str += " (avec part globale)"
                         if custom_note:
-                            obs_str += f" | Obs: {custom_note}"
-                        
+                            obs_str += f" | Facture: {custom_note}"
+                        if internal_obs:
+                            obs_str += f" | Obs: {internal_obs}"
+
                         bg_c = None; fg_c = None
                         if i_statut == 'ANNULE': bg_c = "#fff5f3"; fg_c = "#be3528"
                         elif i_statut == 'RETIRE': bg_c = "#eafaf1"; fg_c = "#27ae60"
                         else: bg_c = "#eef7f5"; fg_c = "#075f58"
-                        
+
                         self.create_and_set_item(row, 0, designation, i_data, bold=True, align_center=False, bg_color=bg_c, text_color=fg_c)
                         for col in range(1, 5): self.create_and_set_item(row, col, "-", i_data, bg_color=bg_c)
                         self.create_and_set_item(row, 5, weight_str, i_data, bold=True, bg_color=bg_c, text_color=fg_c)
                         self.create_and_set_item(row, 6, remain_g_str, i_data, bold=True, color_red=(balance["remaining_g"] > 0), bg_color=bg_c, text_color="#c0392b" if balance["remaining_g"] > 0 else "#27ae60")
                         self.create_and_set_item(row, 7, i_statut, i_data, bold=True, bg_color=bg_c, text_color=fg_c)
-
-                        obs_widget = QWidget()
-                        obs_layout = QHBoxLayout(obs_widget)
-                        obs_layout.setContentsMargins(4, 2, 4, 2)
-                        obs_layout.setSpacing(6)
-
-                        lbl_obs = QLabel(obs_str)
-                        lbl_obs.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {fg_c or '#075f58'};")
-                        lbl_obs.setWordWrap(True)
-                        obs_layout.addWidget(lbl_obs, stretch=1)
-
-                        btn_edit_obs = QPushButton("🏷️ Modifier")
-                        btn_edit_obs.setFocusPolicy(Qt.NoFocus)
-                        btn_edit_obs.setCursor(Qt.PointingHandCursor)
-                        btn_edit_obs.setStyleSheet("""
-                            QPushButton {
-                                background-color: #0f8f83; color: white; font-weight: bold;
-                                font-size: 11px; padding: 3px 8px; border-radius: 4px; border: none;
-                            }
-                            QPushButton:hover { background-color: #08766e; }
-                        """)
-                        btn_edit_obs.clicked.connect(lambda _, d=i_data: self._handle_edit_item_note(d))
-                        obs_layout.addWidget(btn_edit_obs)
-
-                        self.create_and_set_item(row, 8, "", i_data, align_center=False, bg_color=bg_c, text_color=fg_c)
-                        self.table.setCellWidget(row, 8, obs_widget)
-                        self.table.setRowHeight(row, 40)
+                        self.create_and_set_item(row, 8, obs_str, i_data, align_center=False, bg_color=bg_c, text_color=fg_c)
+                        self.table.setRowHeight(row, 38)
 
                 if is_annule and not payments:
                     row = self.table.rowCount()
@@ -1694,31 +1692,15 @@ class VersementFullDetailsDialog(QDialog):
             table_articles.setItem(row_idx, 4, it_rem)
             table_articles.setItem(row_idx, 5, it_st)
 
-            note_widget = QWidget()
-            note_layout = QHBoxLayout(note_widget)
-            note_layout.setContentsMargins(4, 2, 4, 2)
-            note_layout.setSpacing(6)
+            note_display = []
+            if custom_note: note_display.append(f"Facture: {custom_note}")
+            if item.get("observation"): note_display.append(f"Obs: {item.get('observation')}")
+            note_str = " | ".join(note_display) if note_display else "-"
 
-            lbl_note_text = QLabel(str(custom_note) if custom_note else "(Aucune note)")
-            lbl_note_text.setStyleSheet("font-size: 12px; color: #1e293b;" if custom_note else "font-size: 12px; color: #94a3b8; font-style: italic;")
-            lbl_note_text.setWordWrap(True)
-            note_layout.addWidget(lbl_note_text, stretch=1)
-
-            btn_edit = QPushButton("🏷️ Modifier")
-            btn_edit.setFocusPolicy(Qt.NoFocus)
-            btn_edit.setCursor(Qt.PointingHandCursor)
-            btn_edit.setStyleSheet("""
-                QPushButton {
-                    background-color: #0f8f83; color: white; font-weight: bold;
-                    font-size: 11px; padding: 3px 8px; border-radius: 4px; border: none;
-                }
-                QPushButton:hover { background-color: #08766e; }
-            """)
-            btn_edit.clicked.connect(lambda _, it_d=item, r=row_idx: self._edit_dialog_item_note(table_articles, it_d, r))
-            note_layout.addWidget(btn_edit)
-
-            table_articles.setCellWidget(row_idx, 6, note_widget)
-            table_articles.setRowHeight(row_idx, 38)
+            it_note = QTableWidgetItem(note_str)
+            it_note.setToolTip(note_str)
+            table_articles.setItem(row_idx, 6, it_note)
+            table_articles.setRowHeight(row_idx, 32)
 
         table_articles.setContextMenuPolicy(Qt.CustomContextMenu)
         table_articles.customContextMenuRequested.connect(lambda pos: self._on_article_context_menu(table_articles, items, pos))
@@ -1821,15 +1803,19 @@ class VersementFullDetailsDialog(QDialog):
         dlg = VersementItemNoteDialog(self.manager, item_data, self)
         if dlg.exec() == QDialog.Accepted:
             new_note = dlg.get_product_note()
-            if self.manager.versements.update_versement_item_notes(item_id, new_note):
+            new_obs = dlg.get_observation()
+            if self.manager.versements.update_versement_item_notes(item_id, new_note, observation=new_obs):
                 item_data["custom_note"] = new_note
                 item_data["notes"] = new_note
-                w = table_articles.cellWidget(row, 6)
-                if w:
-                    lbl = w.findChild(QLabel)
-                    if lbl:
-                        lbl.setText(new_note if new_note else "(Aucune note)")
-                        lbl.setStyleSheet("font-size: 12px; color: #1e293b;" if new_note else "font-size: 12px; color: #94a3b8; font-style: italic;")
+                item_data["observation"] = new_obs
+                note_display = []
+                if new_note: note_display.append(f"Facture: {new_note}")
+                if new_obs: note_display.append(f"Obs: {new_obs}")
+                note_str = " | ".join(note_display) if note_display else "-"
+                it = table_articles.item(row, 6)
+                if it:
+                    it.setText(note_str)
+                    it.setToolTip(note_str)
                 if self.parent() and hasattr(self.parent(), "load_data"):
                     self.parent().load_data()
 

@@ -117,6 +117,7 @@ class VersementManager:
                     inv_id = item.get('inventory_id')
                     designation = item.get('designation', 'Article inconnu')
                     item_notes = str(item.get('custom_note') or item.get('notes') or '').strip()[:MAX_CUSTOM_NOTE_LENGTH]
+                    item_obs = str(item.get('observation') or '').strip()
                     
                     requested_quantity = item.get("reserved_quantity", item.get("versement_quantity", 1))
                     if inv_id:
@@ -128,9 +129,9 @@ class VersementManager:
 
                     cursor.execute("""
                         INSERT INTO Versement_Items
-                            (versement_id, inventory_id, designation, notes, item_status, reserved_quantity)
-                        VALUES (%s, %s, %s, %s, 'EN_COURS', %s)
-                    """, (versement_id, inv_id, designation, item_notes, requested_quantity))
+                            (versement_id, inventory_id, designation, notes, observation, item_status, reserved_quantity)
+                        VALUES (%s, %s, %s, %s, %s, 'EN_COURS', %s)
+                    """, (versement_id, inv_id, designation, item_notes, item_obs, requested_quantity))
 
             if montant_da != 0 or tpe_da != 0 or or_casse_g != 0 or montant_euro != 0 or poids_deduit_g != 0 or montant_dollar != 0 or remise_da != 0:
                 cursor.execute("""
@@ -644,6 +645,7 @@ class VersementManager:
                     # جلب القطع مع حالتها وسعرها التقديري
                     cursor.execute("""
                         SELECT vi.id as item_id, vi.inventory_id, vi.designation, vi.notes AS custom_note,
+                               vi.observation,
                                vi.item_status, COALESCE(vi.reserved_quantity, 1) AS reserved_quantity,
                                i.item_type, i.weight, i.remaining_weight, i.quantity, i.remaining_quantity, i.barcode, i.selling_price
                         FROM Versement_Items vi
@@ -759,12 +761,16 @@ class VersementManager:
             logging.error(f"Erreur update_payment_poids_deduit: {e}")
             return False
 
-    def update_versement_item_notes(self, item_id: int, notes: str) -> bool:
+    def update_versement_item_notes(self, item_id: int, notes: str, observation: str = None) -> bool:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
                 custom_note = str(notes or '').strip()[:MAX_CUSTOM_NOTE_LENGTH]
-                cursor.execute("UPDATE Versement_Items SET notes = %s WHERE id = %s", (custom_note, item_id))
+                if observation is not None:
+                    obs_val = str(observation or '').strip()
+                    cursor.execute("UPDATE Versement_Items SET notes = %s, observation = %s WHERE id = %s", (custom_note, obs_val, item_id))
+                else:
+                    cursor.execute("UPDATE Versement_Items SET notes = %s WHERE id = %s", (custom_note, item_id))
 
                 # Sync with SaleItems if a sale/invoice was already created for this versement item
                 cursor.execute("SELECT versement_id, inventory_id FROM Versement_Items WHERE id = %s", (item_id,))
@@ -796,7 +802,7 @@ class VersementManager:
             logging.error(f"Erreur update_versement_item_notes: {e}")
             return False
 
-    def add_item_to_versement(self, versement_id: int, inventory_id: int, designation: str, notes: str = '', reserved_quantity: int = 1) -> bool:
+    def add_item_to_versement(self, versement_id: int, inventory_id: int, designation: str, notes: str = '', reserved_quantity: int = 1, observation: str = '') -> bool:
         """إضافة قطعة جديدة من المخزون إلى ملف عربون مفتوح مسبقاً"""
         conn = None
         cursor = None
@@ -805,7 +811,7 @@ class VersementManager:
             cursor = conn.cursor(dictionary=True)
             conn.autocommit = False
 
-            # 1. Ø§Ù„ØªØ­Ù‚Ù‚ Ø§Ù„Ø°Ø±ÙŠ Ù…Ù† Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„Ù…ØªØ¨Ù‚ÙŠØ© ÙˆØ­Ø¬ÙˆØ²Ø§Øª Ø§Ù„Ø¹Ø±Ø¨ÙˆÙ† Ø§Ù„Ø£Ø®Ø±Ù‰.
+            # 1. التحقق الذري من الكمية المتبقية وحجوزات العربون الأخرى.
             if inventory_id:
                 _, reserved_quantity = self._lock_inventory_for_reservation(
                     cursor, inventory_id, reserved_quantity
@@ -814,14 +820,16 @@ class VersementManager:
                 reserved_quantity = normalize_reserved_quantity(None, reserved_quantity)
             cursor.execute("""
                 INSERT INTO Versement_Items
-                    (versement_id, inventory_id, designation, notes, item_status, reserved_quantity)
-                VALUES (%s, %s, %s, %s, 'EN_COURS', %s)
+                    (versement_id, inventory_id, designation, notes, observation, item_status, reserved_quantity)
+                VALUES (%s, %s, %s, %s, %s, 'EN_COURS', %s)
             """, (
                 versement_id, inventory_id, designation,
-                str(notes or '').strip()[:MAX_CUSTOM_NOTE_LENGTH], reserved_quantity,
+                str(notes or '').strip()[:MAX_CUSTOM_NOTE_LENGTH],
+                str(observation or '').strip(),
+                reserved_quantity,
             ))
 
-            # 2. Ù„Ø§ Ù†ØºÙŠØ± Inventory.statusØ› Ø­Ø§Ù„Ø© Ø§Ù„Ø¹Ù†ØµØ± Ø¯Ø§Ø®Ù„ Ø§Ù„Ø¹Ø±Ø¨ÙˆÙ† Ù‡ÙŠ Ù…ØµØ¯Ø± Ø§Ù„Ø­Ø¬Ø².
+            # 2. لا نغير Inventory.status؛ حالة العنصر داخل العربون هي مصدر الحجز.
             # 3. تحويل نوع الملف من فارغ إلى منتجات (إذا كان فارغاً)
             cursor.execute("UPDATE Versements SET type_versement = 'PRODUITS' WHERE id = %s", (versement_id,))
 

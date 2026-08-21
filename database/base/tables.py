@@ -519,6 +519,7 @@ PAYMENT_TABLE_QUERIES = [
         inventory_id INT NULL,
         designation VARCHAR(200),
         notes TEXT NULL,
+        observation TEXT NULL,
         
         -- الحقل الجديد لمعرفة حالة القطعة داخل العربون
         item_status ENUM('EN_COURS', 'RETIRE', 'ANNULE') DEFAULT 'EN_COURS',
@@ -556,6 +557,7 @@ PAYMENT_TABLE_QUERIES = [
     "ALTER TABLE Versement_Payments ADD COLUMN taux_change_dollar DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Versement_Payments ADD COLUMN remise_da DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Versement_Items ADD COLUMN notes TEXT;",
+    "ALTER TABLE Versement_Items ADD COLUMN observation TEXT;",
     "ALTER TABLE Versement_Items ADD COLUMN reserved_quantity INT NOT NULL DEFAULT 1;"
 ]
 
