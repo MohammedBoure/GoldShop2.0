@@ -160,8 +160,8 @@ class EditPaymentDialog(QDialog):
         lbl_items.setStyleSheet("font-size: 14px; font-weight: bold; color: #075f58;")
         left_layout.addWidget(lbl_items)
 
-        self.table_items = QTableWidget(0, 5)
-        self.table_items.setHorizontalHeaderLabels(["Désignation", "Poids Initial", "Déduit", "Reste", "Prix Estimé"])
+        self.table_items = QTableWidget(0, 6)
+        self.table_items.setHorizontalHeaderLabels(["Désignation", "Poids Initial", "Déduit", "Reste", "Observation", "Prix Estimé"])
         self.table_items.setStyleSheet("""
             QTableWidget { background-color: white; font-size: 13px; gridline-color: #eef2f6; }
             QHeaderView::section { background-color: #0f8f83; color: white; font-weight: bold; padding: 5px; font-size: 12px; border: none; }
@@ -170,11 +170,14 @@ class EditPaymentDialog(QDialog):
         self.table_items.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table_items.setSelectionBehavior(QTableWidget.SelectRows)
         self.table_items.verticalHeader().setVisible(False)
+        self.table_items.doubleClicked.connect(self._on_table_items_double_clicked)
 
         header_it = self.table_items.horizontalHeader()
         header_it.setSectionResizeMode(0, QHeaderView.Stretch)
-        for c in range(1, 5):
+        for c in range(1, 4):
             header_it.setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        header_it.setSectionResizeMode(4, QHeaderView.Stretch)
+        header_it.setSectionResizeMode(5, QHeaderView.ResizeToContents)
 
         left_layout.addWidget(self.table_items, stretch=3)
 
@@ -787,12 +790,33 @@ class EditPaymentDialog(QDialog):
             else:
                 it_reste.setForeground(QBrush(QColor("#c0392b")))
 
+            obs_val = str(item.get('custom_note') or item.get('notes') or '')
+            it_obs = QTableWidgetItem(obs_val)
+            it_obs.setToolTip(obs_val)
+
             self.table_items.setItem(i, 0, it_desig)
             self.table_items.setItem(i, 1, it_w)
             self.table_items.setItem(i, 2, it_ded)
             self.table_items.setItem(i, 3, it_reste)
-            self.table_items.setItem(i, 4, it_price)
+            self.table_items.setItem(i, 4, it_obs)
+            self.table_items.setItem(i, 5, it_price)
             self.table_items.setRowHeight(i, 28)
+
+    def _on_table_items_double_clicked(self, idx):
+        if not idx.isValid(): return
+        row = idx.row()
+        items = self.v_data.get('items', [])
+        if 0 <= row < len(items):
+            item_data = items[row]
+            from ui.widgets.versements.versements_view import VersementItemNoteDialog
+            dlg = VersementItemNoteDialog(self.manager, item_data, self)
+            if dlg.exec() == QDialog.Accepted:
+                new_note = dlg.get_product_note()
+                item_id = item_data.get('item_id') or item_data.get('id')
+                if self.manager.versements.update_versement_item_notes(item_id, new_note):
+                    item_data['custom_note'] = new_note
+                    item_data['notes'] = new_note
+                    self._populate_left_panel_tables()
 
         self.table_history.setRowCount(0)
         for i, p in enumerate(payments):

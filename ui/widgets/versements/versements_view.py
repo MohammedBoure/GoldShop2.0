@@ -1421,8 +1421,33 @@ class VersementsView(QWidget):
                         self.create_and_set_item(row, 5, weight_str, i_data, bold=True, bg_color=bg_c, text_color=fg_c)
                         self.create_and_set_item(row, 6, remain_g_str, i_data, bold=True, color_red=(balance["remaining_g"] > 0), bg_color=bg_c, text_color="#c0392b" if balance["remaining_g"] > 0 else "#27ae60")
                         self.create_and_set_item(row, 7, i_statut, i_data, bold=True, bg_color=bg_c, text_color=fg_c)
-                        self.create_and_set_item(row, 8, obs_str, i_data, align_center=False, bg_color=bg_c, text_color=fg_c)
-                        self.table.setRowHeight(row, 38)
+
+                        obs_widget = QWidget()
+                        obs_layout = QHBoxLayout(obs_widget)
+                        obs_layout.setContentsMargins(4, 2, 4, 2)
+                        obs_layout.setSpacing(6)
+
+                        lbl_obs = QLabel(obs_str)
+                        lbl_obs.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {fg_c or '#075f58'};")
+                        lbl_obs.setWordWrap(True)
+                        obs_layout.addWidget(lbl_obs, stretch=1)
+
+                        btn_edit_obs = QPushButton("🏷️ Modifier")
+                        btn_edit_obs.setFocusPolicy(Qt.NoFocus)
+                        btn_edit_obs.setCursor(Qt.PointingHandCursor)
+                        btn_edit_obs.setStyleSheet("""
+                            QPushButton {
+                                background-color: #0f8f83; color: white; font-weight: bold;
+                                font-size: 11px; padding: 3px 8px; border-radius: 4px; border: none;
+                            }
+                            QPushButton:hover { background-color: #08766e; }
+                        """)
+                        btn_edit_obs.clicked.connect(lambda _, d=i_data: self._handle_edit_item_note(d))
+                        obs_layout.addWidget(btn_edit_obs)
+
+                        self.create_and_set_item(row, 8, "", i_data, align_center=False, bg_color=bg_c, text_color=fg_c)
+                        self.table.setCellWidget(row, 8, obs_widget)
+                        self.table.setRowHeight(row, 40)
 
                 if is_annule and not payments:
                     row = self.table.rowCount()
@@ -1658,7 +1683,9 @@ class VersementFullDetailsDialog(QDialog):
             it_ded = QTableWidgetItem(f"{deducted_g:.3f} g")
             it_rem = QTableWidgetItem(f"{remaining_g:.3f} g")
             it_st = QTableWidgetItem(str(i_statut))
-            it_note = QTableWidgetItem(str(custom_note)); it_note.setToolTip(str(custom_note))
+
+            for it in [it_bc, it_w, it_ded, it_rem, it_st]:
+                it.setTextAlignment(Qt.AlignCenter)
 
             table_articles.setItem(row_idx, 0, it_bc)
             table_articles.setItem(row_idx, 1, it_desig)
@@ -1666,7 +1693,32 @@ class VersementFullDetailsDialog(QDialog):
             table_articles.setItem(row_idx, 3, it_ded)
             table_articles.setItem(row_idx, 4, it_rem)
             table_articles.setItem(row_idx, 5, it_st)
-            table_articles.setItem(row_idx, 6, it_note)
+
+            note_widget = QWidget()
+            note_layout = QHBoxLayout(note_widget)
+            note_layout.setContentsMargins(4, 2, 4, 2)
+            note_layout.setSpacing(6)
+
+            lbl_note_text = QLabel(str(custom_note) if custom_note else "(Aucune note)")
+            lbl_note_text.setStyleSheet("font-size: 12px; color: #1e293b;" if custom_note else "font-size: 12px; color: #94a3b8; font-style: italic;")
+            lbl_note_text.setWordWrap(True)
+            note_layout.addWidget(lbl_note_text, stretch=1)
+
+            btn_edit = QPushButton("🏷️ Modifier")
+            btn_edit.setFocusPolicy(Qt.NoFocus)
+            btn_edit.setCursor(Qt.PointingHandCursor)
+            btn_edit.setStyleSheet("""
+                QPushButton {
+                    background-color: #0f8f83; color: white; font-weight: bold;
+                    font-size: 11px; padding: 3px 8px; border-radius: 4px; border: none;
+                }
+                QPushButton:hover { background-color: #08766e; }
+            """)
+            btn_edit.clicked.connect(lambda _, it_d=item, r=row_idx: self._edit_dialog_item_note(table_articles, it_d, r))
+            note_layout.addWidget(btn_edit)
+
+            table_articles.setCellWidget(row_idx, 6, note_widget)
+            table_articles.setRowHeight(row_idx, 38)
 
         table_articles.setContextMenuPolicy(Qt.CustomContextMenu)
         table_articles.customContextMenuRequested.connect(lambda pos: self._on_article_context_menu(table_articles, items, pos))
@@ -1772,10 +1824,12 @@ class VersementFullDetailsDialog(QDialog):
             if self.manager.versements.update_versement_item_notes(item_id, new_note):
                 item_data["custom_note"] = new_note
                 item_data["notes"] = new_note
-                it_note = table_articles.item(row, 6)
-                if it_note:
-                    it_note.setText(new_note)
-                    it_note.setToolTip(new_note)
+                w = table_articles.cellWidget(row, 6)
+                if w:
+                    lbl = w.findChild(QLabel)
+                    if lbl:
+                        lbl.setText(new_note if new_note else "(Aucune note)")
+                        lbl.setStyleSheet("font-size: 12px; color: #1e293b;" if new_note else "font-size: 12px; color: #94a3b8; font-style: italic;")
                 if self.parent() and hasattr(self.parent(), "load_data"):
                     self.parent().load_data()
 
