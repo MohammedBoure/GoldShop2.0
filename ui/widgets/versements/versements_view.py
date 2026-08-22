@@ -1440,15 +1440,14 @@ class VersementsView(QWidget):
                             if item_type == "PIECE" else f"Poids: {weight:.2f} g"
                         )
                         remain_g_str = f"Déduit: {balance['deducted_g']:.3f} g | Reste: {balance['remaining_g']:.3f} g"
-                        obs_str = f"Reste poids: {balance['remaining_g']:.3f} g"
-                        if is_item_annule:
-                            obs_str = "Article Annulé (Reste: 0.000 g)"
-                        elif balance.get("has_shared"):
-                            obs_str += " (avec part globale)"
-                        if custom_note:
-                            obs_str += f" | Facture: {custom_note}"
                         if internal_obs:
-                            obs_str += f" | Obs: {internal_obs}"
+                            obs_str = internal_obs
+                            if custom_note and custom_note != internal_obs:
+                                obs_str += f" ({custom_note})"
+                        elif custom_note:
+                            obs_str = custom_note
+                        else:
+                            obs_str = "-"
 
                         bg_c = None; fg_c = None
                         if i_statut == 'ANNULE': bg_c = "#fff5f3"; fg_c = "#be3528"
@@ -1709,10 +1708,14 @@ class VersementFullDetailsDialog(QDialog):
             table_articles.setItem(row_idx, 4, it_rem)
             table_articles.setItem(row_idx, 5, it_st)
 
-            note_display = []
-            if custom_note: note_display.append(f"Facture: {custom_note}")
-            if item.get("observation"): note_display.append(f"Obs: {item.get('observation')}")
-            note_str = " | ".join(note_display) if note_display else "-"
+            if item.get("observation"):
+                note_str = item.get("observation")
+                if custom_note and custom_note != note_str:
+                    note_str += f" ({custom_note})"
+            elif custom_note:
+                note_str = custom_note
+            else:
+                note_str = "-"
 
             it_note = QTableWidgetItem(note_str)
             it_note.setToolTip(note_str)
@@ -1825,10 +1828,14 @@ class VersementFullDetailsDialog(QDialog):
                 item_data["custom_note"] = new_note
                 item_data["notes"] = new_note
                 item_data["observation"] = new_obs
-                note_display = []
-                if new_note: note_display.append(f"Facture: {new_note}")
-                if new_obs: note_display.append(f"Obs: {new_obs}")
-                note_str = " | ".join(note_display) if note_display else "-"
+                if new_obs:
+                    note_str = new_obs
+                    if new_note and new_note != new_obs:
+                        note_str += f" ({new_note})"
+                elif new_note:
+                    note_str = new_note
+                else:
+                    note_str = "-"
                 it = table_articles.item(row, 6)
                 if it:
                     it.setText(note_str)

@@ -792,12 +792,15 @@ class EditPaymentDialog(QDialog):
             else:
                 it_reste.setForeground(QBrush(QColor("#c0392b")))
 
-            note_display = []
-            if item.get('custom_note') or item.get('notes'):
-                note_display.append(f"Facture: {item.get('custom_note') or item.get('notes')}")
+            custom_note = item.get('custom_note') or item.get('notes')
             if item.get('observation'):
-                note_display.append(f"Obs: {item.get('observation')}")
-            obs_val = " | ".join(note_display) if note_display else ""
+                obs_val = item.get('observation')
+                if custom_note and custom_note != obs_val:
+                    obs_val += f" ({custom_note})"
+            elif custom_note:
+                obs_val = custom_note
+            else:
+                obs_val = "-"
             it_obs = QTableWidgetItem(obs_val)
             it_obs.setToolTip(obs_val)
 
