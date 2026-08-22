@@ -147,12 +147,20 @@ class AddItemToVersementDialog(QDialog):
         self.lbl_result.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.lbl_result)
 
-        lbl_note = QLabel("<b>Note / Observation / À Vendre pour cet article :</b>")
-        lbl_note.setStyleSheet("font-size: 13px; color: #2c3e50;")
+        lbl_note = QLabel("<b>1. Note / Tag Facture (Apparaît sur le bon de vente) :</b>")
+        lbl_note.setStyleSheet("font-size: 13px; color: #0f8f83;")
         layout.addWidget(lbl_note)
         self.combo_note = create_invoice_note_combo(self.manager, "", self)
         self.combo_note.setEditable(True)
         layout.addWidget(_wrap_with_keyboard(self.combo_note, self))
+
+        lbl_obs = QLabel("<b>2. Observation Interne Produit (Privée utilisateur) :</b>")
+        lbl_obs.setStyleSheet("font-size: 13px; color: #2c3e50;")
+        layout.addWidget(lbl_obs)
+        self.inp_observation = QLineEdit()
+        self.inp_observation.setPlaceholderText("Remarques internes, conditions particulières...")
+        self.inp_observation.setStyleSheet("font-size: 13px; padding: 6px; border: 1px solid #cbd5df; border-radius: 4px;")
+        layout.addWidget(_wrap_with_keyboard(self.inp_observation, self))
         
         btn_layout = QHBoxLayout()
         self.btn_add = QPushButton(" Ajouter au dossier")
@@ -216,7 +224,8 @@ class AddItemToVersementDialog(QDialog):
     def add_item(self):
         if self.inventory_id and self.designation:
             note_val = selected_custom_note(self.combo_note)
-            if self.manager.versements.add_item_to_versement(self.versement_id, self.inventory_id, self.designation, notes=note_val):
+            obs_val = self.inp_observation.text().strip()
+            if self.manager.versements.add_item_to_versement(self.versement_id, self.inventory_id, self.designation, notes=note_val, observation=obs_val):
                 self.accept()
             else:
                 QMessageBox.warning(self, "Erreur", "Impossible d'ajouter l'article au dossier.")
@@ -1405,11 +1414,13 @@ class VersementsView(QWidget):
                             "deducted_g": 0.0, "remaining_g": weight, "has_shared": False
                         })
                         custom_note = normalize_custom_note(item.get('custom_note'))
+                        internal_obs = str(item.get("observation") or "").strip()
                         i_data = {
                             "type": "ITEM", "v_id": v_id, "statut": statut, "item_id": item['item_id'],
                             "item_status": i_statut, "inventory_id": item.get('inventory_id'),
                             "designation": item.get('designation', 'Inconnu'),
                             "custom_note": custom_note,
+                            "observation": internal_obs,
                             "weight": weight,
                             "item_type": item_type,
                             "reserved_quantity": reserved_quantity,
@@ -1425,7 +1436,6 @@ class VersementsView(QWidget):
                             if item_type == "PIECE" else f"Poids: {weight:.2f} g"
                         )
                         remain_g_str = f"Déduit: {balance['deducted_g']:.3f} g | Reste: {balance['remaining_g']:.3f} g"
-                        internal_obs = str(item.get("observation") or "").strip()
                         obs_str = f"Reste poids: {balance['remaining_g']:.3f} g"
                         if balance.get("has_shared"):
                             obs_str += " (avec part globale)"

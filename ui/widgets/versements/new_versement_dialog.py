@@ -1072,6 +1072,7 @@ class NewVersementDialog(QDialog):
                     "item_type": item.get("item_type", "WEIGHT"),
                     "reserved_quantity": self._item_reserved_quantity(item),
                     "custom_note": normalize_custom_note(item.get("custom_note")),
+                    "observation": str(item.get("observation") or "").strip(),
                 }
                 for item in self.cart_items
             ]

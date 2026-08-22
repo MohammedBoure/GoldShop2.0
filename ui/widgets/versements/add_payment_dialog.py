@@ -743,7 +743,12 @@ class AddPaymentDialog(QDialog):
             else:
                 it_reste.setForeground(QBrush(QColor("#c0392b")))
 
-            obs_val = str(item.get('custom_note') or item.get('notes') or '')
+            note_display = []
+            if item.get('custom_note') or item.get('notes'):
+                note_display.append(f"Facture: {item.get('custom_note') or item.get('notes')}")
+            if item.get('observation'):
+                note_display.append(f"Obs: {item.get('observation')}")
+            obs_val = " | ".join(note_display) if note_display else ""
             it_obs = QTableWidgetItem(obs_val)
             it_obs.setToolTip(obs_val)
 
@@ -765,10 +770,12 @@ class AddPaymentDialog(QDialog):
             dlg = VersementItemNoteDialog(self.manager, item_data, self)
             if dlg.exec() == QDialog.Accepted:
                 new_note = dlg.get_product_note()
+                new_obs = dlg.get_observation()
                 item_id = item_data.get('item_id') or item_data.get('id')
-                if self.manager.versements.update_versement_item_notes(item_id, new_note):
+                if self.manager.versements.update_versement_item_notes(item_id, new_note, observation=new_obs):
                     item_data['custom_note'] = new_note
                     item_data['notes'] = new_note
+                    item_data['observation'] = new_obs
                     self._populate_left_panel_tables()
 
         # جدول سجل الدفعات السابقة
