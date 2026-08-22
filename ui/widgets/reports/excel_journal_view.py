@@ -853,6 +853,7 @@ class SaleProductsDialog(QDialog):
 class ExcelJournalView(QWidget):
     # Pre-allocated shared styling resources for high performance
     FONT_NORMAL = QFont("", 12, QFont.Normal)
+    FONT_BOLD_10 = QFont("", 10, QFont.Bold)
     FONT_BOLD_11 = QFont("", 11, QFont.Bold)
     FONT_BOLD_12 = QFont("", 12, QFont.Bold)
 
@@ -1025,13 +1026,13 @@ class ExcelJournalView(QWidget):
         header.setStretchLastSection(False)
         
         fixed_widths = {
-            1: 110,  # P.S (Or / Argent)
+            1: 155,  # P.S (Or / Argent)
             2: 110,  # Recette
-            3: 110,  # O.C (Or / Argent)
+            3: 155,  # O.C (Or / Argent)
             4: 95,   # TPE
             5: 85,   # Euro
             6: 85,   # Dollar
-            7: 120   # Vendeur
+            7: 115   # Vendeur
         }
         for col, width in fixed_widths.items():
             header.setSectionResizeMode(col, QHeaderView.Interactive)
@@ -2063,32 +2064,34 @@ class ExcelJournalView(QWidget):
                 self.table.setItem(row, 0, empty_item)
                 
                 # Format totals for P.S and O.C
-                if t_ps_gold > 0 and t_ps_silver > 0:
-                    t_ps_display = f"{t_ps_gold:.2f} Au / {t_ps_silver:.2f} Ag"
+                is_multi_ps = (t_ps_gold > 0 and t_ps_silver > 0)
+                if is_multi_ps:
+                    t_ps_display = f"{t_ps_gold:.2f} Au | {t_ps_silver:.2f} Ag"
                 elif t_ps_silver > 0:
                     t_ps_display = f"{t_ps_silver:.2f} Ag"
                 else:
                     t_ps_display = f"{t_ps_gold:.2f}"
 
-                if t_oc_gold > 0 and t_oc_silver > 0:
-                    t_oc_display = f"{t_oc_gold:.2f} Au / {t_oc_silver:.2f} Ag"
+                is_multi_oc = (t_oc_gold > 0 and t_oc_silver > 0)
+                if is_multi_oc:
+                    t_oc_display = f"{t_oc_gold:.2f} Au | {t_oc_silver:.2f} Ag"
                 elif t_oc_silver > 0:
                     t_oc_display = f"{t_oc_silver:.2f} Ag"
                 else:
                     t_oc_display = f"{t_oc_gold:.2f}"
 
                 totals_list = [
-                    (1, t_ps_display, f"P.S Or: {t_ps_gold:.2f} g | P.S Argent: {t_ps_silver:.2f} g"),
-                    (2, f"{t_rec:.0f}", f"Total Recette: {t_rec:,.2f} DA"),
-                    (3, t_oc_display, f"O.C Or: {t_oc_gold:.2f} g | O.C Argent: {t_oc_silver:.2f} g"),
-                    (4, f"{t_tpe:.0f}", f"Total TPE: {t_tpe:,.2f} DA"),
-                    (5, f"{t_euro:.0f}", f"Total Euro: {t_euro:,.2f} €"),
-                    (6, f"{t_dollar:.0f}", f"Total Dollar: {t_dollar:,.2f} $")
+                    (1, t_ps_display, f"P.S Or: {t_ps_gold:.2f} g | P.S Argent: {t_ps_silver:.2f} g", self.FONT_BOLD_10 if is_multi_ps else self.FONT_BOLD_11),
+                    (2, f"{t_rec:.0f}", f"Total Recette: {t_rec:,.2f} DA", self.FONT_BOLD_11),
+                    (3, t_oc_display, f"O.C Or: {t_oc_gold:.2f} g | O.C Argent: {t_oc_silver:.2f} g", self.FONT_BOLD_10 if is_multi_oc else self.FONT_BOLD_11),
+                    (4, f"{t_tpe:.0f}", f"Total TPE: {t_tpe:,.2f} DA", self.FONT_BOLD_11),
+                    (5, f"{t_euro:.0f}", f"Total Euro: {t_euro:,.2f} €", self.FONT_BOLD_11),
+                    (6, f"{t_dollar:.0f}", f"Total Dollar: {t_dollar:,.2f} $", self.FONT_BOLD_11)
                 ]
 
-                for idx, text_val, tip in totals_list:
+                for idx, text_val, tip, font in totals_list:
                     t_item = QTableWidgetItem(text_val)
-                    t_item.setFont(self.FONT_BOLD_11)
+                    t_item.setFont(font)
                     t_item.setTextAlignment(Qt.AlignCenter)
                     t_item.setBackground(self.BRUSH_TOTAL_BG)
                     t_item.setForeground(self.BRUSH_WHITE)
