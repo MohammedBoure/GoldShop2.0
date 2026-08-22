@@ -17,6 +17,9 @@ class POSCartManager:
     def add_item_to_cart_logic(self, item):
         cart_item = dict(item)
         item_type = cart_item.get('item_type', 'WEIGHT')
+        if not cart_item.get('metal_category'):
+            cat = str(cart_item.get('metal_type_name') or cart_item.get('category_name') or '').upper()
+            cart_item['metal_category'] = 'SILVER' if ('ARGENT' in cat or 'SILVER' in cat) else 'GOLD'
         
         # إذا كان المنتج محجوزاً لعميل محدد، نحدّث العميل الحالي تلقائياً
         reserved_client_id = cart_item.get('reserved_for_client_id')

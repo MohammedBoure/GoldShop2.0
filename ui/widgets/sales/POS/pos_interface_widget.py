@@ -94,6 +94,45 @@ class POSCheckoutDialog(QDialog):
         oc_row_layout.addWidget(lbl_oc_eq)
         oc_row_layout.addWidget(self.lbl_oc_total)
         oc_row_layout.addStretch()
+
+        # ── Argent Cassé : Poids × Prix/g → Total auto-calculé ──
+        silver_container = QWidget()
+        silver_row_layout = QHBoxLayout(silver_container)
+        silver_row_layout.setContentsMargins(0, 0, 0, 0)
+        silver_row_layout.setSpacing(6)
+
+        self.inp_silver_weight = QLineEdit("0.000")
+        self.inp_silver_weight.setPlaceholderText("Poids (g)")
+        self.inp_silver_weight.setStyleSheet("font-size: 19px; font-weight: bold; color: #475569; height: 40px; min-width: 110px;")
+
+        lbl_silver_sep = QLabel("×")
+        lbl_silver_sep.setStyleSheet("font-size: 20px; font-weight: bold; color: #475569;")
+        lbl_silver_sep.setAlignment(Qt.AlignCenter)
+        lbl_silver_sep.setFixedWidth(20)
+
+        self.inp_silver_price = QLineEdit("0.00")
+        self.inp_silver_price.setPlaceholderText("Prix/g (DA)")
+        self.inp_silver_price.setStyleSheet("font-size: 19px; font-weight: bold; color: #475569; height: 40px; min-width: 120px;")
+
+        lbl_silver_eq = QLabel("=")
+        lbl_silver_eq.setStyleSheet("font-size: 20px; font-weight: bold; color: #475569;")
+        lbl_silver_eq.setAlignment(Qt.AlignCenter)
+        lbl_silver_eq.setFixedWidth(18)
+
+        self.lbl_silver_total = QLabel("0.00 DA")
+        self.lbl_silver_total.setStyleSheet(
+            "font-size: 19px; font-weight: 900; color: #334155; "
+            "background: #f1f5f9; border: 1px solid #cbd5e1; "
+            "border-radius: 4px; padding: 4px 10px; min-width: 140px;"
+        )
+        self.lbl_silver_total.setAlignment(Qt.AlignCenter)
+
+        silver_row_layout.addWidget(self.inp_silver_weight)
+        silver_row_layout.addWidget(lbl_silver_sep)
+        silver_row_layout.addWidget(self.inp_silver_price)
+        silver_row_layout.addWidget(lbl_silver_eq)
+        silver_row_layout.addWidget(self.lbl_silver_total)
+        silver_row_layout.addStretch()
         
         self.inp_obs = QLineEdit("")
         self.inp_obs.setPlaceholderText("Remarque / Observation sur la vente...")
@@ -110,6 +149,8 @@ class POSCheckoutDialog(QDialog):
         self.inp_tpe.textChanged.connect(self.update_cash_auto)
         self.inp_oc_weight.textChanged.connect(self._update_oc_and_cash)
         self.inp_oc_price.textChanged.connect(self._update_oc_and_cash)
+        self.inp_silver_weight.textChanged.connect(self._update_silver_and_cash)
+        self.inp_silver_price.textChanged.connect(self._update_silver_and_cash)
         self.inp_euro_amt.textChanged.connect(self._update_euro_and_cash)
         self.inp_euro_rate.textChanged.connect(self._update_euro_and_cash)
         self.inp_dollar_amt.textChanged.connect(self._update_dollar_and_cash)
@@ -122,6 +163,7 @@ class POSCheckoutDialog(QDialog):
         form_layout.addRow("💸 Vers. Espèces (Cash) :", self.inp_cash)
         form_layout.addRow("💳 Vers. Carte TPE :", self.inp_tpe)
         form_layout.addRow("⚖️ Or Cassé (O.C) :", oc_container)
+        form_layout.addRow("🥈 Argent Cassé :", silver_container)
         form_layout.addRow("🇪🇺 Euro (€) :", euro_container)
         form_layout.addRow("🇺🇸 Dollar ($) :", dollar_container)
         form_layout.addRow("📝 Observation :", self.inp_obs)
@@ -227,6 +269,14 @@ class POSCheckoutDialog(QDialog):
         except: p = 0.0
         return w * p
 
+    def _get_silver_amount(self) -> float:
+        """Retourne le montant en DA de l'argent cassé (poids × prix/g)."""
+        try: w = float(self.inp_silver_weight.text() or 0)
+        except: w = 0.0
+        try: p = float(self.inp_silver_price.text() or 0)
+        except: p = 0.0
+        return w * p
+
     def _update_oc_and_cash(self):
         oc_amount = self._get_oc_amount()
         self.lbl_oc_total.setText(f"{oc_amount:,.2f} DA")
@@ -240,6 +290,23 @@ class POSCheckoutDialog(QDialog):
             self.lbl_oc_total.setStyleSheet(
                 "font-size: 19px; font-weight: 900; color: #6c3483; "
                 "background: #f5eef8; border: 1px solid #c39bd3; "
+                "border-radius: 4px; padding: 4px 10px; min-width: 140px;"
+            )
+        self.update_cash_auto()
+
+    def _update_silver_and_cash(self):
+        silver_amount = self._get_silver_amount()
+        self.lbl_silver_total.setText(f"{silver_amount:,.2f} DA")
+        if silver_amount > self.net_to_pay:
+            self.lbl_silver_total.setStyleSheet(
+                "font-size: 19px; font-weight: 900; color: #c0392b; "
+                "background: #fdf2e9; border: 1px solid #e74c3c; "
+                "border-radius: 4px; padding: 4px 10px; min-width: 140px;"
+            )
+        else:
+            self.lbl_silver_total.setStyleSheet(
+                "font-size: 19px; font-weight: 900; color: #334155; "
+                "background: #f1f5f9; border: 1px solid #cbd5e1; "
                 "border-radius: 4px; padding: 4px 10px; min-width: 140px;"
             )
         self.update_cash_auto()
@@ -258,9 +325,10 @@ class POSCheckoutDialog(QDialog):
         try: tpe = float(self.inp_tpe.text() or 0)
         except: tpe = 0.0
         oc_da     = self._get_oc_amount()
+        silver_da = self._get_silver_amount()
         euro_da   = self._calc_devise_da(self.inp_euro_amt, self.inp_euro_rate)
         dollar_da = self._calc_devise_da(self.inp_dollar_amt, self.inp_dollar_rate)
-        req_cash  = self.net_to_pay - tpe - oc_da - euro_da - dollar_da
+        req_cash  = self.net_to_pay - tpe - oc_da - silver_da - euro_da - dollar_da
         if not self.focusWidget() or self.focusWidget() != self.inp_cash:
             self.inp_cash.setText(f"{req_cash:.2f}")
 
@@ -274,6 +342,13 @@ class POSCheckoutDialog(QDialog):
         try: oc_price = float(self.inp_oc_price.text() or 0)
         except: oc_price = 0.0
         oc_amount = oc_weight * oc_price
+
+        try: silver_weight = float(self.inp_silver_weight.text() or 0)
+        except: silver_weight = 0.0
+        try: silver_price = float(self.inp_silver_price.text() or 0)
+        except: silver_price = 0.0
+        silver_amount = silver_weight * silver_price
+
         try: euro = float(self.inp_euro_amt.text() or 0)
         except: euro = 0.0
         try: taux_euro = float(self.inp_euro_rate.text() or 0)
@@ -285,8 +360,9 @@ class POSCheckoutDialog(QDialog):
         obs = self.inp_obs.text().strip()
         vendeur_id = self.combo_vendeur.currentData()
         # cash, tpe, oc_weight(g), oc_price(DA/g), oc_amount(DA),
+        # silver_weight(g), silver_price(DA/g), silver_amount(DA),
         # euro(€), taux_euro(DA/€), dollar($), taux_dollar(DA/$), vendeur_id, obs
-        return cash, tpe, oc_weight, oc_price, oc_amount, euro, taux_euro, dollar, taux_dollar, vendeur_id, obs
+        return cash, tpe, oc_weight, oc_price, oc_amount, silver_weight, silver_price, silver_amount, euro, taux_euro, dollar, taux_dollar, vendeur_id, obs
 
     def load_sellers(self):
         try:
@@ -391,7 +467,7 @@ class POSInterfaceWidget(POSUIBuilder, POSClientManager, POSInventoryLoader, POS
 
         dialog = POSCheckoutDialog(self.manager, net_to_pay, client_name, self.session_info.get('user_id', 1), self.current_client_id, self)
         if dialog.exec() == QDialog.Accepted:
-            cash, tpe, oc_weight, oc_price, oc_amount, euro, taux_euro, dollar, taux_dollar, vendeur_id, obs = dialog.get_payment_values()
+            cash, tpe, oc_weight, oc_price, oc_amount, silver_weight, silver_price, silver_amount, euro, taux_euro, dollar, taux_dollar, vendeur_id, obs = dialog.get_payment_values()
 
             journee = self.manager.cash_box.get_or_create_today_session(user_id=self.session_info.get('user_id', 1))
             if not journee: return
@@ -409,6 +485,8 @@ class POSInterfaceWidget(POSUIBuilder, POSClientManager, POSInventoryLoader, POS
                 cash_paid=cash,
                 tpe_paid=tpe,
                 old_gold_weight=oc_weight,
+                old_silver_weight=silver_weight,
+                old_silver_price=silver_price,
                 euro_paid=euro,
                 taux_change_euro=taux_euro,
                 dollar_paid=dollar,

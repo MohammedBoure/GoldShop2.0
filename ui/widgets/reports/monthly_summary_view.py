@@ -157,10 +157,10 @@ class MonthlySummaryView(QWidget):
         layout.addWidget(self.lbl_main_title)
 
         # --- إعداد الجدول ---
-        self.table = QTableWidget(0, 10) # 10 أعمدة
+        self.table = QTableWidget(0, 12) # 12 أعمدة
         self.table.setItemDelegate(ColorOverrideDelegate(self.table))
         self.table.setHorizontalHeaderLabels([
-            "Jours", "Dates", "P.S", "Recettes DA", "O.c", "TPE", "Euro", "Dollar", "Vendeur", "Bénéfice (Faaida)"
+            "Jours", "Dates", "P.S (Or)", "P.S (Argent)", "Recettes DA", "O.C (Or)", "O.C (Argent)", "TPE", "Euro", "Dollar", "Vendeur", "Bénéfice (Faaida)"
         ])
         
         # تنسيق الجدول ليشبه الصورة (اللون البنفسجي)
@@ -181,7 +181,7 @@ class MonthlySummaryView(QWidget):
         
         header = self.table.horizontalHeader()
         for i in range(self.table.columnCount()):
-            header.setSectionResizeMode(i, QHeaderView.Stretch if i in [3, 9] else QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(i, QHeaderView.Stretch if i in [4, 11] else QHeaderView.ResizeToContents)
             
         layout.addWidget(self.table)
 
@@ -216,13 +216,18 @@ class MonthlySummaryView(QWidget):
         query = """
             SELECT 
                 DATE(s.created_at) as sale_date,
+                SUM(CASE WHEN COALESCE(si.metal_category, mt.metal_category, 'GOLD') = 'GOLD' THEN si.sold_weight_g ELSE 0 END) as total_ps_gold,
+                SUM(CASE WHEN COALESCE(si.metal_category, mt.metal_category, 'GOLD') = 'SILVER' THEN si.sold_weight_g ELSE 0 END) as total_ps_silver,
                 SUM(si.sold_weight_g) as total_ps,
                 SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%'
                               AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id
                          THEN s.cash_paid_da ELSE 0 END) as total_recette,
                 SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%'
                               AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id
-                         THEN s.old_gold_weight_g ELSE 0 END) as total_oc,
+                         THEN s.old_gold_weight_g ELSE 0 END) as total_oc_gold,
+                SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%'
+                              AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id
+                         THEN COALESCE(s.old_silver_weight_g, 0) ELSE 0 END) as total_oc_silver,
                 SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%'
                               AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id
                          THEN s.tpe_paid_da ELSE 0 END) as total_tpe,
@@ -245,6 +250,7 @@ class MonthlySummaryView(QWidget):
             FROM Sales s
             JOIN SaleItems si ON s.id = si.sale_id
             LEFT JOIN Inventory i ON si.inventory_id = i.id
+            LEFT JOIN MetalTypes mt ON COALESCE(si.metal_type_id, i.metal_type_id) = mt.id
             WHERE YEAR(s.created_at) = %s AND MONTH(s.created_at) = %s AND s.status = 'COMPLETED'
             GROUP BY DATE(s.created_at)
         """
@@ -268,7 +274,8 @@ class MonthlySummaryView(QWidget):
                         SUM(vp.tpe_da) as total_vp_tpe,
                         SUM(vp.montant_euro) as total_vp_euro,
                         SUM(vp.montant_dollar) as total_vp_dollar,
-                        SUM(vp.or_casse_g) as total_vp_oc
+                        SUM(vp.or_casse_g) as total_vp_oc_gold,
+                        SUM(COALESCE(vp.argent_casse_g, 0)) as total_vp_oc_silver
                     FROM Versement_Payments vp
                     JOIN Versements v ON vp.versement_id = v.id
                     WHERE YEAR(vp.payment_date) = %s AND MONTH(vp.payment_date) = %s AND v.status != 'ANNULE'
@@ -280,7 +287,7 @@ class MonthlySummaryView(QWidget):
                 
                 num_days = calendar.monthrange(year, month)[1]
                 
-                sum_ps = sum_recettes = sum_oc = sum_tpe = sum_euro = sum_dollar = sum_benefice = 0.0
+                sum_ps_gold = sum_ps_silver = sum_recettes = sum_oc_gold = sum_oc_silver = sum_tpe = sum_euro = sum_dollar = sum_benefice = 0.0
 
                 for day in range(1, num_days + 1):
                     current_date = date(year, month, day)
@@ -302,31 +309,37 @@ class MonthlySummaryView(QWidget):
                         s_data = sales_by_date.get(current_date, {})
                         vp_data = vp_by_date.get(current_date, {})
                         
-                        ps = float(s_data.get('total_ps') or 0)
+                        ps_gold = float(s_data.get('total_ps_gold') or 0)
+                        ps_silver = float(s_data.get('total_ps_silver') or 0)
                         recette = float(s_data.get('total_recette') or 0) + float(vp_data.get('total_vp_recette') or 0)
-                        oc = float(s_data.get('total_oc') or 0) + float(vp_data.get('total_vp_oc') or 0)
+                        oc_gold = float(s_data.get('total_oc_gold') or 0) + float(vp_data.get('total_vp_oc_gold') or 0)
+                        oc_silver = float(s_data.get('total_oc_silver') or 0) + float(vp_data.get('total_vp_oc_silver') or 0)
                         tpe = float(s_data.get('total_tpe') or 0) + float(vp_data.get('total_vp_tpe') or 0)
                         euro = float(s_data.get('total_euro') or 0) + float(vp_data.get('total_vp_euro') or 0)
                         dollar = float(s_data.get('total_dollar') or 0) + float(vp_data.get('total_vp_dollar') or 0)
                         benefice = float(profit_by_date.get(current_date, {}).get('profit_da') or 0)
                         
                         # تجميع الإجماليات
-                        sum_ps += ps
+                        sum_ps_gold += ps_gold
+                        sum_ps_silver += ps_silver
                         sum_recettes += recette
-                        sum_oc += oc
+                        sum_oc_gold += oc_gold
+                        sum_oc_silver += oc_silver
                         sum_tpe += tpe
                         sum_euro += euro
                         sum_dollar += dollar
                         sum_benefice += benefice
 
                         cols = [
-                            f"{ps:.2f}" if ps else "●",
+                            f"{ps_gold:.2f}" if ps_gold else "●",
+                            f"{ps_silver:.2f}" if ps_silver else "●",
                             f"{recette:,.0f}" if recette else "●",
-                            f"{oc:.2f}" if oc else "●",
+                            f"{oc_gold:.2f}" if oc_gold else "●",
+                            f"{oc_silver:.2f}" if oc_silver else "●",
                             f"{tpe:,.0f}" if tpe else "●",
                             f"{euro:,.0f}" if euro else "●",
                             f"{dollar:,.0f}" if dollar else "●",
-                            "Multi" if sum([ps, recette, oc, tpe, euro, dollar]) > 0 else "●",
+                            "Multi" if sum([ps_gold, ps_silver, recette, oc_gold, oc_silver, tpe, euro, dollar]) > 0 else "●",
                             f"{benefice:,.2f}" if benefice != 0 else "●"
                         ]
                         
@@ -335,7 +348,7 @@ class MonthlySummaryView(QWidget):
                             item.setTextAlignment(Qt.AlignCenter)
                             if val == "●":
                                 item.setForeground(QBrush(QColor("#e74c3c")))
-                            elif col_idx == 9:
+                            elif col_idx == 11:
                                 item.setForeground(QBrush(QColor("#27ae60" if benefice > 0 else "#c0392b")))
                             self.table.setItem(row_idx, col_idx, item)
 
@@ -353,9 +366,11 @@ class MonthlySummaryView(QWidget):
                 
                 totals = [
                     "TOTAL", "",
-                    f"{sum_ps:.2f}" if sum_ps else "●",
+                    f"{sum_ps_gold:.2f}" if sum_ps_gold else "●",
+                    f"{sum_ps_silver:.2f}" if sum_ps_silver else "●",
                     f"{sum_recettes:,.0f}" if sum_recettes else "●",
-                    f"{sum_oc:.2f}" if sum_oc else "●",
+                    f"{sum_oc_gold:.2f}" if sum_oc_gold else "●",
+                    f"{sum_oc_silver:.2f}" if sum_oc_silver else "●",
                     f"{sum_tpe:,.0f}" if sum_tpe else "●",
                     f"{sum_euro:,.0f}" if sum_euro else "●",
                     f"{sum_dollar:,.0f}" if sum_dollar else "●",

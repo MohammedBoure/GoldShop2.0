@@ -193,6 +193,8 @@ DAILY_JOURNAL_TABLE_QUERIES = [
         cash_paid_da DECIMAL(15, 2) DEFAULT 0,           -- المدفوع نقداً
         tpe_paid_da DECIMAL(15, 2) DEFAULT 0,            -- المدفوع بالبطاقة
         old_gold_weight_g DECIMAL(10, 3) DEFAULT 0,      -- الذهب المكسر المستلم
+        old_silver_weight_g DECIMAL(10, 3) DEFAULT 0,    -- الفضة المكسرة المستلمة
+        old_silver_price_da DECIMAL(15, 2) DEFAULT 0,    -- سعر غرام الفضة المكسرة
 
         impos_weight_g DECIMAL(10, 3) DEFAULT 0,
         euro_paid DECIMAL(15, 2) DEFAULT 0,
@@ -209,16 +211,20 @@ DAILY_JOURNAL_TABLE_QUERIES = [
         FOREIGN KEY (user_id) REFERENCES Users(id)
     );""",
 
-    # ── Migrations Sales : devises étrangères ──
+    # ── Migrations Sales : devises étrangères et argent cassé ──
     "ALTER TABLE Sales ADD COLUMN euro_paid DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Sales ADD COLUMN taux_change_euro DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Sales ADD COLUMN dollar_paid DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Sales ADD COLUMN taux_change_dollar DECIMAL(15, 2) DEFAULT 0;",
+    "ALTER TABLE Sales ADD COLUMN old_silver_weight_g DECIMAL(10, 3) DEFAULT 0;",
+    "ALTER TABLE Sales ADD COLUMN old_silver_price_da DECIMAL(15, 2) DEFAULT 0;",
 
     """CREATE TABLE IF NOT EXISTS SaleItems (
         id BIGINT PRIMARY KEY AUTO_INCREMENT,
         sale_id INT NOT NULL,
         inventory_id INT NULL,                           -- لمعرفة القطعة الأصلية في المخزون
+        metal_type_id INT NULL,                          -- نوع المعدن
+        metal_category ENUM('GOLD', 'SILVER') NOT NULL DEFAULT 'GOLD', -- صنف المعدن (ذهب / فضة)
         
         barcode VARCHAR(50),
         name VARCHAR(200),
@@ -233,10 +239,13 @@ DAILY_JOURNAL_TABLE_QUERIES = [
         custom_note VARCHAR(255) NULL,                   -- 🟢 الحقل الجديد لحفظ الملاحظة المخصصة
         
         FOREIGN KEY (sale_id) REFERENCES Sales(id) ON DELETE CASCADE,
-        FOREIGN KEY (inventory_id) REFERENCES Inventory(id) ON DELETE SET NULL
+        FOREIGN KEY (inventory_id) REFERENCES Inventory(id) ON DELETE SET NULL,
+        FOREIGN KEY (metal_type_id) REFERENCES MetalTypes(id) ON DELETE SET NULL
     );""",
 
-    "ALTER TABLE SaleItems ADD COLUMN custom_note VARCHAR(255) NULL;"
+    "ALTER TABLE SaleItems ADD COLUMN custom_note VARCHAR(255) NULL;",
+    "ALTER TABLE SaleItems ADD COLUMN metal_category ENUM('GOLD', 'SILVER') NOT NULL DEFAULT 'GOLD';",
+    "ALTER TABLE SaleItems ADD COLUMN metal_type_id INT NULL;"
 ]
 
 INVENTORY_SALES_TABLE_QUERIES = [
@@ -542,8 +551,10 @@ PAYMENT_TABLE_QUERIES = [
         taux_change_dollar DECIMAL(15, 2) DEFAULT 0, 
         remise_da DECIMAL(15, 2) DEFAULT 0,          
         or_casse_g DECIMAL(10, 3) DEFAULT 0,         
+        argent_casse_g DECIMAL(10, 3) DEFAULT 0,     
         poids_deduit_g DECIMAL(10, 3) NOT NULL DEFAULT 0, 
         prix_gramme_jour_da DECIMAL(15, 2) DEFAULT 0,     
+        prix_gramme_argent_jour_da DECIMAL(15, 2) DEFAULT 0,
         payment_date DATETIME DEFAULT CURRENT_TIMESTAMP,
         notes TEXT,
         
@@ -556,6 +567,8 @@ PAYMENT_TABLE_QUERIES = [
     "ALTER TABLE Versement_Payments ADD COLUMN montant_dollar DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Versement_Payments ADD COLUMN taux_change_dollar DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Versement_Payments ADD COLUMN remise_da DECIMAL(15, 2) DEFAULT 0;",
+    "ALTER TABLE Versement_Payments ADD COLUMN argent_casse_g DECIMAL(10, 3) DEFAULT 0;",
+    "ALTER TABLE Versement_Payments ADD COLUMN prix_gramme_argent_jour_da DECIMAL(15, 2) DEFAULT 0;",
     "ALTER TABLE Versement_Items ADD COLUMN notes TEXT;",
     "ALTER TABLE Versement_Items ADD COLUMN observation TEXT;",
     "ALTER TABLE Versement_Items ADD COLUMN reserved_quantity INT NOT NULL DEFAULT 1;"

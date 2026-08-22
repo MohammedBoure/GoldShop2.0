@@ -25,7 +25,8 @@ class SalesManager:
                     old_gold_weight: float = 0.0, impos_weight: float = 0.0,
                     euro_paid: float = 0.0, taux_change_euro: float = 0.0,
                     dollar_paid: float = 0.0, taux_change_dollar: float = 0.0,
-                    notes: str = "") -> dict:
+                    notes: str = "",
+                    old_silver_weight: float = 0.0, old_silver_price: float = 0.0) -> dict:
         conn = None
         cursor = None
         try:
@@ -42,15 +43,15 @@ class SalesManager:
                 INSERT INTO Sales (
                     receipt_number, journee_id, client_id, user_id, 
                     total_amount_da, discount_da, net_to_pay_da, 
-                    cash_paid_da, tpe_paid_da, old_gold_weight_g, impos_weight_g,
+                    cash_paid_da, tpe_paid_da, old_gold_weight_g, old_silver_weight_g, old_silver_price_da, impos_weight_g,
                     euro_paid, taux_change_euro, dollar_paid, taux_change_dollar,
                     notes
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             cursor.execute(sale_query, (
                 receipt_number, journee_id, client_id, user_id,
                 total_amount, discount, net_to_pay, cash_paid, tpe_paid,
-                old_gold_weight, impos_weight,
+                old_gold_weight, old_silver_weight, old_silver_price, impos_weight,
                 euro_paid, taux_change_euro, dollar_paid, taux_change_dollar,
                 notes
             ))
@@ -68,11 +69,13 @@ class SalesManager:
                 total_price = float(item.get('cart_line_total', 0))
                 
                 custom_note = str(item.get('custom_note') or '').strip()[:255]
+                metal_type_id = item.get('metal_type_id')
+                metal_category = str(item.get('metal_category') or '').upper()
 
                 if inv_id:
                     cursor.execute("""
                         SELECT id, item_type, weight, remaining_weight, quantity, remaining_quantity,
-                               status, reserved_for_client_id
+                               status, reserved_for_client_id, metal_type_id
                         FROM Inventory WHERE id = %s FOR UPDATE
                     """, (inv_id,))
                     inventory = cursor.fetchone()
@@ -96,6 +99,11 @@ class SalesManager:
                     if reserved_for_client_id and str(reserved_for_client_id) != str(client_id):
                         raise ValueError("Cet article est réservé à un autre client.")
 
+                    if not metal_type_id:
+                        metal_type_id = inventory.get('metal_type_id')
+                    if not metal_category or metal_category not in ('GOLD', 'SILVER'):
+                        metal_category = inventory.get('metal_category') or 'GOLD'
+
                     if db_item_type in ("PIECE", "UNIT"):
                         remaining_quantity = int(inventory.get("remaining_quantity") if inventory.get("remaining_quantity") is not None else inventory.get("quantity") or 1)
                         sellable_quantity = max(0, remaining_quantity - active_reserved_quantity)
@@ -114,14 +122,17 @@ class SalesManager:
                         if status == 'Sold' and remaining_weight <= 0.005:
                             raise ValueError("Cet article est déjà totalement vendu.")
 
+                if not metal_category or metal_category not in ('GOLD', 'SILVER'):
+                    metal_category = 'GOLD'
+
                 item_query = """
                     INSERT INTO SaleItems (
-                        sale_id, inventory_id, barcode, name, item_type, 
+                        sale_id, inventory_id, metal_type_id, metal_category, barcode, name, item_type, 
                         sold_weight_g, sold_quantity, unit_price_da, total_price_da, custom_note
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
                 cursor.execute(item_query, (
-                    sale_id, inv_id, barcode, name, item_type,
+                    sale_id, inv_id, metal_type_id, metal_category, barcode, name, item_type,
                     sold_w, sold_q, unit_price, total_price, custom_note # 🟢 إرسال الملاحظة هنا
                 ))
 
@@ -230,7 +241,7 @@ class SalesManager:
     def get_bulk_sales_for_excel(self, journee_ids: list) -> dict:
         """
         جلب جميع بيانات المبيعات والدفعات لعدة جلسات يومية في استعلام واحد مجمع 
-        لتحقيق أقصى سرعة وأداء، وإرجاع قاموس بمفتاح journee_id.
+        لتحقيق أقصى سرعة وأداء، مع تمييز دقيق بين الذهب والفضة في الوزن والكسر.
         """
         if not journee_ids:
             return {}
@@ -251,12 +262,17 @@ class SalesManager:
                                IF(sup.name IS NOT NULL AND sup.name != '', CONCAT(' | Fourn: ', sup.name), '')
                         ) as Designation,
                         si.sold_weight_g as P_S,
+                        COALESCE(si.metal_category, mt.metal_category, 'GOLD') as metal_category,
+                        IF(COALESCE(si.metal_category, mt.metal_category, 'GOLD') = 'SILVER', si.sold_weight_g, 0) as P_S_Silver,
+                        IF(COALESCE(si.metal_category, mt.metal_category, 'GOLD') = 'GOLD', si.sold_weight_g, 0) as P_S_Gold,
                         IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.cash_paid_da, 0) as Recette,
                         IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.old_gold_weight_g, 0) as OC,
+                        IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.old_gold_weight_g, 0) as OC_Gold,
+                        IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, COALESCE(s.old_silver_weight_g, 0), 0) as OC_Silver,
                         IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.tpe_paid_da, 0) as TPE,
                         IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, s.impos_weight_g, 0) as Impos,
-                        0 as Euro,
-                        0 as Dollar,
+                        IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, COALESCE(s.euro_paid, 0), 0) as Euro,
+                        IF(s.receipt_number NOT LIKE 'VRS-%' AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id, COALESCE(s.dollar_paid, 0), 0) as Dollar,
                         u.username as Vendeur_Name,
                         s.user_id as vendeur_id,
                         COALESCE(NULLIF(s.notes, ''), NULLIF(si.custom_note, ''), CONCAT('Fac: ', s.receipt_number)) as raw_notes,
@@ -266,6 +282,7 @@ class SalesManager:
                     LEFT JOIN Users u ON s.user_id = u.id
                     LEFT JOIN Clients c ON s.client_id = c.id
                     LEFT JOIN Inventory i ON si.inventory_id = i.id
+                    LEFT JOIN MetalTypes mt ON COALESCE(si.metal_type_id, i.metal_type_id) = mt.id
                     LEFT JOIN Categories cat ON i.category_id = cat.id
                     LEFT JOIN Suppliers sup ON i.supplier_id = sup.id
                     WHERE s.journee_id IN ({format_strings}) AND s.status = 'COMPLETED'
@@ -284,8 +301,13 @@ class SalesManager:
                         c.name as client_name,
                         CONCAT('Versement N° VRS-', LPAD(vp.versement_id, 5, '0'), IF(vi.designation IS NOT NULL AND vi.designation != '', CONCAT(' | ', vi.designation), '')) as Designation,
                         0.0 as P_S,
-                        IF(COALESCE(vp.montant_euro, 0) > 0 OR COALESCE(vp.montant_dollar, 0) > 0 OR COALESCE(vp.or_casse_g, 0) > 0, 0.0, vp.montant_da) as Recette,
+                        'GOLD' as metal_category,
+                        0.0 as P_S_Silver,
+                        0.0 as P_S_Gold,
+                        IF(COALESCE(vp.montant_euro, 0) > 0 OR COALESCE(vp.montant_dollar, 0) > 0 OR COALESCE(vp.or_casse_g, 0) > 0 OR COALESCE(vp.argent_casse_g, 0) > 0, 0.0, vp.montant_da) as Recette,
                         vp.or_casse_g as OC,
+                        vp.or_casse_g as OC_Gold,
+                        COALESCE(vp.argent_casse_g, 0) as OC_Silver,
                         vp.tpe_da as TPE,
                         0.0 as Impos,
                         vp.montant_euro as Euro,
@@ -343,43 +365,64 @@ class SalesManager:
                     SELECT 
                         SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN cash_paid_da ELSE 0 END) as total_recette,
                         SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN tpe_paid_da ELSE 0 END) as total_tpe,
-                        SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN old_gold_weight_g ELSE 0 END) as total_oc,
+                        SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN old_gold_weight_g ELSE 0 END) as total_oc_gold,
+                        SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN COALESCE(old_silver_weight_g, 0) ELSE 0 END) as total_oc_silver,
+                        SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN COALESCE(euro_paid, 0) ELSE 0 END) as total_euro,
+                        SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN COALESCE(dollar_paid, 0) ELSE 0 END) as total_dollar,
                         SUM(CASE WHEN receipt_number NOT LIKE 'VRS-%' THEN impos_weight_g ELSE 0 END) as total_impos
                     FROM Sales 
                     WHERE journee_id = %s AND status = 'COMPLETED'
                 """
                 cursor.execute(query, (journee_id,))
-                sales_totals = cursor.fetchone()
+                sales_totals = cursor.fetchone() or {}
 
                 cursor.execute("""
-                    SELECT SUM(sold_weight_g) as total_p_s 
+                    SELECT 
+                        SUM(CASE WHEN COALESCE(si.metal_category, mt.metal_category, 'GOLD') = 'GOLD' THEN si.sold_weight_g ELSE 0 END) as total_p_s_gold,
+                        SUM(CASE WHEN COALESCE(si.metal_category, mt.metal_category, 'GOLD') = 'SILVER' THEN si.sold_weight_g ELSE 0 END) as total_p_s_silver,
+                        SUM(si.sold_weight_g) as total_p_s 
                     FROM SaleItems si 
                     JOIN Sales s ON si.sale_id = s.id 
+                    LEFT JOIN Inventory i ON si.inventory_id = i.id
+                    LEFT JOIN MetalTypes mt ON COALESCE(si.metal_type_id, i.metal_type_id) = mt.id
                     WHERE s.journee_id = %s AND s.status = 'COMPLETED'
                 """, (journee_id,))
-                weight_totals = cursor.fetchone()
+                weight_totals = cursor.fetchone() or {}
                 
                 cursor.execute("""
                     SELECT 
                         SUM(montant_da) as total_recette,
                         SUM(tpe_da) as total_tpe,
-                        SUM(or_casse_g) as total_oc,
+                        SUM(or_casse_g) as total_oc_gold,
+                        SUM(COALESCE(argent_casse_g, 0)) as total_oc_silver,
                         SUM(montant_euro) as total_euro,
                         SUM(montant_dollar) as total_dollar,
-                        0.0 as total_p_s
+                        0.0 as total_p_s,
+                        0.0 as total_p_s_gold,
+                        0.0 as total_p_s_silver
                     FROM Versement_Payments 
                     WHERE journee_id = %s
                 """, (journee_id,))
-                vp_totals = cursor.fetchone()
+                vp_totals = cursor.fetchone() or {}
+
+                total_oc_gold = float((sales_totals.get('total_oc_gold') or 0) + (vp_totals.get('total_oc_gold') or 0))
+                total_oc_silver = float((sales_totals.get('total_oc_silver') or 0) + (vp_totals.get('total_oc_silver') or 0))
+                total_ps_gold = float(weight_totals.get('total_p_s_gold') or 0)
+                total_ps_silver = float(weight_totals.get('total_p_s_silver') or 0)
+                total_ps = float((weight_totals.get('total_p_s') or 0) + (vp_totals.get('total_p_s') or 0))
 
                 return {
-                    'total_recette': float((sales_totals['total_recette'] or 0) + (vp_totals['total_recette'] or 0)),
-                    'total_tpe': float((sales_totals['total_tpe'] or 0) + (vp_totals['total_tpe'] or 0)),
-                    'total_oc': float((sales_totals['total_oc'] or 0) + (vp_totals['total_oc'] or 0)),
-                    'total_euro': float(vp_totals['total_euro'] or 0),
-                    'total_dollar': float(vp_totals['total_dollar'] or 0),
-                    'total_p_s': float((weight_totals['total_p_s'] or 0) + (vp_totals['total_p_s'] or 0)),
-                    'total_impos': float(sales_totals['total_impos'] or 0)
+                    'total_recette': float((sales_totals.get('total_recette') or 0) + (vp_totals.get('total_recette') or 0)),
+                    'total_tpe': float((sales_totals.get('total_tpe') or 0) + (vp_totals.get('total_tpe') or 0)),
+                    'total_oc': total_oc_gold,
+                    'total_oc_gold': total_oc_gold,
+                    'total_oc_silver': total_oc_silver,
+                    'total_euro': float((sales_totals.get('total_euro') or 0) + (vp_totals.get('total_euro') or 0)),
+                    'total_dollar': float((sales_totals.get('total_dollar') or 0) + (vp_totals.get('total_dollar') or 0)),
+                    'total_p_s': total_ps,
+                    'total_p_s_gold': total_ps_gold,
+                    'total_p_s_silver': total_ps_silver,
+                    'total_impos': float(sales_totals.get('total_impos') or 0)
                 }
         except Exception as e:
             logging.error(f"Erreur get_daily_totals: {e}")
@@ -388,16 +431,20 @@ class SalesManager:
     # ============================================================
     # 4. تعديل المبالغ المالية لفاتورة منجزة
     # ============================================================
-    def update_sale_financials(self, sale_id: int, cash: float, tpe: float, oc: float, impos: float) -> bool:
+    def update_sale_financials(self, sale_id: int, cash: float, tpe: float, oc: float, 
+                               euro: float = 0.0, dollar: float = 0.0, impos: float = 0.0, 
+                               oc_silver: float = 0.0, *args, **kwargs) -> bool:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
                 query = """
                     UPDATE Sales 
-                    SET cash_paid_da = %s, tpe_paid_da = %s, old_gold_weight_g = %s, impos_weight_g = %s
+                    SET cash_paid_da = %s, tpe_paid_da = %s, old_gold_weight_g = %s, 
+                        euro_paid = %s, dollar_paid = %s, impos_weight_g = %s,
+                        old_silver_weight_g = %s
                     WHERE id = %s
                 """
-                cursor.execute(query, (cash, tpe, oc, impos, sale_id))
+                cursor.execute(query, (cash, tpe, oc, euro, dollar, impos, oc_silver, sale_id))
                 conn.commit()
                 return True
         except Exception as e:

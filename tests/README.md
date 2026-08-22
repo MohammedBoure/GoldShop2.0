@@ -1,19 +1,18 @@
-# Tests Suite (`tests/`)
+# مجلد الاختبارات الآلية (Automated Tests)
 
-Ce dossier contient l'ensemble des tests unitaires et scripts de validation fonctionnelle pour le backend et l'interface utilisateur de l'application GoldShop.
+يحتوي هذا المجلد على وحدات الاختبارات الآلية الشاملة (Unit & Integration Tests) لنظام GoldShop.
 
 ---
 
-## Fichiers de tests :
+## فهرس ملفات الاختبار ومسؤولياتها:
 
-* `test_versement_idempotency_and_weight.py` : Tests unitaires vérifiant l'idempotence des clôtures et annulations de versements, le bornage des poids sortis au poids réel de l'article, et la restauration de stock bornée sans duplication.
-* `test_excel_journal_features.py` : Tests des fonctionnalités et calculs du journal Excel quotidien des ventes et recettes.
-* `test_profit_calculator.py` : Tests des calculs de bénéfices, déductions de versements et analyse financière.
-* `test_invoice_pdf_generator.py` : Tests de génération de factures PDF et tickets thermiques.
-* `test_versement_pricing.py` : Tests du calcul des prix, conversions de devises et déductions d'or cassé pour les versements.
-* `test_versement_quantity_manager.py` : Tests de gestion des quantités pour les articles vendus à la pièce (`PIECE`).
-* `test_versement_quantity_ui.py` : Tests d'interface graphique pour la sélection et réservation de quantités.
-* `test_versement_reservation.py` : Tests du verrouillage et de la libération des articles réservés en inventaire.
-* `test_versement_custom_notes.py` : Tests de persistance et transfert des notes personnalisées lors des clôtures de versements.
-* `test_flow.py` : Script d'intégration pour le flux complet création-annulation-restauration de versement.
-* `test_restore.py`, `test_restore_2.py`, `test_failures.py`, `test_duplicates.py`, `test_zero_weight.py`, `test_annule.py`, `test_items.py`, `test_v2.py` : Scripts de validation pour cas limites et diagnostics d'intégrité de la base de données.
+* `test_multi_metal_sales.py`: اختبارات دعم الذهب والفضة في المبيعات، تسجيل الأوزان الخارجة، حساب مبالغ الفضة الكسر، وتلخيص دفعات العربون.
+* `test_excel_journal_features.py`: اختبارات مزايا يومية المبيعات بنمط إكسل وتعديل المبالغ والأوزان.
+* `test_invoice_pdf_generator.py`: اختبارات توليد وصولات وفواتير PDF والملاحظات المخصصة.
+* `test_profit_calculator.py`: اختبارات حساب الأرباح الصافية وتوزيع العائدات والتكاليف.
+* `test_versement_custom_notes.py`: اختبارات الملاحظات المخصصة لعمليات العربون.
+* `test_versement_idempotency_and_weight.py`: اختبارات موثوقية دفعات وأوزان العربون.
+* `test_versement_pricing.py`: اختبارات تسعير وتخفيضات دفعات العربون.
+* `test_versement_quantity_manager.py`: اختبارات حجز وإدارة كميات قطع العربون.
+* `test_versement_quantity_ui.py`: اختبارات واجهة المستخدم لإدارة كميات العربون.
+* `test_versement_reservation.py`: اختبارات حجز المخزون لملفات العربون.

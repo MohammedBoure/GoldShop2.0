@@ -39,8 +39,9 @@ def payment_amount_da(payment: dict[str, Any]) -> float:
     tpe_da = number(payment.get("tpe_da"))
     euro_equivalent = number(payment.get("montant_euro")) * number(payment.get("taux_change_euro"))
     dollar_equivalent = number(payment.get("montant_dollar")) * number(payment.get("taux_change_dollar"))
-    old_gold_equivalent = number(payment.get("or_casse_g")) * number(payment.get("prix_gramme_jour_da"))
-    computed_equivalent = euro_equivalent + dollar_equivalent + old_gold_equivalent
+    old_gold_equivalent = number(payment.get("or_casse_g", payment.get("old_gold_weight_g"))) * number(payment.get("prix_gramme_jour_da", payment.get("old_gold_price_da", payment.get("gold_price_da"))))
+    old_silver_equivalent = number(payment.get("argent_casse_g", payment.get("old_silver_weight_g"))) * number(payment.get("prix_gramme_argent_jour_da", payment.get("old_silver_price_da", payment.get("silver_price_da"))))
+    computed_equivalent = euro_equivalent + dollar_equivalent + old_gold_equivalent + old_silver_equivalent
 
     if computed_equivalent > 0 and abs(declared_da - computed_equivalent) <= 0.01:
         main_payment = declared_da

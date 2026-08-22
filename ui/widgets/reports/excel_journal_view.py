@@ -413,10 +413,10 @@ class SaleDetailsDialog(QDialog):
 
 
 class EditSaleDialog(QDialog):
-    def __init__(self, cash, tpe, oc, euro=0, dollar=0, impos=0, parent=None):
+    def __init__(self, cash, tpe, oc, euro=0, dollar=0, impos=0, oc_silver=0, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Modifier les montants de la vente")
-        self.setFixedSize(420, 360)
+        self.setFixedSize(450, 400)
         
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -424,6 +424,7 @@ class EditSaleDialog(QDialog):
         self.inp_cash = QLineEdit(str(cash))
         self.inp_tpe = QLineEdit(str(tpe))
         self.inp_oc = QLineEdit(str(oc))
+        self.inp_oc_silver = QLineEdit(str(oc_silver))
         self.inp_euro = QLineEdit(str(euro))
         self.inp_dollar = QLineEdit(str(dollar))
         self.inp_impos = QLineEdit(str(impos))
@@ -433,7 +434,7 @@ class EditSaleDialog(QDialog):
         def show_pad(inp):
             VirtualNumpad(mode="direct", target_widget=inp, allow_decimal=True, allow_negative=False, parent=self).show()
         
-        for inp in [self.inp_cash, self.inp_tpe, self.inp_oc, self.inp_euro, self.inp_dollar, self.inp_impos]:
+        for inp in [self.inp_cash, self.inp_tpe, self.inp_oc, self.inp_oc_silver, self.inp_euro, self.inp_dollar, self.inp_impos]:
             inp.setStyleSheet("font-size: 18px; padding: 5px; font-weight: bold;")
             inp.setFocusPolicy(Qt.ClickFocus) 
             inp.mousePressEvent = lambda e, i=inp: show_pad(i)
@@ -441,6 +442,7 @@ class EditSaleDialog(QDialog):
         form.addRow("💰 Cash (DA) :", self.inp_cash)
         form.addRow("💳 TPE (DA) :", self.inp_tpe)
         form.addRow("⚖️ Or Cassé (g) :", self.inp_oc)
+        form.addRow("🥈 Argent Cassé (g) :", self.inp_oc_silver)
         form.addRow("💶 Euro (€) :", self.inp_euro)
         form.addRow("💵 Dollar ($) :", self.inp_dollar)
         form.addRow("📑 Impos (g) :", self.inp_impos)
@@ -460,13 +462,15 @@ class EditSaleDialog(QDialog):
         except: t = 0.0
         try: o = float(self.inp_oc.text() or 0)
         except: o = 0.0
+        try: os = float(self.inp_oc_silver.text() or 0)
+        except: os = 0.0
         try: e = float(self.inp_euro.text() or 0)
         except: e = 0.0
         try: d = float(self.inp_dollar.text() or 0)
         except: d = 0.0
         try: i = float(self.inp_impos.text() or 0)
         except: i = 0.0
-        return c, t, o, e, d, i
+        return c, t, o, e, d, i, os
 
     def accept(self):
         try:
@@ -700,12 +704,14 @@ class SaleProductsDialog(QDialog):
                         SELECT si.id, si.name, si.custom_note,
                                COALESCE(NULLIF(si.barcode, ''), i.barcode, '') as barcode,
                                COALESCE(cat.name, 'N/A') as category_name,
+                               COALESCE(si.metal_category, mt.metal_category, 'GOLD') as metal_category,
                                si.sold_weight_g,
                                si.sold_quantity,
                                si.unit_price_da,
                                si.total_price_da
                         FROM SaleItems si
                         LEFT JOIN Inventory i ON si.inventory_id = i.id
+                        LEFT JOIN MetalTypes mt ON COALESCE(si.metal_type_id, i.metal_type_id) = mt.id
                         LEFT JOIN Categories cat ON i.category_id = cat.id
                         WHERE si.sale_id = %s
                     """, (self.actual_id,))
@@ -733,7 +739,7 @@ class SaleProductsDialog(QDialog):
         # Table of products
         self.table = QTableWidget(len(items), 7)
         self.table.setHorizontalHeaderLabels([
-            "Code-barres", "Désignation Produit", "Catégorie", "Poids P.S (g)", "Quantité", "Prix Total (DA)", "Action (Copier)"
+            "Code-barres", "Désignation Produit", "Métal / Catégorie", "Poids P.S (g)", "Quantité", "Prix Total (DA)", "Action (Copier)"
         ])
         self.table.setStyleSheet("""
             QTableWidget { background-color: white; gridline-color: #cbd5e1; font-size: 14px; }
@@ -753,6 +759,8 @@ class SaleProductsDialog(QDialog):
             bc = str(it.get('barcode') or '').strip()
             name = str(it.get('name') or '')
             cat = str(it.get('category_name') or '-')
+            metal = "Argent" if str(it.get('metal_category') or '').upper() == 'SILVER' else "Or"
+            cat_display = f"{metal} ({cat})" if cat != '-' else metal
             w = float(it.get('sold_weight_g') or 0)
             q = int(it.get('sold_quantity') or 1)
             price = float(it.get('total_price_da') or 0)
@@ -764,7 +772,7 @@ class SaleProductsDialog(QDialog):
                 it_bc.setForeground(QBrush(QColor("#0f8f83")))
             
             it_name = QTableWidgetItem(name)
-            it_cat = QTableWidgetItem(cat)
+            it_cat = QTableWidgetItem(cat_display)
             it_cat.setTextAlignment(Qt.AlignCenter)
             it_w = QTableWidgetItem(f"{w:.2f} g")
             it_w.setTextAlignment(Qt.AlignCenter)
@@ -1017,9 +1025,9 @@ class ExcelJournalView(QWidget):
         header.setStretchLastSection(False)
         
         fixed_widths = {
-            1: 85,   # P.S
+            1: 110,  # P.S (Or / Argent)
             2: 110,  # Recette
-            3: 85,   # O.C
+            3: 110,  # O.C (Or / Argent)
             4: 95,   # TPE
             5: 85,   # Euro
             6: 85,   # Dollar
@@ -1096,6 +1104,7 @@ class ExcelJournalView(QWidget):
         dollar = item.data(Qt.UserRole + 6)
         impos = item.data(Qt.UserRole + 7)
         seller_id = item.data(Qt.UserRole + 8)
+        oc_silver = float(item.data(Qt.UserRole + 14) or 0)
 
         raw_obs = item.data(Qt.UserRole + 9)
         barcode = str(item.data(Qt.UserRole + 10) or "").strip()
@@ -1184,7 +1193,7 @@ class ExcelJournalView(QWidget):
         elif action == act_details:
             self.show_sale_details(sale_id)
         elif act_edit and action == act_edit:
-            self.edit_sale(sale_id, cash, tpe, oc, euro, dollar, impos)
+            self.edit_sale(sale_id, cash, tpe, oc, euro, dollar, impos, oc_silver)
         elif act_edit_seller and action == act_edit_seller:
             self.edit_seller(sale_id, seller_id)
         elif action == act_edit_obs:
@@ -1263,11 +1272,11 @@ class ExcelJournalView(QWidget):
             dollar = item.data(Qt.UserRole + 6)
             impos = item.data(Qt.UserRole + 7)
             seller_id = item.data(Qt.UserRole + 8)
-            self._add_action_btn("fa5s.edit", "Modifier les montants de cette vente", "#27ae60", "#2ecc71", lambda: self.edit_sale(sale_id, cash, tpe, oc, euro, dollar, impos))
+            oc_silver = float(item.data(Qt.UserRole + 14) or 0)
+            self._add_action_btn("fa5s.edit", "Modifier les montants de cette vente", "#27ae60", "#2ecc71", lambda: self.edit_sale(sale_id, cash, tpe, oc, euro, dollar, impos, oc_silver))
             self._add_action_btn("fa5s.user-edit", "Modifier le vendeur", "#16a085", "#1abc9c", lambda: self.edit_seller(sale_id, seller_id))
             self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, item_id, current_obs))
             self._add_action_btn("fa5s.trash-alt", "Supprimer (Annuler) cette vente", "#c0392b", "#962d2d", lambda: self.delete_sale(sale_id))
-        else:
             current_vrs_obs = str(raw_obs if raw_obs is not None else (self.table.item(row, 8).text() if self.table.item(row, 8) else ""))
             if is_pure_vp:
                 self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_versement_observation(item_id, current_vrs_obs))
@@ -1692,11 +1701,11 @@ class ExcelJournalView(QWidget):
         dlg = SaleDetailsDialog(self.manager, sale_id, self)
         dlg.exec()
 
-    def edit_sale(self, sale_id, cash, tpe, oc, euro=0, dollar=0, impos=0):
-        dlg = EditSaleDialog(cash, tpe, oc, euro, dollar, impos, self)
+    def edit_sale(self, sale_id, cash, tpe, oc, euro=0, dollar=0, impos=0, oc_silver=0):
+        dlg = EditSaleDialog(cash, tpe, oc, euro, dollar, impos, oc_silver, self)
         if dlg.exec() == QDialog.Accepted:
-            n_cash, n_tpe, n_oc, n_euro, n_dollar, n_impos = dlg.get_values()
-            if self.manager.sales.update_sale_financials(sale_id, n_cash, n_tpe, n_oc, n_euro, n_dollar, n_impos):
+            n_cash, n_tpe, n_oc, n_euro, n_dollar, n_impos, n_oc_silver = dlg.get_values()
+            if self.manager.sales.update_sale_financials(sale_id, n_cash, n_tpe, n_oc, n_euro, n_dollar, n_impos, n_oc_silver):
                 self.load_data() 
             else:
                 QMessageBox.warning(self, "Erreur", "Erreur lors de la mise à jour.")
@@ -1946,7 +1955,8 @@ class ExcelJournalView(QWidget):
                     self.table.setItem(row, 0, QTableWidgetItem("Aucune vente"))
                     continue
                     
-                t_ps, t_rec, t_oc, t_tpe, t_euro, t_dollar = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+                t_ps_gold, t_ps_silver = 0.0, 0.0
+                t_rec, t_oc_gold, t_oc_silver, t_tpe, t_euro, t_dollar = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
                 current_sale_id = None
                 current_bg_brush = self.BRUSH_BG_WHITE
                 
@@ -1959,20 +1969,46 @@ class ExcelJournalView(QWidget):
                         current_sale_id = sale_id
                         current_bg_brush = self.BRUSH_BG_ALT if current_bg_brush == self.BRUSH_BG_WHITE else self.BRUSH_BG_WHITE
 
-                    t_ps += float(r.get('P_S') or 0)
+                    metal_cat = str(r.get('metal_category') or 'GOLD').upper()
+                    p_s_val = float(r.get('P_S') or 0)
+                    if metal_cat == 'SILVER':
+                        t_ps_silver += p_s_val
+                    else:
+                        t_ps_gold += p_s_val
+
+                    oc_gold_val = float(r.get('OC_Gold') if 'OC_Gold' in r else (r.get('OC') or 0))
+                    oc_silver_val = float(r.get('OC_Silver') or 0)
+                    t_oc_gold += oc_gold_val
+                    t_oc_silver += oc_silver_val
+
                     t_rec += float(r.get('Recette') or 0)
-                    t_oc += float(r.get('OC') or 0)
                     t_tpe += float(r.get('TPE') or 0)
                     t_euro += float(r.get('Euro') or 0)
                     t_dollar += float(r.get('Dollar') or 0)
                     
+                    # Formatter P.S
+                    if metal_cat == 'SILVER' and p_s_val > 0:
+                        ps_str = f"{p_s_val:.2f} Ag"
+                    else:
+                        ps_str = f"{p_s_val:.2f}"
+
+                    # Formatter O.C
+                    if oc_gold_val > 0 and oc_silver_val > 0:
+                        oc_str = f"{oc_gold_val:.2f} / {oc_silver_val:.2f} Ag"
+                    elif oc_silver_val > 0:
+                        oc_str = f"{oc_silver_val:.2f} Ag"
+                    elif oc_gold_val > 0:
+                        oc_str = f"{oc_gold_val:.2f}"
+                    else:
+                        oc_str = "0"
+
                     row = self.table.rowCount()
                     self.table.insertRow(row)
                     cols_data = [
                         str(r.get('Designation', '')),
-                        f"{float(r.get('P_S') or 0):.2f}",
+                        ps_str,
                         f"{float(r.get('Recette') or 0):.0f}" if float(r.get('Recette') or 0) != 0 else ";",
-                        f"{float(r.get('OC') or 0):.2f}" if float(r.get('OC') or 0) != 0 else "0",
+                        oc_str,
                         f"{float(r.get('TPE') or 0):.0f}" if float(r.get('TPE') or 0) != 0 else "0",
                         f"{float(r.get('Euro') or 0):.0f}" if float(r.get('Euro') or 0) != 0 else "0",
                         f"{float(r.get('Dollar') or 0):.0f}" if float(r.get('Dollar') or 0) != 0 else "0",
@@ -1992,22 +2028,27 @@ class ExcelJournalView(QWidget):
                             item.setData(Qt.UserRole + 1, r.get('item_id'))
                             item.setData(Qt.UserRole + 2, float(r.get('Recette') or 0))
                             item.setData(Qt.UserRole + 3, float(r.get('TPE') or 0))
-                            item.setData(Qt.UserRole + 4, float(r.get('OC') or 0))
+                            item.setData(Qt.UserRole + 4, oc_gold_val)
                             item.setData(Qt.UserRole + 5, float(r.get('Euro') or 0))
                             item.setData(Qt.UserRole + 6, float(r.get('Dollar') or 0))
                             item.setData(Qt.UserRole + 7, float(r.get('Impos') or 0))
                             item.setData(Qt.UserRole + 8, r.get('vendeur_id'))
                             item.setData(Qt.UserRole + 9, r.get('raw_notes') or '')
                             item.setData(Qt.UserRole + 10, r.get('barcode') or '')
-                            item.setData(Qt.UserRole + 11, float(r.get('P_S') or 0))
+                            item.setData(Qt.UserRole + 11, p_s_val)
                             item.setData(Qt.UserRole + 12, str(r.get('receipt_number') or ''))
+                            item.setData(Qt.UserRole + 13, metal_cat)
+                            item.setData(Qt.UserRole + 14, oc_silver_val)
                             
                             bc = str(r.get('barcode') or '').strip()
                             if bc:
                                 item.setToolTip(f"Code-barres: {bc}\n{cols_data[0]}")
                         elif col_idx == 1:
                             bc = str(r.get('barcode') or '').strip()
-                            item.setToolTip(f"Poids Sorti P.S: {cols_data[1]} g" + (f"\nCode-barres: {bc}" if bc else "") + "\n(Double-cliquez pour modifier le poids)")
+                            metal_name = "Argent" if metal_cat == 'SILVER' else "Or"
+                            item.setToolTip(f"Poids Sorti P.S ({metal_name}): {p_s_val:.2f} g" + (f"\nCode-barres: {bc}" if bc else "") + "\n(Double-cliquez pour modifier le poids)")
+                        elif col_idx == 3:
+                            item.setToolTip(f"Or Cassé: {oc_gold_val:.2f} g\nArgent Cassé: {oc_silver_val:.2f} g")
                             
                         self.table.setItem(row, col_idx, item)
                         
@@ -2021,13 +2062,37 @@ class ExcelJournalView(QWidget):
                 empty_item.setForeground(self.BRUSH_WHITE)
                 self.table.setItem(row, 0, empty_item)
                 
-                for idx, t_val in enumerate([t_ps, t_rec, t_oc, t_tpe, t_euro, t_dollar], start=1):
-                    fmt = f"{t_val:.2f}" if idx in [1, 3] else f"{t_val:.0f}"
-                    t_item = QTableWidgetItem(fmt)
+                # Format totals for P.S and O.C
+                if t_ps_gold > 0 and t_ps_silver > 0:
+                    t_ps_display = f"{t_ps_gold:.2f} Au / {t_ps_silver:.2f} Ag"
+                elif t_ps_silver > 0:
+                    t_ps_display = f"{t_ps_silver:.2f} Ag"
+                else:
+                    t_ps_display = f"{t_ps_gold:.2f}"
+
+                if t_oc_gold > 0 and t_oc_silver > 0:
+                    t_oc_display = f"{t_oc_gold:.2f} Au / {t_oc_silver:.2f} Ag"
+                elif t_oc_silver > 0:
+                    t_oc_display = f"{t_oc_silver:.2f} Ag"
+                else:
+                    t_oc_display = f"{t_oc_gold:.2f}"
+
+                totals_list = [
+                    (1, t_ps_display, f"P.S Or: {t_ps_gold:.2f} g | P.S Argent: {t_ps_silver:.2f} g"),
+                    (2, f"{t_rec:.0f}", f"Total Recette: {t_rec:,.2f} DA"),
+                    (3, t_oc_display, f"O.C Or: {t_oc_gold:.2f} g | O.C Argent: {t_oc_silver:.2f} g"),
+                    (4, f"{t_tpe:.0f}", f"Total TPE: {t_tpe:,.2f} DA"),
+                    (5, f"{t_euro:.0f}", f"Total Euro: {t_euro:,.2f} €"),
+                    (6, f"{t_dollar:.0f}", f"Total Dollar: {t_dollar:,.2f} $")
+                ]
+
+                for idx, text_val, tip in totals_list:
+                    t_item = QTableWidgetItem(text_val)
                     t_item.setFont(self.FONT_BOLD_11)
                     t_item.setTextAlignment(Qt.AlignCenter)
                     t_item.setBackground(self.BRUSH_TOTAL_BG)
                     t_item.setForeground(self.BRUSH_WHITE)
+                    t_item.setToolTip(tip)
                     self.table.setItem(row, idx, t_item)
                     
                 for col_idx in [7, 8]:

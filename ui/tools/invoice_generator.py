@@ -580,6 +580,8 @@ def generate_invoice_pdf(
                 + _safe_float(payment_details.get("tpe_paid_da"))
                 + _safe_float(payment_details.get("euro_equivalent_da"))
                 + _safe_float(payment_details.get("dollar_equivalent_da"))
+                + _safe_float(payment_details.get("old_gold_equivalent_da"))
+                + _safe_float(payment_details.get("old_silver_equivalent_da"))
             )
     else:
         total_paid_da = _safe_float(cash_paid) + _safe_float(tpe_paid)
