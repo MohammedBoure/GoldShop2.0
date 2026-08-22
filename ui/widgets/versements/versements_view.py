@@ -1018,17 +1018,17 @@ class VersementsView(QWidget):
         dlg = EditPaymentDialog(self.manager, data, self)
         if dlg.exec() == QDialog.Accepted: self.load_data()
 
-    def _add_action_btn(self, icon_name, text, bg_color, hover_color, callback, enabled=True):
-        btn = QPushButton(f" {text}")
+    def _add_action_btn(self, icon_name, tooltip, bg_color, hover_color, callback, enabled=True):
+        btn = QPushButton()
         btn.setIcon(qta.icon(icon_name, color="white"))
         btn.setIconSize(QSize(16, 16))
-        btn.setToolTip(text)
+        btn.setToolTip(tooltip)
         btn.setCursor(Qt.PointingHandCursor if enabled else Qt.ArrowCursor)
         btn.setEnabled(enabled)
         btn.setStyleSheet(f"""
-            QPushButton {{ background-color: {bg_color}; color: white; font-weight: bold; font-size: 12px; padding: 5px 10px; border-radius: 4px; border: none; }}
+            QPushButton {{ background-color: {bg_color}; border: none; padding: 5px 10px; border-radius: 4px; min-width: 20px; }}
             QPushButton:hover {{ background-color: {hover_color}; }}
-            QPushButton:disabled {{ background-color: #bdc3c7; color: white; }}
+            QPushButton:disabled {{ background-color: #bdc3c7; }}
         """)
         btn.clicked.connect(callback)
         self.toolbar_actions_layout.addWidget(btn)
