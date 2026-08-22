@@ -657,19 +657,25 @@ class VersementManager:
                     
                     for item in items:
                         item_type = str(item.get('item_type') or 'WEIGHT').upper()
+                        i_status = item.get('item_status', 'EN_COURS')
                         reserved_quantity = (
                             max(1, int(item.get('reserved_quantity') or 1))
                             if item_type == 'PIECE' else 1
                         )
-                        item['reserved_quantity'] = reserved_quantity
-                        item['display_weight'] = (
-                            float(item.get('weight') or 0) * reserved_quantity
-                            if item_type == 'PIECE' else float(item.get('weight') or 0)
-                        )
-                        item['display_price'] = (
-                            float(item.get('selling_price') or 0) * reserved_quantity
-                            if item_type == 'PIECE' else float(item.get('selling_price') or 0)
-                        )
+                        if i_status == 'ANNULE':
+                            item['reserved_quantity'] = 0
+                            item['display_weight'] = 0.0
+                            item['display_price'] = 0.0
+                        else:
+                            item['reserved_quantity'] = reserved_quantity
+                            item['display_weight'] = (
+                                float(item.get('weight') or 0) * reserved_quantity
+                                if item_type == 'PIECE' else float(item.get('weight') or 0)
+                            )
+                            item['display_price'] = (
+                                float(item.get('selling_price') or 0) * reserved_quantity
+                                if item_type == 'PIECE' else float(item.get('selling_price') or 0)
+                            )
                     total_active_weight = sum(
                         float(i.get('display_weight') or 0) for i in items
                         if i['item_status'] != 'ANNULE'

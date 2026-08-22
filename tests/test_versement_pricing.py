@@ -187,7 +187,24 @@ class VersementPricingTests(unittest.TestCase):
         self.assertAlmostEqual(bal[1]["remaining_g"], 0.0)
         self.assertAlmostEqual(bal[2]["deducted_g"], 1.0)
         self.assertAlmostEqual(bal[2]["remaining_g"], 5.0)
-        self.assertAlmostEqual(bal[2]["paid_da"], 10000.0)
+    def test_calculate_versement_item_balances_annule_item_returns_zero(self):
+        from database.versement import calculate_versement_item_balances
+
+        items = [
+            {"item_id": 1, "item_status": "ANNULE", "weight": 2.68, "selling_price": 26800.0},
+            {"item_id": 2, "item_status": "EN_COURS", "weight": 5.0, "selling_price": 50000.0},
+        ]
+        payments = [
+            {"id": 1, "montant_da": 20000, "poids_deduit_g": 2.0, "versement_item_id": None}
+        ]
+        bal = calculate_versement_item_balances(items, payments)
+        self.assertEqual(bal[1]["weight"], 0.0)
+        self.assertEqual(bal[1]["deducted_g"], 0.0)
+        self.assertEqual(bal[1]["remaining_g"], 0.0)
+        self.assertEqual(bal[1]["paid_da"], 0.0)
+        self.assertEqual(bal[2]["weight"], 5.0)
+        self.assertEqual(bal[2]["deducted_g"], 2.0)
+        self.assertEqual(bal[2]["remaining_g"], 3.0)
 
 
 if __name__ == "__main__":

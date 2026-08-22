@@ -721,13 +721,15 @@ class AddPaymentDialog(QDialog):
         for i, item in enumerate(items):
             self.table_items.insertRow(i)
             desig = item.get('designation', 'Article')
-            w = float(item.get('display_weight') or item.get('weight') or 0)
+            i_statut = item.get('item_status', 'EN_COURS')
+            is_item_annule = (i_statut == 'ANNULE')
+            w = 0.0 if is_item_annule else float(item.get('display_weight') or item.get('weight') or 0)
             item_id = item.get('item_id') or item.get('id')
 
             bal = balances.get(item_id, {})
-            deductions = bal.get('deducted_g', 0.0)
-            reste = bal.get('remaining_g', max(0.0, w - deductions))
-            price = float(item.get('display_price') or item.get('selling_price') or 0)
+            deductions = 0.0 if is_item_annule else bal.get('deducted_g', 0.0)
+            reste = 0.0 if is_item_annule else bal.get('remaining_g', max(0.0, w - deductions))
+            price = 0.0 if is_item_annule else float(item.get('display_price') or item.get('selling_price') or 0)
 
             it_desig = QTableWidgetItem(desig)
             it_w = QTableWidgetItem(f"{w:.2f} g")

@@ -206,5 +206,21 @@ def calculate_versement_item_balances(
         r["remaining_da"] = max(0.0, r["selling_price"] - r["paid_da"])
         result[r["item_id"]] = r
 
+    for item in items or []:
+        if item.get("item_status") == "ANNULE":
+            item_id = item.get("item_id", item.get("id"))
+            if item_id is not None:
+                result[item_id] = {
+                    "item_id": item_id,
+                    "item_status": "ANNULE",
+                    "weight": 0.0,
+                    "selling_price": 0.0,
+                    "deducted_g": 0.0,
+                    "remaining_g": 0.0,
+                    "paid_da": 0.0,
+                    "remaining_da": 0.0,
+                    "has_shared": False,
+                }
+
     return result
 

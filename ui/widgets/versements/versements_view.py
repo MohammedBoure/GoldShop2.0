@@ -1407,12 +1407,16 @@ class VersementsView(QWidget):
                         row = self.table.rowCount()
                         self.table.insertRow(row)
                         i_statut = item.get('item_status', 'EN_COURS')
+                        is_item_annule = (i_statut == 'ANNULE')
                         item_type = str(item.get('item_type') or 'WEIGHT').upper()
-                        reserved_quantity = max(1, int(item.get('reserved_quantity') or 1)) if item_type == 'PIECE' else 1
-                        weight = float(item.get('display_weight') or item.get('weight') or 0)
+                        reserved_quantity = 0 if is_item_annule else (max(1, int(item.get('reserved_quantity') or 1)) if item_type == 'PIECE' else 1)
+                        weight = 0.0 if is_item_annule else float(item.get('display_weight') or item.get('weight') or 0)
                         balance = balances.get(item['item_id'], {
-                            "deducted_g": 0.0, "remaining_g": weight, "has_shared": False
+                            "deducted_g": 0.0, "remaining_g": 0.0 if is_item_annule else weight, "has_shared": False
                         })
+                        if is_item_annule:
+                            balance["deducted_g"] = 0.0
+                            balance["remaining_g"] = 0.0
                         custom_note = normalize_custom_note(item.get('custom_note'))
                         internal_obs = str(item.get("observation") or "").strip()
                         i_data = {
@@ -1437,7 +1441,9 @@ class VersementsView(QWidget):
                         )
                         remain_g_str = f"Déduit: {balance['deducted_g']:.3f} g | Reste: {balance['remaining_g']:.3f} g"
                         obs_str = f"Reste poids: {balance['remaining_g']:.3f} g"
-                        if balance.get("has_shared"):
+                        if is_item_annule:
+                            obs_str = "Article Annulé (Reste: 0.000 g)"
+                        elif balance.get("has_shared"):
                             obs_str += " (avec part globale)"
                         if custom_note:
                             obs_str += f" | Facture: {custom_note}"
@@ -1673,16 +1679,17 @@ class VersementFullDetailsDialog(QDialog):
 
         table_articles.setRowCount(len(items))
         for row_idx, item in enumerate(items):
-            item_weight = float(item.get('display_weight') or item.get('weight') or 0)
+            i_statut = item.get("item_status", "EN_COURS")
+            is_item_annule = (i_statut == "ANNULE")
+            item_weight = 0.0 if is_item_annule else float(item.get('display_weight') or item.get('weight') or 0)
             item_id = item.get('item_id') or item.get('id')
             
             bal = balances.get(item_id, {})
-            deducted_g = bal.get('deducted_g', 0.0)
-            remaining_g = bal.get('remaining_g', max(0.0, item_weight - deducted_g))
+            deducted_g = 0.0 if is_item_annule else bal.get('deducted_g', 0.0)
+            remaining_g = 0.0 if is_item_annule else bal.get('remaining_g', max(0.0, item_weight - deducted_g))
 
             barcode = item.get("barcode", "N/A")
             desig = item.get("designation", "Article Inconnu")
-            i_statut = item.get("item_status", "EN_COURS")
             custom_note = item.get("custom_note") or item.get("notes") or ""
 
             it_bc = QTableWidgetItem(str(barcode)); it_bc.setToolTip(str(barcode))
