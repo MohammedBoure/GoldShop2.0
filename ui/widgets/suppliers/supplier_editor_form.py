@@ -117,8 +117,13 @@ class SupplierEditorForm(QWidget):
         self.name_edit.setText(str(supplier.get("name") or ""))
         self.code_edit.setText(str(supplier.get("official_code") or supplier.get("code") or ""))
         
-        stype = str(supplier.get("supplier_type") or "Gold")
+        stype = str(supplier.get("supplier_type") or "Gold").strip()
         idx_t = self.supplier_type_combo.findData(stype)
+        if idx_t < 0:
+            if stype.lower() in ["silver", "argent"]:
+                idx_t = self.supplier_type_combo.findData("Silver")
+            else:
+                idx_t = self.supplier_type_combo.findData("Gold")
         if idx_t >= 0: self.supplier_type_combo.setCurrentIndex(idx_t)
         
         purity = str(supplier.get("primary_purity") or "750")

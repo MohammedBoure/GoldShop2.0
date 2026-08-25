@@ -176,6 +176,12 @@ PARTNER_TABLE_QUERIES = [
         transaction_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (supplier_id) REFERENCES Suppliers(id) ON DELETE CASCADE
     );""",
+
+    # ── Migrations Suppliers ──
+    "ALTER TABLE Suppliers ADD COLUMN primary_purity VARCHAR(50) DEFAULT '750';",
+    "ALTER TABLE Suppliers MODIFY COLUMN primary_purity VARCHAR(50) DEFAULT '750';",
+    "ALTER TABLE Suppliers ADD COLUMN supplier_type VARCHAR(50) DEFAULT 'Gold';",
+    "ALTER TABLE Suppliers MODIFY COLUMN supplier_type VARCHAR(50) DEFAULT 'Gold';",
 ]
 
 DAILY_JOURNAL_TABLE_QUERIES = [
@@ -682,9 +688,7 @@ ARTISAN_WORK_TABLE_QUERIES = [
     "ALTER TABLE ArtisanWorkOrders ADD COLUMN observations TEXT NULL;",
     "ALTER TABLE ArtisanWorkOrders ADD COLUMN cout_artisan_da VARCHAR(50) NULL;",
     "ALTER TABLE ArtisanWorkOrders ADD COLUMN prix_vente_da VARCHAR(50) NULL;",
-    "ALTER TABLE ArtisanTransactions ADD COLUMN metal_type_id INT NULL;",
-    "ALTER TABLE Suppliers ADD COLUMN primary_purity VARCHAR(50) DEFAULT '750';",
-    "ALTER TABLE Suppliers ADD COLUMN supplier_type VARCHAR(50) DEFAULT 'Gold';"
+    "ALTER TABLE ArtisanTransactions ADD COLUMN metal_type_id INT NULL;"
 ]
 
 FINANCIAL_TABLE_QUERIES = [

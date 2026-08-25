@@ -191,8 +191,8 @@ class SuppliersTab(QWidget):
                     row = self.table.rowCount()
                     self.table.insertRow(row)
 
-                    stype_val = str(s.get("supplier_type") or "Gold").lower()
-                    stype = "Or (Gold)" if stype_val in ["gold", "or"] else "Argent (Silver)"
+                    stype_raw = str(s.get("supplier_type") or "Gold").strip().lower()
+                    stype = "Argent (Silver)" if stype_raw in ["argent", "silver"] else "Or (Gold)"
                     purity = str(s.get("primary_purity") or "750")
                     if purity == "750": purity += " (18K)"
                     elif purity == "925": purity += " (Argent)"
@@ -230,8 +230,13 @@ class SuppliersTab(QWidget):
             self.current_edit_id = supplier_data['id']
             self.inp_name.setText(str(supplier_data.get('name') or ''))
             
-            stype = str(supplier_data.get('supplier_type') or 'Gold')
+            stype = str(supplier_data.get('supplier_type') or 'Gold').strip()
             idx_t = self.combo_type.findData(stype)
+            if idx_t < 0:
+                if stype.lower() in ["silver", "argent"]:
+                    idx_t = self.combo_type.findData("Silver")
+                else:
+                    idx_t = self.combo_type.findData("Gold")
             if idx_t >= 0: self.combo_type.setCurrentIndex(idx_t)
 
             purity = str(supplier_data.get('primary_purity') or '750')
@@ -279,7 +284,9 @@ class SuppliersTab(QWidget):
                     primary_purity=purity,
                     is_active=is_active
                 )
-                if success:pass
+                if not success:
+                    QMessageBox.critical(self, "Erreur", "Impossible de mettre à jour le fournisseur.")
+                    return
             else:
                 new_id = self.service().create_supplier(
                     name=name,
@@ -289,8 +296,9 @@ class SuppliersTab(QWidget):
                     primary_purity=purity,
                     is_active=is_active
                 )
-                if new_id:
-                    pass
+                if not new_id:
+                    QMessageBox.critical(self, "Erreur", "Impossible d'enregistrer le fournisseur.")
+                    return
 
             self.refresh_data()
         except Exception as e:

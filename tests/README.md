@@ -16,3 +16,4 @@
 * `test_versement_quantity_manager.py`: اختبارات حجز وإدارة كميات قطع العربون.
 * `test_versement_quantity_ui.py`: اختبارات واجهة المستخدم لإدارة كميات العربون.
 * `test_versement_reservation.py`: اختبارات حجز المخزون لملفات العربون.
+* `test_supplier_type_migration.py`: اختبارات ترقية حقول الموردين (supplier_type, primary_purity) في المخطط ونماذج الإدخال.
