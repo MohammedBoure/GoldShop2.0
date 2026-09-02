@@ -700,6 +700,7 @@ ARTISAN_WORK_TABLE_QUERIES = [
     "ALTER TABLE ArtisanWorkOrders ADD COLUMN pay_tpe_da DECIMAL(15, 2) NOT NULL DEFAULT 0.00;",
     "ALTER TABLE ArtisanWorkOrders ADD COLUMN pay_oc_g DECIMAL(10, 3) NOT NULL DEFAULT 0.000;",
     "ALTER TABLE ArtisanWorkOrders ADD COLUMN pay_oc_silver_g DECIMAL(10, 3) NOT NULL DEFAULT 0.000;",
+    "ALTER TABLE ArtisanWorkOrders ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;",
     "ALTER TABLE ArtisanTransactions ADD COLUMN metal_type_id INT NULL;"
 ]
 

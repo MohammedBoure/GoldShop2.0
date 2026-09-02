@@ -353,7 +353,7 @@ class SalesManager:
                         NULL as vendeur_id,
                         awo.observations as raw_notes,
                         awo.numero as repair_numero,
-                        COALESCE(awo.created_at, awo.date_remis) as timestamp
+                        awo.date_remis as timestamp
                     FROM ArtisanWorkOrders awo
                     LEFT JOIN Clients c ON awo.client_id = c.id
                     LEFT JOIN Artisans a ON awo.artisan_id = a.id
