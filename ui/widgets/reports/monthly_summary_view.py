@@ -212,61 +212,60 @@ class MonthlySummaryView(QWidget):
         
         self.lbl_main_title.setText(f"Recettes Du Mois {month_name} {year}")
 
-        # 1. الاستعلام المجمع: يجمع كل مبيعات اليوم في سطر واحد ويحسب الفائدة
-        query = """
-            SELECT 
-                DATE(s.created_at) as sale_date,
-                SUM(CASE WHEN COALESCE(si.metal_category, mt.metal_category, 'GOLD') = 'GOLD' THEN si.sold_weight_g ELSE 0 END) as total_ps_gold,
-                SUM(CASE WHEN COALESCE(si.metal_category, mt.metal_category, 'GOLD') = 'SILVER' THEN si.sold_weight_g ELSE 0 END) as total_ps_silver,
-                SUM(si.sold_weight_g) as total_ps,
-                SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%'
-                              AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id
-                         THEN s.cash_paid_da ELSE 0 END) as total_recette,
-                SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%'
-                              AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id
-                         THEN s.old_gold_weight_g ELSE 0 END) as total_oc_gold,
-                SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%'
-                              AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id
-                         THEN COALESCE(s.old_silver_weight_g, 0) ELSE 0 END) as total_oc_silver,
-                SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%'
-                              AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id
-                         THEN s.tpe_paid_da ELSE 0 END) as total_tpe,
-                SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%'
-                              AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id
-                         THEN s.euro_paid ELSE 0 END) as total_euro,
-                SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%'
-                              AND (SELECT id FROM SaleItems WHERE sale_id = s.id ORDER BY id ASC LIMIT 1) = si.id
-                         THEN s.dollar_paid ELSE 0 END) as total_dollar,
-                
-                -- حساب الفائدة الصافية (سعر البيع ناقص التكلفة الأصلية)
-                SUM(
-                    si.total_price_da - 
-                    IF(si.item_type = 'WEIGHT', 
-                       (COALESCE(i.metal_cost_per_gram, 0) + COALESCE(i.labor_cost_per_gram, 0)) * si.sold_weight_g,
-                       (COALESCE(i.metal_cost_per_gram, 0) + COALESCE(i.labor_cost_per_gram, 0)) * si.sold_quantity
-                    )
-                ) as total_benefice
-                
-            FROM Sales s
-            JOIN SaleItems si ON s.id = si.sale_id
-            LEFT JOIN Inventory i ON si.inventory_id = i.id
-            LEFT JOIN MetalTypes mt ON COALESCE(si.metal_type_id, i.metal_type_id) = mt.id
-            WHERE YEAR(s.created_at) = %s AND MONTH(s.created_at) = %s AND s.status = 'COMPLETED'
-            GROUP BY DATE(s.created_at)
-        """
-        
+        def to_date_key(val):
+            if not val:
+                return None
+            if isinstance(val, datetime):
+                return val.date()
+            if isinstance(val, date):
+                return val
+            if isinstance(val, str):
+                try:
+                    return datetime.strptime(val.split()[0], "%Y-%m-%d").date()
+                except Exception:
+                    pass
+            return None
+
         try:
             with self.manager.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
-                cursor.execute(query, (year, month))
-                results = cursor.fetchall()
-                while cursor.nextset(): pass
-                
-                # تحويل النتائج إلى قاموس (Key = Date) لتسهيل البحث
-                sales_by_date = {row['sale_date']: row for row in results}
-                profit_by_date = getattr(self.manager.sales, 'get_monthly_profit_by_day', lambda *_: {})(year, month)
-                
-                # Fetch Versement Payments
+
+                # 1. جلب أوزان المبيعات الخارجة (P.S Or & P.S Argent)
+                cursor.execute("""
+                    SELECT 
+                        DATE(s.created_at) as sale_date,
+                        SUM(CASE WHEN COALESCE(si.metal_category, mt.metal_category, 'GOLD') = 'GOLD' THEN si.sold_weight_g ELSE 0 END) as total_ps_gold,
+                        SUM(CASE WHEN COALESCE(si.metal_category, mt.metal_category, 'GOLD') = 'SILVER' THEN si.sold_weight_g ELSE 0 END) as total_ps_silver
+                    FROM SaleItems si
+                    JOIN Sales s ON si.sale_id = s.id
+                    LEFT JOIN Inventory i ON si.inventory_id = i.id
+                    LEFT JOIN MetalTypes mt ON COALESCE(si.metal_type_id, i.metal_type_id) = mt.id
+                    WHERE YEAR(s.created_at) = %s AND MONTH(s.created_at) = %s AND s.status = 'COMPLETED'
+                    GROUP BY DATE(s.created_at)
+                """, (year, month))
+                weight_results = cursor.fetchall()
+                while cursor.nextset() is True: pass
+                weights_by_date = {to_date_key(r['sale_date']): r for r in weight_results if to_date_key(r.get('sale_date'))}
+
+                # 2. جلب مبالغ المبيعات (Recette, TPE, OC Gold, OC Silver, Euro, Dollar)
+                cursor.execute("""
+                    SELECT 
+                        DATE(s.created_at) as sale_date,
+                        SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%' THEN s.cash_paid_da ELSE 0 END) as total_recette,
+                        SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%' THEN s.old_gold_weight_g ELSE 0 END) as total_oc_gold,
+                        SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%' THEN COALESCE(s.old_silver_weight_g, 0) ELSE 0 END) as total_oc_silver,
+                        SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%' THEN s.tpe_paid_da ELSE 0 END) as total_tpe,
+                        SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%' THEN s.euro_paid ELSE 0 END) as total_euro,
+                        SUM(CASE WHEN s.receipt_number NOT LIKE 'VRS-%' THEN s.dollar_paid ELSE 0 END) as total_dollar
+                    FROM Sales s
+                    WHERE YEAR(s.created_at) = %s AND MONTH(s.created_at) = %s AND s.status = 'COMPLETED'
+                    GROUP BY DATE(s.created_at)
+                """, (year, month))
+                sales_results = cursor.fetchall()
+                while cursor.nextset() is True: pass
+                sales_by_date = {to_date_key(r['sale_date']): r for r in sales_results if to_date_key(r.get('sale_date'))}
+
+                # 3. جلب دفعات وتأكيدات العربون (Versement Payments)
                 cursor.execute("""
                     SELECT 
                         DATE(vp.payment_date) as pay_date,
@@ -282,11 +281,38 @@ class MonthlySummaryView(QWidget):
                     GROUP BY DATE(vp.payment_date)
                 """, (year, month))
                 vp_results = cursor.fetchall()
-                while cursor.nextset(): pass
-                vp_by_date = {row['pay_date']: row for row in vp_results}
-                
+                while cursor.nextset() is True: pass
+                vp_by_date = {to_date_key(r['pay_date']): r for r in vp_results if to_date_key(r.get('pay_date'))}
+
+                # 4. جلب عمليات ودفعات وأرباح الورشة والتصليحات (ArtisanWorkOrders)
+                cursor.execute("""
+                    SELECT 
+                        DATE(awo.date_remis) as awo_date,
+                        SUM(COALESCE(awo.pay_cash_da, 0.0)) as total_awo_recette,
+                        SUM(COALESCE(awo.pay_tpe_da, 0.0)) as total_awo_tpe,
+                        SUM(COALESCE(awo.pay_oc_g, 0.0)) as total_awo_oc_gold,
+                        SUM(COALESCE(awo.pay_oc_silver_g, 0.0)) as total_awo_oc_silver,
+                        SUM(COALESCE(awo.diff, 0.0)) as total_awo_benefice
+                    FROM ArtisanWorkOrders awo
+                    WHERE YEAR(awo.date_remis) = %s AND MONTH(awo.date_remis) = %s
+                      AND (
+                          COALESCE(awo.pay_cash_da, 0) != 0 
+                          OR COALESCE(awo.pay_tpe_da, 0) != 0 
+                          OR COALESCE(awo.pay_oc_g, 0) != 0
+                          OR COALESCE(awo.pay_oc_silver_g, 0) != 0
+                          OR COALESCE(awo.diff, 0) != 0
+                      )
+                    GROUP BY DATE(awo.date_remis)
+                """, (year, month))
+                awo_results = cursor.fetchall()
+                while cursor.nextset() is True: pass
+                awo_by_date = {to_date_key(r['awo_date']): r for r in awo_results if to_date_key(r.get('awo_date'))}
+
+                # 5. حساب الأرباح الصافية (Bénéfice / Faaida) لكل يوم
+                raw_profit_dict = getattr(self.manager.sales, 'get_monthly_profit_by_day', lambda *_: {})(year, month)
+                profit_by_date = {to_date_key(k): v for k, v in raw_profit_dict.items() if to_date_key(k)}
+
                 num_days = calendar.monthrange(year, month)[1]
-                
                 sum_ps_gold = sum_ps_silver = sum_recettes = sum_oc_gold = sum_oc_silver = sum_tpe = sum_euro = sum_dollar = sum_benefice = 0.0
 
                 for day in range(1, num_days + 1):
@@ -305,19 +331,32 @@ class MonthlySummaryView(QWidget):
                     item_date.setTextAlignment(Qt.AlignCenter)
                     self.table.setItem(row_idx, 1, item_date)
 
-                    if current_date in sales_by_date or current_date in vp_by_date:
+                    has_data = (
+                        current_date in weights_by_date or 
+                        current_date in sales_by_date or 
+                        current_date in vp_by_date or 
+                        current_date in awo_by_date or 
+                        current_date in profit_by_date
+                    )
+
+                    if has_data:
+                        w_data = weights_by_date.get(current_date, {})
                         s_data = sales_by_date.get(current_date, {})
                         vp_data = vp_by_date.get(current_date, {})
+                        awo_data = awo_by_date.get(current_date, {})
                         
-                        ps_gold = float(s_data.get('total_ps_gold') or 0)
-                        ps_silver = float(s_data.get('total_ps_silver') or 0)
-                        recette = float(s_data.get('total_recette') or 0) + float(vp_data.get('total_vp_recette') or 0)
-                        oc_gold = float(s_data.get('total_oc_gold') or 0) + float(vp_data.get('total_vp_oc_gold') or 0)
-                        oc_silver = float(s_data.get('total_oc_silver') or 0) + float(vp_data.get('total_vp_oc_silver') or 0)
-                        tpe = float(s_data.get('total_tpe') or 0) + float(vp_data.get('total_vp_tpe') or 0)
+                        ps_gold = float(w_data.get('total_ps_gold') or 0)
+                        ps_silver = float(w_data.get('total_ps_silver') or 0)
+                        recette = float(s_data.get('total_recette') or 0) + float(vp_data.get('total_vp_recette') or 0) + float(awo_data.get('total_awo_recette') or 0)
+                        oc_gold = float(s_data.get('total_oc_gold') or 0) + float(vp_data.get('total_vp_oc_gold') or 0) + float(awo_data.get('total_awo_oc_gold') or 0)
+                        oc_silver = float(s_data.get('total_oc_silver') or 0) + float(vp_data.get('total_vp_oc_silver') or 0) + float(awo_data.get('total_awo_oc_silver') or 0)
+                        tpe = float(s_data.get('total_tpe') or 0) + float(vp_data.get('total_vp_tpe') or 0) + float(awo_data.get('total_awo_tpe') or 0)
                         euro = float(s_data.get('total_euro') or 0) + float(vp_data.get('total_vp_euro') or 0)
                         dollar = float(s_data.get('total_dollar') or 0) + float(vp_data.get('total_vp_dollar') or 0)
-                        benefice = float(profit_by_date.get(current_date, {}).get('profit_da') or 0)
+                        
+                        sales_profit = float(profit_by_date.get(current_date, {}).get('profit_da') or 0)
+                        awo_profit = float(awo_data.get('total_awo_benefice') or 0)
+                        benefice = sales_profit + awo_profit
                         
                         # تجميع الإجماليات
                         sum_ps_gold += ps_gold
@@ -333,13 +372,13 @@ class MonthlySummaryView(QWidget):
                         cols = [
                             f"{ps_gold:.2f}" if ps_gold else "●",
                             f"{ps_silver:.2f}" if ps_silver else "●",
-                            f"{recette:,.0f}" if recette else "●",
+                            f"{recette:,.0f}" if recette != 0 else "●",
                             f"{oc_gold:.2f}" if oc_gold else "●",
                             f"{oc_silver:.2f}" if oc_silver else "●",
                             f"{tpe:,.0f}" if tpe else "●",
                             f"{euro:,.0f}" if euro else "●",
                             f"{dollar:,.0f}" if dollar else "●",
-                            "Multi" if sum([ps_gold, ps_silver, recette, oc_gold, oc_silver, tpe, euro, dollar]) > 0 else "●",
+                            "Multi" if any([ps_gold, ps_silver, recette, oc_gold, oc_silver, tpe, euro, dollar, benefice]) else "●",
                             f"{benefice:,.2f}" if benefice != 0 else "●"
                         ]
                         
@@ -348,12 +387,14 @@ class MonthlySummaryView(QWidget):
                             item.setTextAlignment(Qt.AlignCenter)
                             if val == "●":
                                 item.setForeground(QBrush(QColor("#e74c3c")))
+                            elif col_idx == 4 and recette < 0:
+                                item.setForeground(QBrush(QColor("#e74c3c")))
                             elif col_idx == 11:
                                 item.setForeground(QBrush(QColor("#27ae60" if benefice > 0 else "#c0392b")))
                             self.table.setItem(row_idx, col_idx, item)
 
                     else:
-                        # حالة عدم وجود مبيعات في هذا اليوم (Repot)
+                        # حالة عدم وجود مبيعات أو حركات في هذا اليوم
                         for col_idx in range(2, self.table.columnCount()):
                             item = QTableWidgetItem("●")
                             item.setTextAlignment(Qt.AlignCenter)
@@ -368,21 +409,21 @@ class MonthlySummaryView(QWidget):
                     "TOTAL", "",
                     f"{sum_ps_gold:.2f}" if sum_ps_gold else "●",
                     f"{sum_ps_silver:.2f}" if sum_ps_silver else "●",
-                    f"{sum_recettes:,.0f}" if sum_recettes else "●",
+                    f"{sum_recettes:,.0f}" if sum_recettes != 0 else "●",
                     f"{sum_oc_gold:.2f}" if sum_oc_gold else "●",
                     f"{sum_oc_silver:.2f}" if sum_oc_silver else "●",
                     f"{sum_tpe:,.0f}" if sum_tpe else "●",
                     f"{sum_euro:,.0f}" if sum_euro else "●",
                     f"{sum_dollar:,.0f}" if sum_dollar else "●",
                     "",
-                    f"{sum_benefice:,.2f}" if sum_benefice else "●"
+                    f"{sum_benefice:,.2f}" if sum_benefice != 0 else "●"
                 ]
                 
                 for col_idx, val in enumerate(totals):
                     item = QTableWidgetItem(val)
                     item.setTextAlignment(Qt.AlignCenter)
                     item.setFont(QFont("", 14, QFont.Bold))
-                    item.setBackground(QBrush(QColor("#0f8f83"))) # لون أخضر (نفس لون الهيدر)
+                    item.setBackground(QBrush(QColor("#0f8f83"))) # لون أخضر مميز
                     item.setForeground(QBrush(QColor("#e74c3c" if val == "●" else "white")))
                     self.table.setItem(total_row_idx, col_idx, item)
 
