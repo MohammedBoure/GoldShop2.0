@@ -251,7 +251,8 @@ class EditPaymentDialog(QDialog):
             "1 - Paiement en Dinar (Espèces / TPE)",
             "2 - Paiement en Devise (Euro €)",
             "3 - Paiement par Or Cassé",
-            "4 - Paiement en Devise (Dollar $)"
+            "4 - Paiement en Devise (Dollar $)",
+            "5 - Paiement par Argent Cassé"
         ])
         self.combo_method.setStyleSheet("font-size: 14px; font-weight: bold; padding: 6px; border: 2px solid #0f8f83; border-radius: 6px; color: #075f58; background-color: #e8f7f4;")
         self.combo_method.currentIndexChanged.connect(self.on_payment_method_changed)
@@ -351,6 +352,30 @@ class EditPaymentDialog(QDialog):
         form_dollar.addRow(self._styled_lbl("Taux (DA/$) :"), self._wrap_with_numpad(self.inp_taux_change_dollar))
         form_dollar.addRow(self._styled_lbl("Équiv (DA) :", color="#27ae60"), self._wrap_with_numpad(self.inp_dollar_da))
         self.stacked_pay.addWidget(self.page_dollar)
+
+        # --- الصفحة 4: الفضة المكسرة ---
+        self.page_argent_casse = QWidget()
+        form_argent_casse = QFormLayout(self.page_argent_casse)
+        form_argent_casse.setContentsMargins(0, 0, 0, 0)
+        form_argent_casse.setSpacing(6)
+        self.inp_argent_casse = QLineEdit()
+        self.inp_argent_casse.setPlaceholderText("Poids (g)")
+        self.inp_argent_casse.setStyleSheet(inp_style + "color: #7f8c8d;")
+        self.inp_prix_g_argent_casse = QLineEdit()
+        self.inp_prix_g_argent_casse.setPlaceholderText("Prix/g")
+        self.inp_prix_g_argent_casse.setStyleSheet(inp_style + "color: #7f8c8d;")
+        self.inp_argent_casse_da = QLineEdit()
+        self.inp_argent_casse_da.setPlaceholderText("Valeur en DA")
+        self.inp_argent_casse_da.setStyleSheet(inp_style + "color: white; background-color: #27ae60;")
+        self.inp_argent_casse_da.textChanged.connect(lambda _: self.auto_calculate_poids_deduit())
+
+        self.inp_argent_casse.textChanged.connect(self.calc_argent_casse_eq)
+        self.inp_prix_g_argent_casse.textChanged.connect(self.calc_argent_casse_eq)
+
+        form_argent_casse.addRow(self._styled_lbl("Poids Argent :"), self._wrap_with_numpad(self.inp_argent_casse))
+        form_argent_casse.addRow(self._styled_lbl("Prix (DA/g) :"), self._wrap_with_numpad(self.inp_prix_g_argent_casse))
+        form_argent_casse.addRow(self._styled_lbl("Équiv (DA) :", color="#27ae60"), self._wrap_with_numpad(self.inp_argent_casse_da))
+        self.stacked_pay.addWidget(self.page_argent_casse)
 
         pay_layout.addWidget(self.stacked_pay)
 
@@ -461,6 +486,8 @@ class EditPaymentDialog(QDialog):
         taux_dl = float(self.p_data.get('taux_change_dollar') or 0)
         o_c = float(self.p_data.get('or_casse_g') or 0)
         prix_g = float(self.p_data.get('prix_gramme_jour_da') or 0)
+        o_c_ag = float(self.p_data.get('argent_casse_g') or 0)
+        prix_g_ag = float(self.p_data.get('prix_gramme_argent_jour_da') or 0)
         remise = float(self.p_data.get('remise_da') or 0)
         deduit = float(self.p_data.get('poids_deduit_g') or 0)
         notes = str(self.p_data.get('notes') or '')
@@ -480,6 +507,11 @@ class EditPaymentDialog(QDialog):
             self.inp_dollar.setText(f"{m_dl:.2f}")
             self.inp_taux_change_dollar.setText(f"{taux_dl:.2f}")
             self.inp_dollar_da.setText(f"{m_dl * taux_dl:.2f}")
+        elif o_c_ag > 0:
+            self.combo_method.setCurrentIndex(4)
+            self.inp_argent_casse.setText(f"{o_c_ag:.3f}")
+            self.inp_prix_g_argent_casse.setText(f"{prix_g_ag:.2f}")
+            self.inp_argent_casse_da.setText(f"{o_c_ag * prix_g_ag:.2f}")
         else:
             self.combo_method.setCurrentIndex(0)
             if m_da != 0: self.inp_cash.setText(f"{m_da:.2f}")
@@ -559,6 +591,9 @@ class EditPaymentDialog(QDialog):
         elif method_idx == 3:
             try: return float(self.inp_dollar_da.text() or 0)
             except Exception: return 0.0
+        elif method_idx == 4:
+            try: return float(self.inp_argent_casse_da.text() or 0)
+            except Exception: return 0.0
         return 0.0
 
     def open_discount_pct(self):
@@ -587,7 +622,7 @@ class EditPaymentDialog(QDialog):
             QMessageBox.warning(self, "Erreur", "Aucune base de prix estimé disponible pour calculer la remise.")
             return
 
-        pad = VirtualNumpad(title="Saisir le Prix Final (DA)", mode="dialog", allow_decimal=True, allow_negative=False, parent=self)
+        pad = VirtualNumpad(title="Saisir le Prix Final Souhaité (DA)", mode="dialog", allow_decimal=True, allow_negative=False, parent=self)
         if pad.exec() == QDialog.Accepted:
             val = pad.get_value()
             if val:
@@ -628,7 +663,7 @@ class EditPaymentDialog(QDialog):
     def auto_calculate_poids_deduit(self):
         """الحساب التلقائي اللحظي للوزن المقتنى بناءً على الدفعة المدفوعة وسعر الغرام المخفض الصافي"""
         unit_ppg, base_weight = self._get_price_per_gram_context()
-        base_amount = base_weight * unit_ppg
+        base_amount = self._get_active_base_amount()
 
         try:
             remise = float(self.inp_remise_da.text() or 0)
@@ -660,7 +695,7 @@ class EditPaymentDialog(QDialog):
 
     def update_dynamic_summary(self):
         unit_ppg, base_weight = self._get_price_per_gram_context()
-        total_brut = base_weight * unit_ppg
+        total_brut = self._get_active_base_amount()
 
         try:
             remise = float(self.inp_remise_da.text() or 0)
@@ -687,33 +722,6 @@ class EditPaymentDialog(QDialog):
         self.lbl_summary_paye.setText(f"{acompte_da:,.2f} DA  (Poids déduit: {poids_deduit:,.3f} g)")
         self.lbl_summary_reste.setText(f"{reste_g:,.3f} g  (≈ {montant_reste:,.0f} DA)")
 
-    # ========================================================
-    # الحسابات الخاصة بطرق الدفع
-    # ========================================================
-    def calc_euro_eq(self):
-        try:
-            euro = float(self.inp_euro.text() or 0)
-            taux = float(self.inp_taux_change.text() or 0)
-            if euro != 0 and taux > 0:
-                self.inp_euro_da.blockSignals(True)
-                self.inp_euro_da.setText(f"{euro * taux:.2f}")
-                self.inp_euro_da.blockSignals(False)
-                self.auto_calculate_poids_deduit()
-        except Exception:
-            pass
-
-    def calc_dollar_eq(self):
-        try:
-            dollar = float(self.inp_dollar.text() or 0)
-            taux = float(self.inp_taux_change_dollar.text() or 0)
-            if dollar != 0 and taux > 0:
-                self.inp_dollar_da.blockSignals(True)
-                self.inp_dollar_da.setText(f"{dollar * taux:.2f}")
-                self.inp_dollar_da.blockSignals(False)
-                self.auto_calculate_poids_deduit()
-        except Exception:
-            pass
-
     def calc_casse_eq(self):
         try:
             oc = float(self.inp_oc.text() or 0)
@@ -722,6 +730,18 @@ class EditPaymentDialog(QDialog):
                 self.inp_casse_da.blockSignals(True)
                 self.inp_casse_da.setText(f"{oc * prix:.2f}")
                 self.inp_casse_da.blockSignals(False)
+                self.auto_calculate_poids_deduit()
+        except Exception:
+            pass
+
+    def calc_argent_casse_eq(self):
+        try:
+            oc_ag = float(self.inp_argent_casse.text() or 0)
+            prix = float(self.inp_prix_g_argent_casse.text() or 0)
+            if oc_ag != 0 and prix > 0:
+                self.inp_argent_casse_da.blockSignals(True)
+                self.inp_argent_casse_da.setText(f"{oc_ag * prix:.2f}")
+                self.inp_argent_casse_da.blockSignals(False)
                 self.auto_calculate_poids_deduit()
         except Exception:
             pass
@@ -753,6 +773,10 @@ class EditPaymentDialog(QDialog):
                     if item.get('supplier_name'):
                         display_name += f" | Fourn: {item['supplier_name']}"
                     self.combo_target.addItem(f"💍 {display_name}", item['id'])
+
+                    if self.preselected_item_id and item['id'] == self.preselected_item_id:
+                        idx = self.combo_target.count() - 1
+                        self.combo_target.setCurrentIndex(idx)
         except Exception as e:
             logging.error(f"[EditPaymentDialog] Erreur chargement combo articles: {e}")
 
@@ -760,65 +784,61 @@ class EditPaymentDialog(QDialog):
         if not self.v_data:
             return
 
+        # جدول القطع
         items = self.v_data.get('items', [])
         payments = self.v_data.get('payments', [])
         balances = calculate_versement_item_balances(items, payments)
         self.table_items.setRowCount(0)
 
-        for i, item in enumerate(items):
+        for i, it in enumerate(items):
             self.table_items.insertRow(i)
-            desig = item.get('designation', 'Article')
-            i_statut = item.get('item_status', 'EN_COURS')
-            is_item_annule = (i_statut == 'ANNULE')
-            w = 0.0 if is_item_annule else float(item.get('display_weight') or item.get('weight') or 0)
-            item_id = item.get('item_id') or item.get('id')
+            st = it.get('item_status', 'EN_COURS')
+            name = it.get('designation', '')
+            w = float(it.get('weight') or 0)
+            p = float(it.get('selling_price') or 0)
+            item_id = it.get('item_id') or it.get('id')
 
             bal = balances.get(item_id, {})
-            deductions = 0.0 if is_item_annule else bal.get('deducted_g', 0.0)
-            reste = 0.0 if is_item_annule else bal.get('remaining_g', max(0.0, w - deductions))
-            price = 0.0 if is_item_annule else float(item.get('display_price') or item.get('selling_price') or 0)
+            paye_g = bal.get('paid_g', 0.0)
+            rem_g = bal.get('remaining_g', w)
 
-            it_desig = QTableWidgetItem(desig)
+            status_str = "✅ Actif" if st == 'EN_COURS' else "📦 Sorti" if st == 'LIVRE' else "❌ Annulé"
+
+            it_st = QTableWidgetItem(status_str)
+            it_name = QTableWidgetItem(name)
+            it_name.setToolTip("Double-cliquez pour modifier la note ou l'observation de cet article")
             it_w = QTableWidgetItem(f"{w:.2f} g")
-            it_ded = QTableWidgetItem(f"{deductions:.2f} g")
-            it_reste = QTableWidgetItem(f"{reste:.2f} g")
-            it_price = QTableWidgetItem(f"{price:,.0f} DA")
+            it_p = QTableWidgetItem(f"{p:,.0f} DA")
+            it_paye = QTableWidgetItem(f"{paye_g:.2f} g")
+            it_rem = QTableWidgetItem(f"{rem_g:.2f} g")
 
-            for it in [it_w, it_ded, it_reste, it_price]:
-                it.setTextAlignment(Qt.AlignCenter)
+            note_val = str(it.get('custom_note') or it.get('notes') or '').strip()
+            obs_val = str(it.get('observation') or '').strip()
+            full_note_str = note_val
+            if obs_val:
+                full_note_str = f"{note_val} | Obs: {obs_val}" if note_val else f"Obs: {obs_val}"
+            it_note = QTableWidgetItem(full_note_str if full_note_str else "-")
+            it_note.setToolTip(f"Note: {note_val}\nObservation: {obs_val}\n(Double-cliquez pour modifier)")
 
-            if reste == 0:
-                it_reste.setForeground(QBrush(QColor("#27ae60")))
-            else:
-                it_reste.setForeground(QBrush(QColor("#c0392b")))
+            for item_w in [it_st, it_w, it_p, it_paye, it_rem]:
+                item_w.setTextAlignment(Qt.AlignCenter)
 
-            custom_note = item.get('custom_note') or item.get('notes')
-            if item.get('observation'):
-                obs_val = item.get('observation')
-                if custom_note and custom_note != obs_val:
-                    obs_val += f" ({custom_note})"
-            elif custom_note:
-                obs_val = custom_note
-            else:
-                obs_val = "-"
-            it_obs = QTableWidgetItem(obs_val)
-            it_obs.setToolTip(obs_val)
+            if st == 'ANNULE':
+                for item_w in [it_st, it_name, it_w, it_p, it_paye, it_rem, it_note]:
+                    item_w.setForeground(QBrush(QColor("#7f8c8d")))
 
-            self.table_items.setItem(i, 0, it_desig)
-            self.table_items.setItem(i, 1, it_w)
-            self.table_items.setItem(i, 2, it_ded)
-            self.table_items.setItem(i, 3, it_reste)
-            self.table_items.setItem(i, 4, it_obs)
-            self.table_items.setItem(i, 5, it_price)
-            self.table_items.setRowHeight(i, 28)
+            self.table_items.setItem(i, 0, it_st)
+            self.table_items.setItem(i, 1, it_name)
+            self.table_items.setItem(i, 2, it_w)
+            self.table_items.setItem(i, 3, it_p)
+            self.table_items.setItem(i, 4, it_paye)
+            self.table_items.setItem(i, 5, it_rem)
+            self.table_items.setItem(i, 6, it_note)
+            self.table_items.setRowHeight(i, 26)
 
-    def _on_table_items_double_clicked(self, idx):
-        if not idx.isValid(): return
-        row = idx.row()
-        items = self.v_data.get('items', [])
-        if 0 <= row < len(items):
+        def _on_item_double_clicked(row, col):
+            if row < 0 or row >= len(items): return
             item_data = items[row]
-            from ui.widgets.versements.versements_view import VersementItemNoteDialog
             dlg = VersementItemNoteDialog(self.manager, item_data, self)
             if dlg.exec() == QDialog.Accepted:
                 new_note = dlg.get_product_note()
@@ -830,6 +850,7 @@ class EditPaymentDialog(QDialog):
                     item_data['observation'] = new_obs
                     self._populate_left_panel_tables()
 
+        # جدول سجل الدفعات السابقة
         self.table_history.setRowCount(0)
         for i, p in enumerate(payments):
             self.table_history.insertRow(i)
@@ -848,7 +869,9 @@ class EditPaymentDialog(QDialog):
             if float(p.get('montant_dollar') or 0) > 0:
                 devise_parts.append(f"{float(p.get('montant_dollar') or 0):,.0f} $")
             if float(p.get('or_casse_g') or 0) > 0:
-                devise_parts.append(f"{float(p.get('or_casse_g') or 0):.2f}g casse")
+                devise_parts.append(f"{float(p.get('or_casse_g') or 0):.2f}g casse (Or)")
+            if float(p.get('argent_casse_g') or 0) > 0:
+                devise_parts.append(f"{float(p.get('argent_casse_g') or 0):.2f}g casse (Ag)")
             devise_str = " | ".join(devise_parts) if devise_parts else "-"
 
             is_current = (p.get('id') == self.payment_id)
@@ -932,6 +955,7 @@ class EditPaymentDialog(QDialog):
 
             cash = 0.0; tpe = 0.0; euro = 0.0; taux = 0.0; oc = 0.0; prix_g = 0.0
             dollar = 0.0; taux_dollar = 0.0; remise_da = 0.0
+            argent_casse = 0.0; prix_g_argent = 0.0
             montant_total_da = 0.0
             poids_deduit = 0.0
 
@@ -964,21 +988,29 @@ class EditPaymentDialog(QDialog):
                     QMessageBox.warning(self, "Erreur", "Le montant Dollar et son équivalent en Dinar sont obligatoires.")
                     return
 
+            elif method_idx == 4:  # Argent cassé
+                argent_casse = float(self.inp_argent_casse.text() or 0)
+                prix_g_argent = float(self.inp_prix_g_argent_casse.text() or 0)
+                montant_total_da = float(self.inp_argent_casse_da.text() or 0)
+                if argent_casse == 0 or montant_total_da == 0:
+                    QMessageBox.warning(self, "Erreur", "Le poids d'Argent Cassé et son équivalent en Dinar sont obligatoires.")
+                    return
+
             try: remise_da = float(self.inp_remise_da.text() or 0)
             except Exception: remise_da = 0.0
 
             try: poids_deduit = float(self.inp_poids_deduit.text() or 0)
             except Exception: poids_deduit = 0.0
 
-            if montant_total_da == 0 and remise_da == 0 and oc == 0:
-                QMessageBox.warning(self, "Erreur", "Veuillez entrer un montant payé, de l'or cassé ou une remise.")
+            if montant_total_da == 0 and remise_da == 0 and oc == 0 and argent_casse == 0:
+                QMessageBox.warning(self, "Erreur", "Veuillez entrer un montant payé, de l'or/argent cassé ou une remise.")
                 return
 
             notes = self.inp_notes.text().strip()
             selected_item_id = self.combo_target.currentData()
             montant_da_for_storage = cash if method_idx == 0 else montant_total_da
 
-            if any(value < 0 for value in (cash, tpe, euro, dollar, oc, poids_deduit, montant_total_da)):
+            if any(value < 0 for value in (cash, tpe, euro, dollar, oc, argent_casse, poids_deduit, montant_total_da)):
                 if not notes:
                     notes = "Remboursement / Rendu espèces au client"
                     self.inp_notes.setText(notes)
@@ -995,7 +1027,9 @@ class EditPaymentDialog(QDialog):
                 or_casse_g=oc,
                 poids_deduit_g=poids_deduit,
                 notes=notes,
-                versement_item_id=selected_item_id
+                versement_item_id=selected_item_id,
+                argent_casse_g=argent_casse,
+                prix_gramme_argent_jour_da=prix_g_argent
             )
 
             if success:

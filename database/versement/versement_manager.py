@@ -98,7 +98,8 @@ class VersementManager:
                          montant_euro: float = 0.0, taux_change_euro: float = 0.0,
                          poids_deduit_g: float = 0.0, montant_dollar: float = 0.0,
                          taux_change_dollar: float = 0.0, remise_da: float = 0.0,
-                         tpe_da: float = 0.0) -> dict:
+                         tpe_da: float = 0.0, argent_casse_g: float = 0.0,
+                         prix_gramme_argent_jour_da: float = 0.0) -> dict:
         conn = None
         cursor = None
         try:
@@ -133,12 +134,12 @@ class VersementManager:
                         VALUES (%s, %s, %s, %s, %s, 'EN_COURS', %s)
                     """, (versement_id, inv_id, designation, item_notes, item_obs, requested_quantity))
 
-            if montant_da != 0 or tpe_da != 0 or or_casse_g != 0 or montant_euro != 0 or poids_deduit_g != 0 or montant_dollar != 0 or remise_da != 0:
+            if montant_da != 0 or tpe_da != 0 or or_casse_g != 0 or argent_casse_g != 0 or montant_euro != 0 or poids_deduit_g != 0 or montant_dollar != 0 or remise_da != 0:
                 cursor.execute("""
                     INSERT INTO Versement_Payments 
-                    (versement_id, journee_id, montant_da, tpe_da, montant_euro, taux_change_euro, montant_dollar, taux_change_dollar, remise_da, or_casse_g, poids_deduit_g, prix_gramme_jour_da, notes)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (versement_id, journee_id, montant_da, tpe_da, montant_euro, taux_change_euro, montant_dollar, taux_change_dollar, remise_da, or_casse_g, poids_deduit_g, prix_gramme_jour_da, notes))
+                    (versement_id, journee_id, montant_da, tpe_da, montant_euro, taux_change_euro, montant_dollar, taux_change_dollar, remise_da, or_casse_g, argent_casse_g, poids_deduit_g, prix_gramme_jour_da, prix_gramme_argent_jour_da, notes)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (versement_id, journee_id, montant_da, tpe_da, montant_euro, taux_change_euro, montant_dollar, taux_change_dollar, remise_da, or_casse_g, argent_casse_g, poids_deduit_g, prix_gramme_jour_da, prix_gramme_argent_jour_da, notes))
 
             conn.commit()
             return {"success": True, "versement_id": versement_id}
@@ -159,15 +160,16 @@ class VersementManager:
                     montant_euro: float = 0.0, taux_change_euro: float = 0.0,
                     poids_deduit_g: float = 0.0, versement_item_id: int = None,
                     montant_dollar: float = 0.0, taux_change_dollar: float = 0.0,
-                    remise_da: float = 0.0, tpe_da: float = 0.0) -> bool:
+                    remise_da: float = 0.0, tpe_da: float = 0.0,
+                    argent_casse_g: float = 0.0, prix_gramme_argent_jour_da: float = 0.0) -> bool:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
                 cursor.execute("""
                     INSERT INTO Versement_Payments 
-                    (versement_id, versement_item_id, journee_id, montant_da, tpe_da, montant_euro, taux_change_euro, montant_dollar, taux_change_dollar, remise_da, or_casse_g, poids_deduit_g, prix_gramme_jour_da, notes)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (versement_id, versement_item_id, journee_id, montant_da, tpe_da, montant_euro, taux_change_euro, montant_dollar, taux_change_dollar, remise_da, or_casse_g, poids_deduit_g, prix_gramme_jour_da, notes))
+                    (versement_id, versement_item_id, journee_id, montant_da, tpe_da, montant_euro, taux_change_euro, montant_dollar, taux_change_dollar, remise_da, or_casse_g, argent_casse_g, poids_deduit_g, prix_gramme_jour_da, prix_gramme_argent_jour_da, notes)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (versement_id, versement_item_id, journee_id, montant_da, tpe_da, montant_euro, taux_change_euro, montant_dollar, taux_change_dollar, remise_da, or_casse_g, argent_casse_g, poids_deduit_g, prix_gramme_jour_da, prix_gramme_argent_jour_da, notes))
                 conn.commit()
                 return True
         except Exception as e:
@@ -699,6 +701,8 @@ class VersementManager:
                     total_remise = 0.0
                     total_tpe = 0.0
                     total_dollar = 0.0
+                    total_or_casse_g = 0.0
+                    total_argent_casse_g = 0.0
                     
                     for p in payments:
                         money_da = float(p['montant_da'] or 0)
@@ -708,7 +712,8 @@ class VersementManager:
                         money_dl = float(p.get('montant_dollar') or 0)
                         taux_dl = float(p.get('taux_change_dollar') or 0)
                         remise = float(p.get('remise_da') or 0)
-                        oc = float(p['or_casse_g'] or 0)
+                        oc = float(p.get('or_casse_g') or 0)
+                        oc_ag = float(p.get('argent_casse_g') or 0)
                         p_deduit = float(p['poids_deduit_g'] or 0)
                         
                         total_paid_money += money_da + money_tpe
@@ -716,6 +721,8 @@ class VersementManager:
                         total_deducted_weight += p_deduit
                         total_remise += remise
                         total_dollar += money_dl
+                        total_or_casse_g += oc
+                        total_argent_casse_g += oc_ag
                             
                     v['total_weight_g'] = total_active_weight
                     v['total_estimated_price_da'] = total_estimated_price
@@ -724,6 +731,8 @@ class VersementManager:
                     v['total_paid_weight_g'] = total_deducted_weight
                     v['total_remise_da'] = total_remise
                     v['total_dollar'] = total_dollar
+                    v['total_or_casse_g'] = total_or_casse_g
+                    v['total_argent_casse_g'] = total_argent_casse_g
                     
                     # الباقي = الوزن الفعال المتبقي ناقص ما تم خصمه
                     v['reste_poids_g'] = max(0.0, total_active_weight - total_deducted_weight)
@@ -737,7 +746,8 @@ class VersementManager:
                        taux_change_euro: float, or_casse_g: float, poids_deduit_g: float, notes: str,
                        versement_item_id: int = None, montant_dollar: float = 0.0, 
                        taux_change_dollar: float = 0.0, remise_da: float = 0.0,
-                       tpe_da: float = 0.0) -> bool:
+                       tpe_da: float = 0.0, argent_casse_g: float = 0.0,
+                       prix_gramme_argent_jour_da: float = 0.0) -> bool:
         """تحديث بيانات دفعة مالية تم إدخالها بالخطأ أو إعادة توجيهها لمنتج محدد"""
         try:
             with self.db.get_db_connection() as conn:
@@ -746,9 +756,10 @@ class VersementManager:
                     UPDATE Versement_Payments 
                     SET montant_da = %s, tpe_da = %s, montant_euro = %s, taux_change_euro = %s,
                         montant_dollar = %s, taux_change_dollar = %s, remise_da = %s,
-                        or_casse_g = %s, poids_deduit_g = %s, notes = %s, versement_item_id = %s
+                        or_casse_g = %s, argent_casse_g = %s, poids_deduit_g = %s,
+                        prix_gramme_argent_jour_da = %s, notes = %s, versement_item_id = %s
                     WHERE id = %s
-                """, (montant_da, tpe_da, montant_euro, taux_change_euro, montant_dollar, taux_change_dollar, remise_da, or_casse_g, poids_deduit_g, notes, versement_item_id, payment_id))
+                """, (montant_da, tpe_da, montant_euro, taux_change_euro, montant_dollar, taux_change_dollar, remise_da, or_casse_g, argent_casse_g, poids_deduit_g, prix_gramme_argent_jour_da, notes, versement_item_id, payment_id))
                 conn.commit()
                 return True
         except Exception as e:

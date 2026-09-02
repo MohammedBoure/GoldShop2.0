@@ -612,6 +612,7 @@ class VersementsView(QWidget):
             remise_da = float(p.get('remise_da') or 0)
             
             poids_casse = float(p.get('or_casse_g') or 0)
+            poids_casse_argent = float(p.get('argent_casse_g') or 0)
             poids_deduit = float(p.get('poids_deduit_g') or 0)
             
             payment_value = calculate_payment_value_da(p)
@@ -641,6 +642,8 @@ class VersementsView(QWidget):
                     item_desig = "Rendu surplus / Remboursement"
                 elif poids_casse > 0:
                     item_desig = f"Paiement Or Cassé ({poids_casse:.2f}g)"
+                elif poids_casse_argent > 0:
+                    item_desig = f"Paiement Argent Cassé ({poids_casse_argent:.2f}g)"
                 elif montant_euro > 0:
                     item_desig = f"Paiement Euro ({montant_euro:,.0f}€)"
                 elif montant_dollar > 0:
@@ -1484,6 +1487,7 @@ class VersementsView(QWidget):
                         
                         m_da = float(p.get('montant_da') or 0); m_tpe = float(p.get('tpe_da') or 0); m_eu = float(p.get('montant_euro') or 0)
                         taux = float(p.get('taux_change_euro') or 0); o_c = float(p.get('or_casse_g') or 0)
+                        o_c_ag = float(p.get('argent_casse_g') or 0); prix_g_ag = float(p.get('prix_gramme_argent_jour_da') or 0)
                         deduit = float(p.get('poids_deduit_g') or 0); p_notes = p.get('notes') or ""
                         m_dl = float(p.get('montant_dollar') or 0); taux_dl = float(p.get('taux_change_dollar') or 0)
                         remise = float(p.get('remise_da') or 0)
@@ -1496,7 +1500,8 @@ class VersementsView(QWidget):
                             "versement_item_id": p.get('versement_item_id'),
                             "montant_da": m_da, "tpe_da": m_tpe, "montant_euro": m_eu, "taux_change_euro": taux,
                             "montant_dollar": m_dl, "taux_change_dollar": taux_dl, "remise_da": remise,
-                            "or_casse_g": o_c, "poids_deduit_g": deduit, "notes": p_notes
+                            "or_casse_g": o_c, "argent_casse_g": o_c_ag, "prix_gramme_argent_jour_da": prix_g_ag,
+                            "poids_deduit_g": deduit, "notes": p_notes
                         }
                         self.create_and_set_item(row, 0, op_label, p_data, bold=True, align_center=False, bg_color="#fff8e8", text_color="#7a4d08")
                         self.create_and_set_item(row, 1, f"{m_da:,.0f} DA" if m_da != 0 else "-", p_data, color_red=(m_da < 0), bg_color="#fff8e8", text_color="#27ae60" if m_da >= 0 else None)
@@ -1511,7 +1516,11 @@ class VersementsView(QWidget):
                         if taux_dl != 0: taux_str.append(f"{taux_dl:,.2f} $")
                         self.create_and_set_item(row, 4, " | ".join(taux_str) if taux_str else "-", p_data, color_red=(taux < 0 or taux_dl < 0), bg_color="#fff8e8", text_color="#27ae60" if (taux >= 0 and taux_dl >= 0) else None)
                         
-                        self.create_and_set_item(row, 5, f"{o_c:.2f} g" if o_c != 0 else "-", p_data, color_red=(o_c < 0), bg_color="#fff8e8", text_color="#27ae60" if o_c >= 0 else None)
+                        casse_parts = []
+                        if o_c != 0: casse_parts.append(f"{o_c:.2f}g (Or)")
+                        if o_c_ag != 0: casse_parts.append(f"{o_c_ag:.2f}g (Ag)")
+                        casse_str = " | ".join(casse_parts) if casse_parts else "-"
+                        self.create_and_set_item(row, 5, casse_str, p_data, color_red=(o_c < 0 or o_c_ag < 0), bg_color="#fff8e8", text_color="#27ae60" if (o_c >= 0 and o_c_ag >= 0) else None)
                         
                         deduit_str = f"{deduit:.2f} g" if deduit != 0 else "-"
                         self.create_and_set_item(row, 6, deduit_str, p_data, bold=(deduit!=0), color_red=(deduit>0), bg_color="#fff8e8", text_color="#7a4d08" if deduit <= 0 else None)
@@ -1756,6 +1765,7 @@ class VersementFullDetailsDialog(QDialog):
             m_dl = float(p.get('montant_dollar') or 0)
             taux = float(p.get('taux_change_euro') or p.get('taux_change_dollar') or 0)
             o_c = float(p.get('or_casse_g') or 0)
+            o_c_ag = float(p.get('argent_casse_g') or 0)
             deduit = float(p.get('poids_deduit_g') or 0)
             remise = float(p.get('remise_da') or 0)
             raw_notes = p.get('notes') or ""
@@ -1765,12 +1775,16 @@ class VersementFullDetailsDialog(QDialog):
             if m_eu != 0: devise_str.append(f"{m_eu:,.2f} €")
             if m_dl != 0: devise_str.append(f"{m_dl:,.2f} $")
 
+            casse_parts = []
+            if o_c != 0: casse_parts.append(f"{o_c:.2f}g (Or)")
+            if o_c_ag != 0: casse_parts.append(f"{o_c_ag:.2f}g (Ag)")
+
             it_date = QTableWidgetItem(date_str)
             it_da = QTableWidgetItem(f"{m_da:,.0f} DA" if m_da != 0 else "-")
             it_tpe = QTableWidgetItem(f"{m_tpe:,.0f} DA" if m_tpe != 0 else "-")
             it_dev = QTableWidgetItem(" / ".join(devise_str) if devise_str else "-")
             it_taux = QTableWidgetItem(f"{taux:.2f}" if taux > 0 else "-")
-            it_oc = QTableWidgetItem(f"{o_c:.2f} g" if o_c != 0 else "-")
+            it_oc = QTableWidgetItem(" / ".join(casse_parts) if casse_parts else "-")
             it_ded = QTableWidgetItem(f"{deduit:.3f} g" if deduit != 0 else "-")
             it_rem = QTableWidgetItem(f"{remise:,.0f} DA" if remise != 0 else "-")
             it_notes = QTableWidgetItem(str(clean_notes)); it_notes.setToolTip(str(clean_notes))

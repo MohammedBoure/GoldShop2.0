@@ -25,7 +25,10 @@ def payment_value_da(payment: dict[str, Any]) -> float:
     old_gold_equivalent = number(payment.get("or_casse_g")) * number(
         payment.get("prix_gramme_jour_da")
     )
-    converted_equivalent = euro_equivalent + dollar_equivalent + old_gold_equivalent
+    old_silver_equivalent = number(payment.get("argent_casse_g")) * number(
+        payment.get("prix_gramme_argent_jour_da")
+    )
+    converted_equivalent = euro_equivalent + dollar_equivalent + old_gold_equivalent + old_silver_equivalent
 
     if converted_equivalent > 0 and abs(declared_da - converted_equivalent) <= 0.01:
         base_da = declared_da

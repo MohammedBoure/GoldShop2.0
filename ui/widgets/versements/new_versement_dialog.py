@@ -213,7 +213,8 @@ class NewVersementDialog(QDialog):
             "1 - Paiement en Dinar (Espèces / TPE)",
             "2 - Paiement en Devise (Euro €)",
             "3 - Paiement par Or Cassé",
-            "4 - Paiement en Devise (Dollar $)"
+            "4 - Paiement en Devise (Dollar $)",
+            "5 - Paiement par Argent Cassé"
         ])
         self.combo_method.setStyleSheet("font-size: 14px; font-weight: bold; padding: 6px; border: 2px solid #0f8f83; border-radius: 6px; color: #075f58; background-color: #e8f7f4;")
         self.combo_method.currentIndexChanged.connect(self.on_payment_method_changed)
@@ -312,6 +313,29 @@ class NewVersementDialog(QDialog):
         form_dollar.addRow(self._styled_lbl("Taux (DA/$) :"), self._wrap_with_numpad(self.inp_taux_change_dollar))
         form_dollar.addRow(self._styled_lbl("Équiv (DA) :", color="#27ae60"), self._wrap_with_numpad(self.inp_dollar_da))
         self.stacked_pay.addWidget(self.page_dollar)
+
+        # --- الصفحة 5: الفضة المكسرة ---
+        self.page_argent_casse = QWidget()
+        form_argent_casse = QFormLayout(self.page_argent_casse)
+        form_argent_casse.setContentsMargins(0,0,0,0)
+        self.inp_argent_casse = QLineEdit()
+        self.inp_argent_casse.setPlaceholderText("Poids (g)")
+        self.inp_argent_casse.setStyleSheet(inp_style + "color: #7f8c8d;")
+        self.inp_prix_g_argent_casse = QLineEdit()
+        self.inp_prix_g_argent_casse.setPlaceholderText("Prix/g")
+        self.inp_prix_g_argent_casse.setStyleSheet(inp_style + "color: #7f8c8d;")
+        self.inp_argent_casse_da = QLineEdit()
+        self.inp_argent_casse_da.setPlaceholderText("Valeur en DA")
+        self.inp_argent_casse_da.setStyleSheet(inp_style + "color: white; background-color: #27ae60;")
+        self.inp_argent_casse_da.textChanged.connect(lambda _: self.auto_calculate_poids_deduit())
+        
+        self.inp_argent_casse.textChanged.connect(self.calc_argent_casse_eq)
+        self.inp_prix_g_argent_casse.textChanged.connect(self.calc_argent_casse_eq)
+        
+        form_argent_casse.addRow(self._styled_lbl("Poids Argent :"), self._wrap_with_numpad(self.inp_argent_casse))
+        form_argent_casse.addRow(self._styled_lbl("Prix (DA/g) :"), self._wrap_with_numpad(self.inp_prix_g_argent_casse))
+        form_argent_casse.addRow(self._styled_lbl("Équiv (DA) :", color="#27ae60"), self._wrap_with_numpad(self.inp_argent_casse_da))
+        self.stacked_pay.addWidget(self.page_argent_casse)
 
         inner_col1.addWidget(self.stacked_pay)
 
@@ -482,6 +506,9 @@ class NewVersementDialog(QDialog):
         elif method_idx == 4:
             try: return float(self.inp_dollar_da.text() or 0)
             except Exception: return 0.0
+        elif method_idx == 5:
+            try: return float(self.inp_argent_casse_da.text() or 0)
+            except Exception: return 0.0
         return 0.0
 
     def open_discount_pct(self):
@@ -489,33 +516,46 @@ class NewVersementDialog(QDialog):
         if total_brut <= 0:
             QMessageBox.warning(self, "Erreur", "Le panier est vide ou le prix total est 0.")
             return
-        
-        pad = VirtualNumpad(title="Saisir la Remise (%)", mode="dialog", allow_decimal=True, allow_negative=False, parent=self)
+
+        pad = VirtualNumpad(
+            title="Saisir la remise en pourcentage (%)",
+            mode="dialog",
+            allow_decimal=True,
+            allow_negative=False,
+            parent=self
+        )
         if pad.exec() == QDialog.Accepted:
-            val = pad.get_value()
-            if val:
-                pct = float(val)
+            value = pad.get_value()
+            if value:
+                pct = float(value)
                 if 0 <= pct <= 100:
-                    remise_val = total_brut * (pct / 100.0)
-                    self.inp_remise_da.setText(f"{remise_val:.2f}")
+                    remise_value = (total_brut * pct) / 100.0
+                    self.inp_remise_da.setText(f"{remise_value:.2f}")
                     self.auto_calculate_poids_deduit()
                 else:
-                    QMessageBox.warning(self, "Erreur", "Le pourcentage doit être entre 0 et 100.")
+                    QMessageBox.warning(self, "Erreur", "Le pourcentage doit être compris entre 0 et 100.")
 
     def open_discount_final_price(self):
         total_brut = sum(self._item_total_price(item) for item in self.cart_items)
         if total_brut <= 0:
-            QMessageBox.warning(self, "Erreur", "Le panier est vide ou n'a pas de prix estimé initial.")
+            QMessageBox.warning(self, "Erreur", "Le panier est vide ou le prix total est 0.")
             return
-        
-        pad = VirtualNumpad(title="Saisir le Prix Final (DA)", mode="dialog", allow_decimal=True, allow_negative=False, parent=self)
+
+        pad = VirtualNumpad(
+            title=f"Saisir le prix final souhaité (Total brut: {total_brut:,.2f} DA)",
+            mode="dialog",
+            allow_decimal=True,
+            allow_negative=False,
+            initial_value=total_brut,
+            parent=self
+        )
         if pad.exec() == QDialog.Accepted:
-            val = pad.get_value()
-            if val:
-                final_price = float(val)
+            value = pad.get_value()
+            if value:
+                final_price = float(value)
                 if 0 <= final_price <= total_brut:
-                    remise_val = max(0.0, total_brut - final_price)
-                    self.inp_remise_da.setText(f"{remise_val:.2f}")
+                    remise_value = max(0.0, total_brut - final_price)
+                    self.inp_remise_da.setText(f"{remise_value:.2f}")
                     self.auto_calculate_poids_deduit()
                 else:
                     QMessageBox.warning(self, "Erreur", f"Le prix final doit être entre 0 et {total_brut:,.2f} DA.")
@@ -641,6 +681,17 @@ class NewVersementDialog(QDialog):
                 self.inp_casse_da.blockSignals(True)
                 self.inp_casse_da.setText(f"{oc * prix:.2f}")
                 self.inp_casse_da.blockSignals(False)
+                self.auto_calculate_poids_deduit()
+        except: pass
+
+    def calc_argent_casse_eq(self):
+        try:
+            oc_ag = float(self.inp_argent_casse.text() or 0)
+            prix = float(self.inp_prix_g_argent_casse.text() or 0)
+            if oc_ag != 0 and prix > 0:
+                self.inp_argent_casse_da.blockSignals(True)
+                self.inp_argent_casse_da.setText(f"{oc_ag * prix:.2f}")
+                self.inp_argent_casse_da.blockSignals(False)
                 self.auto_calculate_poids_deduit()
         except: pass
 
@@ -984,6 +1035,7 @@ class NewVersementDialog(QDialog):
             
             cash = 0.0; tpe = 0.0; euro = 0.0; taux = 0.0; oc = 0.0; prix_g = 0.0
             dollar = 0.0; taux_dollar = 0.0; remise_da = 0.0
+            argent_casse = 0.0; prix_g_argent = 0.0
             montant_total_da = 0.0
             poids_deduit = 0.0
 
@@ -1019,6 +1071,14 @@ class NewVersementDialog(QDialog):
                     QMessageBox.warning(self, "Erreur", "Le montant Dollar et son équivalent en Dinar sont obligatoires.")
                     return
 
+            elif method_idx == 5:
+                argent_casse = float(self.inp_argent_casse.text() or 0)
+                prix_g_argent = float(self.inp_prix_g_argent_casse.text() or 0)
+                montant_total_da = float(self.inp_argent_casse_da.text() or 0)
+                if argent_casse == 0 or montant_total_da == 0:
+                    QMessageBox.warning(self, "Erreur", "Le poids d'Argent Cassé et son équivalent en Dinar sont obligatoires.")
+                    return
+
             try:
                 remise_da = float(self.inp_remise_da.text() or 0)
             except Exception:
@@ -1033,7 +1093,7 @@ class NewVersementDialog(QDialog):
             notes = self.inp_notes.toPlainText().strip()
             montant_da_for_storage = cash if method_idx == 1 else montant_total_da
 
-            if any(value < 0 for value in (cash, tpe, euro, dollar, oc, poids_deduit, montant_total_da)):
+            if any(value < 0 for value in (cash, tpe, euro, dollar, oc, argent_casse, poids_deduit, montant_total_da)):
                 if not notes:
                     QMessageBox.warning(
                         self,
@@ -1082,39 +1142,25 @@ class NewVersementDialog(QDialog):
                 QMessageBox.critical(self, "Erreur", "La session de caisse est fermée.")
                 return
 
-            try:
-                res = self.manager.versements.create_versement(
-                    client_id=self.selected_client_id,
-                    journee_id=journee['id'],
-                    type_versement=type_v,
-                    items_list=items_list,
-                    montant_da=montant_da_for_storage,
-                    tpe_da=tpe,
-                    montant_euro=euro,
-                    taux_change_euro=taux,
-                    montant_dollar=dollar,
-                    taux_change_dollar=taux_dollar,
-                    remise_da=remise_da,
-                    or_casse_g=oc,
-                    poids_deduit_g=poids_deduit,
-                    prix_gramme_jour_da=prix_g,
-                    notes=notes
-                )
-            except TypeError:
-                notes_to_save = notes
-                if euro > 0 or dollar > 0 or remise_da > 0 or poids_deduit > 0:
-                    notes_to_save += f" | [Détails: Euro={euro}€, Dollar={dollar}$, Remise={remise_da}DA, PoidsDéduit={poids_deduit}g]"
-                    
-                res = self.manager.versements.create_versement(
-                    client_id=self.selected_client_id,
-                    journee_id=journee['id'],
-                    type_versement=type_v,
-                    items_list=items_list,
-                    montant_da=montant_total_da,
-                    or_casse_g=oc,
-                    prix_gramme_jour_da=prix_g,
-                    notes=notes_to_save
-                )
+            res = self.manager.versements.create_versement(
+                client_id=self.selected_client_id,
+                journee_id=journee['id'],
+                type_versement=type_v,
+                items_list=items_list,
+                montant_da=montant_da_for_storage,
+                tpe_da=tpe,
+                montant_euro=euro,
+                taux_change_euro=taux,
+                montant_dollar=dollar,
+                taux_change_dollar=taux_dollar,
+                remise_da=remise_da,
+                or_casse_g=oc,
+                poids_deduit_g=poids_deduit,
+                prix_gramme_jour_da=prix_g,
+                notes=notes,
+                argent_casse_g=argent_casse,
+                prix_gramme_argent_jour_da=prix_g_argent
+            )
 
             if res.get("success"):
                 self.accept()
