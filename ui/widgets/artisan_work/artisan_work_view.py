@@ -13,9 +13,10 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QPushButton, QLineEdit, QDialog, QMessageBox, QComboBox,
     QLabel, QApplication, QAbstractItemView, QTabWidget,
-    QFormLayout, QMenu, QGridLayout, QGroupBox, QCalendarWidget
+    QFormLayout, QMenu, QGridLayout, QGroupBox, QCalendarWidget,
+    QScrollArea, QFrame, QScroller
 )
-from PySide6.QtCore import Qt, QDate
+from PySide6.QtCore import Qt, QDate, QTimer
 from PySide6.QtGui import QColor, QFont, QBrush
 
 from ui.deferred_loading import defer_initial_load
@@ -47,13 +48,13 @@ TAB_STYLE = """
     QTabBar::tab:hover:!selected { background-color: #f7f9fb; color: #24313f; }
 """
 
-LBL_STYLE = "font-size: 14px; font-weight: bold; color: #2c3e50;"
-STYLE_TEXT = "font-size: 14px; padding: 8px; border: 2px solid #dcdde1; border-radius: 6px; background-color: #ffffff;"
-STYLE_DATE = "font-size: 14px; padding: 8px; border: 2px solid #aed6f1; border-radius: 6px; background-color: #ebf5fb;"
-STYLE_NUM = "font-size: 14px; padding: 8px; border: 2px solid #f9e79f; border-radius: 6px; background-color: #fef9e7;"
-STYLE_RESULT = "font-size: 15px; font-weight: bold; padding: 8px; border: 2px solid #a9dfbf; border-radius: 6px; background-color: #d5f5e3;"
+LBL_STYLE = "font-size: 15px; font-weight: bold; color: #2c3e50;"
+STYLE_TEXT = "QLineEdit { font-size: 15px; font-weight: bold; padding: 8px 10px; min-height: 44px; border: 2px solid #bdc3c7; border-radius: 8px; background-color: #ffffff; color: #2c3e50; } QLineEdit:focus { border: 2px solid #00796B; background-color: #f7fcfa; }"
+STYLE_DATE = "QLineEdit { font-size: 15px; font-weight: bold; padding: 8px 10px; min-height: 44px; border: 2px solid #aed6f1; border-radius: 8px; background-color: #ebf5fb; color: #1b4f72; } QLineEdit:focus { border: 2px solid #2980b9; background-color: #f4f9fd; }"
+STYLE_NUM = "QLineEdit { font-size: 16px; font-weight: bold; padding: 8px 10px; min-height: 44px; border: 2px solid #f9e79f; border-radius: 8px; background-color: #fef9e7; color: #7d6608; } QLineEdit:focus { border: 2px solid #d68910; background-color: #fffef6; }"
+STYLE_RESULT = "QLineEdit { font-size: 16px; font-weight: bold; padding: 8px 10px; min-height: 44px; border: 2px solid #a9dfbf; border-radius: 8px; background-color: #d5f5e3; color: #145a32; }"
 
-BTN_AUX_STYLE = "QPushButton { border-radius: 5px; font-size: 13px; border: none; padding: 2px; }"
+BTN_AUX_STYLE = "QPushButton { border-radius: 8px; font-size: 16px; font-weight: bold; border: none; min-height: 44px; }"
 
 STATUS_MAP = {
     "RECEPTION": ("🟢 Au Réceptionniste", "#27ae60", "#d5f5e3"),
@@ -349,11 +350,19 @@ class ArtisanStatementDialog(QDialog):
 # =====================================================================
 # Dialog Opération / Dépôt Atelier Conforme 100% Au Tableau de Production
 # =====================================================================
+# =====================================================================
+# Dialog Opération / Dépôt Atelier Conforme 100% Au Tableau de Production
+# =====================================================================
 class OrderDialog(QDialog):
     def showEvent(self, event):
         super().showEvent(event)
-        screen = QApplication.primaryScreen().availableGeometry()
-        self.move((screen.width() - self.width()) // 2, 20)
+        try:
+            screen = QApplication.primaryScreen()
+            if screen:
+                geom = screen.availableGeometry()
+                self.move((geom.width() - self.width()) // 2, max(10, (geom.height() - self.height()) // 6))
+        except Exception:
+            pass
 
     def __init__(self, manager, artisan_id=None, record=None, parent=None):
         super().__init__(parent)
@@ -365,76 +374,124 @@ class OrderDialog(QDialog):
         self.selected_client_phone = ""
         
         self.setWindowTitle("Modifier la fiche d'Atelier (Production)" if record else "Nouveau Dépôt Atelier (Production)")
-        self.setFixedSize(950, 740)
+        self.resize(1000, 780)
+        self.setMinimumSize(900, 620)
         self.setStyleSheet("QDialog { background-color: #f4f6f7; }")
         self.init_ui()
 
+    def _auto_scroll_to(self, target_widget):
+        """Auto-défilement intelligent vers le tiers supérieur de la zone visible lors du focus"""
+        if hasattr(self, "scroll_area") and target_widget:
+            QTimer.singleShot(80, lambda: self.scroll_area.ensureWidgetVisible(target_widget, 0, 120))
+
     def _open_keyboard(self, target):
-        target.setFocus(); kb = VirtualKeyboardDialog(self.window()); kb.show(); kb.raise_()
+        target.setFocus()
+        self._auto_scroll_to(target)
+        kb = VirtualKeyboardDialog(self.window())
+        kb.show()
+        kb.raise_()
 
     def _open_numpad(self, target):
         target.setFocus()
+        self._auto_scroll_to(target)
         numpad = VirtualNumpad(title="Saisie", mode="direct", target_widget=target, allow_decimal=True, allow_leading_zero=True, parent=self)
-        numpad.show(); numpad.raise_()
+        numpad.show()
+        numpad.raise_()
 
     def _open_numpad_neg(self, target):
         target.setFocus()
+        self._auto_scroll_to(target)
         numpad = VirtualNumpad(title="Saisie Montant (DA)", mode="direct", target_widget=target, allow_decimal=True, allow_leading_zero=True, allow_negative=True, parent=self)
-        numpad.show(); numpad.raise_()
+        numpad.show()
+        numpad.raise_()
 
     def _open_calendar_picker(self, target):
+        self._auto_scroll_to(target)
         dlg = DatePickerDialog(current_date_str=target.text().strip(), parent=self)
         if dlg.exec() == QDialog.Accepted:
             target.setText(dlg.get_selected_date())
 
     def _set_today_date(self, target):
         target.setText(QDate.currentDate().toString("yyyy-MM-dd"))
+        self._auto_scroll_to(target)
 
     def _wrap_kb(self, widget):
-        lay = QHBoxLayout(); lay.setContentsMargins(0,0,0,0); lay.setSpacing(4)
+        lay = QHBoxLayout()
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
         lay.addWidget(widget, stretch=1)
-        btn = QPushButton("⌨"); btn.setFixedSize(32,32); btn.setStyleSheet(BTN_AUX_STYLE + "background-color: #3498db; color: white;")
-        btn.clicked.connect(lambda: self._open_keyboard(widget)); lay.addWidget(btn)
-        w = QWidget(); w.setLayout(lay); return w
+        btn = QPushButton("⌨")
+        btn.setFixedSize(46, 44)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setStyleSheet(BTN_AUX_STYLE + "background-color: #3498db; color: white;")
+        btn.clicked.connect(lambda: self._open_keyboard(widget))
+        lay.addWidget(btn)
+        w = QWidget()
+        w.setLayout(lay)
+        return w
 
     def _wrap_num(self, widget):
-        lay = QHBoxLayout(); lay.setContentsMargins(0,0,0,0); lay.setSpacing(4)
+        lay = QHBoxLayout()
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
         lay.addWidget(widget, stretch=1)
-        btn = QPushButton("🔢"); btn.setFixedSize(32,32); btn.setStyleSheet(BTN_AUX_STYLE + "background-color: #8e44ad; color: white;")
-        btn.clicked.connect(lambda: self._open_numpad(widget)); lay.addWidget(btn)
-        w = QWidget(); w.setLayout(lay); return w
+        btn = QPushButton("🔢")
+        btn.setFixedSize(46, 44)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setStyleSheet(BTN_AUX_STYLE + "background-color: #8e44ad; color: white;")
+        btn.clicked.connect(lambda: self._open_numpad(widget))
+        lay.addWidget(btn)
+        w = QWidget()
+        w.setLayout(lay)
+        return w
 
     def _wrap_num_neg(self, widget):
         """Enrobage saisie numérique avec support des valeurs négatives (pour rendu monnaie / retour client)"""
-        lay = QHBoxLayout(); lay.setContentsMargins(0,0,0,0); lay.setSpacing(4)
+        lay = QHBoxLayout()
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
         lay.addWidget(widget, stretch=1)
-        btn = QPushButton("🔢±"); btn.setFixedSize(36,32); btn.setStyleSheet(BTN_AUX_STYLE + "background-color: #8e44ad; color: white; font-weight: bold;")
-        btn.clicked.connect(lambda: self._open_numpad_neg(widget)); lay.addWidget(btn)
-        w = QWidget(); w.setLayout(lay); return w
+        btn = QPushButton("🔢±")
+        btn.setFixedSize(54, 44)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setStyleSheet(BTN_AUX_STYLE + "background-color: #8e44ad; color: white; font-weight: bold; font-size: 15px;")
+        btn.clicked.connect(lambda: self._open_numpad_neg(widget))
+        lay.addWidget(btn)
+        w = QWidget()
+        w.setLayout(lay)
+        return w
 
     def _wrap_date_input(self, widget):
-        """Enrobage UX complet pour la saisie rapide de date (Bouton Aujourd'hui + Calendrier + Clavier)"""
-        lay = QHBoxLayout(); lay.setContentsMargins(0,0,0,0); lay.setSpacing(4)
+        """Enrobage UX tactile complet pour la saisie rapide de date (Bouton Aujourd'hui + Calendrier + Clavier)"""
+        lay = QHBoxLayout()
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
         lay.addWidget(widget, stretch=1)
         
         btn_today = QPushButton("📅 Aujourd'hui")
-        btn_today.setStyleSheet("QPushButton { font-size: 11px; font-weight: bold; background-color: #00796B; color: white; border-radius: 4px; padding: 4px 6px; } QPushButton:hover { background-color: #004D40; }")
+        btn_today.setFixedHeight(44)
+        btn_today.setCursor(Qt.PointingHandCursor)
+        btn_today.setStyleSheet("QPushButton { font-size: 13px; font-weight: bold; background-color: #00796B; color: white; border-radius: 8px; padding: 4px 10px; border: none; } QPushButton:hover { background-color: #004D40; }")
         btn_today.clicked.connect(lambda: self._set_today_date(widget))
         lay.addWidget(btn_today)
 
         btn_cal = QPushButton("📆")
-        btn_cal.setFixedSize(32,32)
+        btn_cal.setFixedSize(46, 44)
+        btn_cal.setCursor(Qt.PointingHandCursor)
         btn_cal.setStyleSheet(BTN_AUX_STYLE + "background-color: #e67e22; color: white;")
         btn_cal.clicked.connect(lambda: self._open_calendar_picker(widget))
         lay.addWidget(btn_cal)
 
         btn_kb = QPushButton("⌨")
-        btn_kb.setFixedSize(32,32)
+        btn_kb.setFixedSize(46, 44)
+        btn_kb.setCursor(Qt.PointingHandCursor)
         btn_kb.setStyleSheet(BTN_AUX_STYLE + "background-color: #3498db; color: white;")
         btn_kb.clicked.connect(lambda: self._open_keyboard(widget))
         lay.addWidget(btn_kb)
 
-        w = QWidget(); w.setLayout(lay); return w
+        w = QWidget()
+        w.setLayout(lay)
+        return w
 
     def _open_client_selector(self):
         dlg = ClientSelectionDialog(self.manager, self)
@@ -449,25 +506,73 @@ class OrderDialog(QDialog):
                         self.selected_client_name = c_data['name']
                         self.selected_client_phone = c_data.get('phone') or ""
                         self.btn_select_client.setText(f"✅ Client : {self.selected_client_name}  |  📞 Tel : {self.selected_client_phone}")
-                        self.btn_select_client.setStyleSheet("background-color: #d5f5e3; color: #1e8449; font-weight: bold; font-size: 14px; padding: 10px; border-radius: 6px; border: 2px solid #27ae60;")
+                        self.btn_select_client.setStyleSheet("background-color: #d5f5e3; color: #1e8449; font-weight: bold; font-size: 15px; padding: 8px; border-radius: 8px; border: 2px solid #27ae60;")
             except Exception as e:
                 logging.error(f"Error fetching client name: {e}")
 
     def init_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 15, 20, 10)
-        main_layout.setSpacing(10)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(15, 12, 15, 12)
+        root_layout.setSpacing(10)
 
-        # --- 1. Client ---
-        grp_client = QGroupBox("Propriétaire / Client (Nom & Tel)")
-        grp_client.setStyleSheet("QGroupBox { font-size: 15px; font-weight: bold; color: #004D40; border: 2px solid #00796B; border-radius: 8px; margin-top: 6px; padding-top: 10px; } QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 8px; }")
+        # ── 1. HEADER FIXE (Sticky Header Actions) ──
+        # الأزرار في الأعلى دائماً لكي لا يغطيها الكيبورد الافتراضي
+        header_widget = QWidget()
+        header_widget.setStyleSheet("QWidget { background-color: #ffffff; border-radius: 10px; border: 1px solid #dcdde1; }")
+        header_lay = QHBoxLayout(header_widget)
+        header_lay.setContentsMargins(15, 8, 15, 8)
+        header_lay.setSpacing(12)
+
+        title_text = "✏️  Modifier la fiche d'Atelier" if self.record else "➕  Nouveau Dépôt Atelier"
+        lbl_title = QLabel(title_text)
+        lbl_title.setStyleSheet("QLabel { font-size: 18px; font-weight: bold; color: #004D40; border: none; }")
+        header_lay.addWidget(lbl_title)
+
+        header_lay.addStretch()
+
+        btn_cancel = QPushButton("❌  Annuler")
+        btn_cancel.setFixedHeight(48)
+        btn_cancel.setMinimumWidth(130)
+        btn_cancel.setCursor(Qt.PointingHandCursor)
+        btn_cancel.setStyleSheet("QPushButton { background-color: #95a5a6; color: white; font-weight: bold; font-size: 15px; padding: 0 20px; border-radius: 8px; border: none; } QPushButton:hover { background-color: #7f8c8d; }")
+        btn_cancel.clicked.connect(self.reject)
+        header_lay.addWidget(btn_cancel)
+
+        btn_save = QPushButton("💾  Enregistrer l'Opération")
+        btn_save.setFixedHeight(48)
+        btn_save.setMinimumWidth(230)
+        btn_save.setCursor(Qt.PointingHandCursor)
+        btn_save.setStyleSheet("QPushButton { background-color: #27ae60; color: white; font-weight: bold; font-size: 16px; padding: 0 25px; border-radius: 8px; border: none; } QPushButton:hover { background-color: #219a52; }")
+        btn_save.clicked.connect(self.accept)
+        header_lay.addWidget(btn_save)
+
+        root_layout.addWidget(header_widget)
+
+        # ── 2. ZONE DE DÉFILEMENT TACTILE (QScrollArea - Keyboard Safe Zone) ──
+        self.scroll_area = QScrollArea(self)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        QScroller.grabGesture(self.scroll_area.viewport(), QScroller.LeftMouseButtonGesture)
+
+        scroll_content = QWidget()
+        scroll_content.setStyleSheet("QWidget { background: transparent; }")
+        content_lay = QVBoxLayout(scroll_content)
+        content_lay.setContentsMargins(5, 5, 5, 15)
+        content_lay.setSpacing(12)
+
+        # ── Client Group ──
+        grp_client = QGroupBox("👤 Propriétaire / Client (Nom & Tel)")
+        grp_client.setStyleSheet("QGroupBox { font-size: 15px; font-weight: bold; color: #004D40; border: 2px solid #00796B; border-radius: 8px; margin-top: 6px; padding-top: 10px; background-color: #ffffff; } QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 8px; }")
         client_lay = QHBoxLayout(grp_client)
-        client_lay.setContentsMargins(10, 6, 10, 6)
+        client_lay.setContentsMargins(10, 8, 10, 8)
 
         self.btn_select_client = QPushButton("🔍  Cliquer pour sélectionner le client / propriétaire")
         self.btn_select_client.setCursor(Qt.PointingHandCursor)
-        self.btn_select_client.setMinimumHeight(38)
-        self.btn_select_client.setStyleSheet("background-color: #e0f2f1; color: #004D40; font-weight: bold; font-size: 14px; padding: 6px; border-radius: 6px; border: 2px dashed #00796B;")
+        self.btn_select_client.setMinimumHeight(46)
+        self.btn_select_client.setStyleSheet("background-color: #e0f2f1; color: #004D40; font-weight: bold; font-size: 15px; padding: 8px; border-radius: 8px; border: 2px dashed #00796B;")
         self.btn_select_client.clicked.connect(self._open_client_selector)
         client_lay.addWidget(self.btn_select_client)
 
@@ -481,24 +586,31 @@ class OrderDialog(QDialog):
                         self.selected_client_name = c_data['name']
                         self.selected_client_phone = c_data.get('phone') or ""
                         self.btn_select_client.setText(f"✅ Client : {self.selected_client_name}  |  📞 Tel : {self.selected_client_phone}")
-                        self.btn_select_client.setStyleSheet("background-color: #d5f5e3; color: #1e8449; font-weight: bold; font-size: 14px; padding: 8px; border-radius: 6px; border: 2px solid #27ae60;")
+                        self.btn_select_client.setStyleSheet("background-color: #d5f5e3; color: #1e8449; font-weight: bold; font-size: 15px; padding: 8px; border-radius: 8px; border: 2px solid #27ae60;")
             except Exception as e:
                 logging.error(f"Error fetching client name in init_ui: {e}")
-        main_layout.addWidget(grp_client)
+        content_lay.addWidget(grp_client)
 
-        # --- 2. Formulaire Grille ---
-        grid = QGridLayout()
-        grid.setSpacing(8)
+        # ── Form Grid ──
+        grp_form = QGroupBox("📋 Détails de l'Opération / Fiche de Travail")
+        grp_form.setStyleSheet("QGroupBox { font-size: 15px; font-weight: bold; color: #2c3e50; border: 2px solid #bdc3c7; border-radius: 8px; margin-top: 6px; padding-top: 10px; background-color: #ffffff; } QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 8px; }")
+        grid = QGridLayout(grp_form)
+        grid.setContentsMargins(12, 12, 12, 12)
+        grid.setSpacing(10)
         grid.setColumnStretch(0, 0)
         grid.setColumnStretch(1, 1)
         grid.setColumnStretch(2, 0)
         grid.setColumnStretch(3, 1)
 
         # Ligne 0 : numero & Statut
-        lbl_num = QLabel("numero (N°) :"); lbl_num.setStyleSheet(LBL_STYLE); lbl_num.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl_num = QLabel("N° Fiche / Numéro :")
+        lbl_num.setStyleSheet(LBL_STYLE)
+        lbl_num.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(lbl_num, 0, 0)
         
-        self.inp_numero = QLineEdit(); self.inp_numero.setStyleSheet(STYLE_TEXT); self.inp_numero.setAlignment(Qt.AlignCenter)
+        self.inp_numero = QLineEdit()
+        self.inp_numero.setStyleSheet(STYLE_TEXT)
+        self.inp_numero.setAlignment(Qt.AlignCenter)
         if self.record:
             num_val = str(self.record.get('numero') or self.record.get('id', ''))
             self.inp_numero.setText(num_val)
@@ -513,11 +625,13 @@ class OrderDialog(QDialog):
                 self.inp_numero.setText("1")
         grid.addWidget(self._wrap_kb(self.inp_numero), 0, 1)
 
-        lbl_statut = QLabel("Statut :"); lbl_statut.setStyleSheet(LBL_STYLE); lbl_statut.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl_statut = QLabel("Statut :")
+        lbl_statut.setStyleSheet(LBL_STYLE)
+        lbl_statut.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(lbl_statut, 0, 2)
         
         self.combo_status = QComboBox()
-        self.combo_status.setStyleSheet("QComboBox { font-size: 14px; font-weight: bold; padding: 6px; border: 2px solid #27ae60; border-radius: 6px; background-color: #d5f5e3; color: #1e8449; }")
+        self.combo_status.setStyleSheet("QComboBox { font-size: 15px; font-weight: bold; padding: 6px 12px; min-height: 44px; border: 2px solid #27ae60; border-radius: 8px; background-color: #d5f5e3; color: #1e8449; }")
         self.combo_status.addItem("🟢 Au Réceptionniste (لدى المستقبل)", "RECEPTION")
         self.combo_status.addItem("🟡 Chez l'Artisan (عند الصانع)", "CHEZ_ARTISAN")
         self.combo_status.addItem("🔵 Retourné au Magasin (عاد للمستقبل)", "RETOUR_ARTISAN")
@@ -529,19 +643,24 @@ class OrderDialog(QDialog):
         grid.addWidget(self.combo_status, 0, 3)
 
         # Ligne 1 : Obj & Artisan
-        lbl_obj = QLabel("Obj (Travail) :"); lbl_obj.setStyleSheet(LBL_STYLE); lbl_obj.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl_obj = QLabel("Obj (Travail) :")
+        lbl_obj.setStyleSheet(LBL_STYLE)
+        lbl_obj.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(lbl_obj, 1, 0)
         
-        self.inp_obj = QLineEdit(); self.inp_obj.setStyleSheet(STYLE_TEXT)
+        self.inp_obj = QLineEdit()
+        self.inp_obj.setStyleSheet(STYLE_TEXT)
         self.inp_obj.setPlaceholderText("Ex: Transformation 01 Bague loc T=62, 01 Gtte a souder...")
         if self.record: self.inp_obj.setText(str(self.record.get('obj', '')))
         grid.addWidget(self._wrap_kb(self.inp_obj), 1, 1)
 
-        lbl_artisan = QLabel("Artisan / الصانع :"); lbl_artisan.setStyleSheet(LBL_STYLE); lbl_artisan.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl_artisan = QLabel("Artisan / الصانع :")
+        lbl_artisan.setStyleSheet(LBL_STYLE)
+        lbl_artisan.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(lbl_artisan, 1, 2)
 
         self.combo_artisan_dlg = QComboBox()
-        self.combo_artisan_dlg.setStyleSheet("QComboBox { font-size: 14px; font-weight: bold; padding: 6px; border: 2px solid #bdc3c7; border-radius: 6px; background-color: white; }")
+        self.combo_artisan_dlg.setStyleSheet("QComboBox { font-size: 15px; font-weight: bold; padding: 6px 12px; min-height: 44px; border: 2px solid #bdc3c7; border-radius: 8px; background-color: white; }")
         self.combo_artisan_dlg.addItem("Non assigné / Aucun", None)
         try:
             artisan_list = self.manager.artisan_work.get_all_artisans()
@@ -557,76 +676,111 @@ class OrderDialog(QDialog):
         grid.addWidget(self.combo_artisan_dlg, 1, 3)
 
         # Ligne 2 : Poid Aller & Poids Retour
-        lbl_poid = QLabel("Poid Aller (g) :"); lbl_poid.setStyleSheet(LBL_STYLE); lbl_poid.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl_poid = QLabel("Poid Aller (g) :")
+        lbl_poid.setStyleSheet(LBL_STYLE)
+        lbl_poid.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(lbl_poid, 2, 0)
         
-        self.inp_poids = QLineEdit(); self.inp_poids.setStyleSheet(STYLE_NUM); self.inp_poids.setAlignment(Qt.AlignCenter)
+        self.inp_poids = QLineEdit()
+        self.inp_poids.setStyleSheet(STYLE_NUM)
+        self.inp_poids.setAlignment(Qt.AlignCenter)
         self.inp_poids.setPlaceholderText("Ex: 1.21")
         if self.record: self.inp_poids.setText(str(self.record.get('poid') or self.record.get('poids_entre_g') or ''))
         grid.addWidget(self._wrap_num(self.inp_poids), 2, 1)
 
-        lbl_poids_retour = QLabel("Poids Retour (g) :"); lbl_poids_retour.setStyleSheet(LBL_STYLE); lbl_poids_retour.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl_poids_retour = QLabel("Poids Retour (g) :")
+        lbl_poids_retour.setStyleSheet(LBL_STYLE)
+        lbl_poids_retour.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(lbl_poids_retour, 2, 2)
         
-        self.inp_poids_retour = QLineEdit(); self.inp_poids_retour.setStyleSheet(STYLE_NUM); self.inp_poids_retour.setAlignment(Qt.AlignCenter)
+        self.inp_poids_retour = QLineEdit()
+        self.inp_poids_retour.setStyleSheet(STYLE_NUM)
+        self.inp_poids_retour.setAlignment(Qt.AlignCenter)
         self.inp_poids_retour.setPlaceholderText("Ex: 1.15")
         if self.record: self.inp_poids_retour.setText(str(self.record.get('poids_retour_g') or ''))
         grid.addWidget(self._wrap_num(self.inp_poids_retour), 2, 3)
 
         # Ligne 3 : Date Remis & Date Reçue
-        lbl_date_remis = QLabel("Date Remis :"); lbl_date_remis.setStyleSheet(LBL_STYLE); lbl_date_remis.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl_date_remis = QLabel("Date Remis :")
+        lbl_date_remis.setStyleSheet(LBL_STYLE)
+        lbl_date_remis.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(lbl_date_remis, 3, 0)
         
-        self.inp_date_remis = QLineEdit(); self.inp_date_remis.setStyleSheet(STYLE_DATE); self.inp_date_remis.setAlignment(Qt.AlignCenter)
+        self.inp_date_remis = QLineEdit()
+        self.inp_date_remis.setStyleSheet(STYLE_DATE)
+        self.inp_date_remis.setAlignment(Qt.AlignCenter)
         if self.record and self.record.get('date_remis'):
             self.inp_date_remis.setText(str(self.record.get('date_remis')))
         else:
             self.inp_date_remis.setText(QDate.currentDate().toString("yyyy-MM-dd"))
         grid.addWidget(self._wrap_date_input(self.inp_date_remis), 3, 1)
 
-        lbl_date_recue = QLabel("Date Reçue :"); lbl_date_recue.setStyleSheet(LBL_STYLE); lbl_date_recue.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl_date_recue = QLabel("Date Reçue :")
+        lbl_date_recue.setStyleSheet(LBL_STYLE)
+        lbl_date_recue.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(lbl_date_recue, 3, 2)
         
-        self.inp_date_recue = QLineEdit(); self.inp_date_recue.setStyleSheet(STYLE_DATE); self.inp_date_recue.setAlignment(Qt.AlignCenter)
+        self.inp_date_recue = QLineEdit()
+        self.inp_date_recue.setStyleSheet(STYLE_DATE)
+        self.inp_date_recue.setAlignment(Qt.AlignCenter)
         if self.record and self.record.get('date_recue'): self.inp_date_recue.setText(str(self.record.get('date_recue')))
         grid.addWidget(self._wrap_date_input(self.inp_date_recue), 3, 3)
 
         # Ligne 4 : Date Sortie & Prix (Façon)
-        lbl_date_sortie = QLabel("Date Sortie :"); lbl_date_sortie.setStyleSheet(LBL_STYLE); lbl_date_sortie.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl_date_sortie = QLabel("Date Sortie :")
+        lbl_date_sortie.setStyleSheet(LBL_STYLE)
+        lbl_date_sortie.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(lbl_date_sortie, 4, 0)
         
-        self.inp_date_sortie = QLineEdit(); self.inp_date_sortie.setStyleSheet(STYLE_DATE); self.inp_date_sortie.setAlignment(Qt.AlignCenter)
+        self.inp_date_sortie = QLineEdit()
+        self.inp_date_sortie.setStyleSheet(STYLE_DATE)
+        self.inp_date_sortie.setAlignment(Qt.AlignCenter)
         if self.record and self.record.get('date_sortie'): self.inp_date_sortie.setText(str(self.record.get('date_sortie')))
         grid.addWidget(self._wrap_date_input(self.inp_date_sortie), 4, 1)
 
-        lbl_prix = QLabel("Prix (Façon) :"); lbl_prix.setStyleSheet(LBL_STYLE); lbl_prix.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl_prix = QLabel("Prix (Façon) :")
+        lbl_prix.setStyleSheet(LBL_STYLE)
+        lbl_prix.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(lbl_prix, 4, 2)
         
-        self.inp_prix = QLineEdit(); self.inp_prix.setStyleSheet(STYLE_NUM); self.inp_prix.setAlignment(Qt.AlignCenter)
+        self.inp_prix = QLineEdit()
+        self.inp_prix.setStyleSheet(STYLE_NUM)
+        self.inp_prix.setAlignment(Qt.AlignCenter)
         if self.record: self.inp_prix.setText(str(self.record.get('cout_artisan_da') or self.record.get('prix', '')))
         grid.addWidget(self._wrap_num(self.inp_prix), 4, 3)
 
         # Ligne 5 : Prix (Client) & Diff (Bénéfice)
-        lbl_vente = QLabel("Prix (Client) :"); lbl_vente.setStyleSheet(LBL_STYLE); lbl_vente.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl_vente = QLabel("Prix (Client) :")
+        lbl_vente.setStyleSheet(LBL_STYLE)
+        lbl_vente.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(lbl_vente, 5, 0)
         
-        self.inp_vente = QLineEdit(); self.inp_vente.setStyleSheet(STYLE_NUM); self.inp_vente.setAlignment(Qt.AlignCenter)
+        self.inp_vente = QLineEdit()
+        self.inp_vente.setStyleSheet(STYLE_NUM)
+        self.inp_vente.setAlignment(Qt.AlignCenter)
         if self.record: self.inp_vente.setText(str(self.record.get('prix_vente_da') or self.record.get('vente', '')))
         grid.addWidget(self._wrap_num(self.inp_vente), 5, 1)
 
-        lbl_diff = QLabel("Diff (Bénéfice) :"); lbl_diff.setStyleSheet("font-size: 15px; font-weight: bold; color: #1e8449;"); lbl_diff.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl_diff = QLabel("Diff (Bénéfice) :")
+        lbl_diff.setStyleSheet("font-size: 15px; font-weight: bold; color: #1e8449;")
+        lbl_diff.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(lbl_diff, 5, 2)
         
-        self.inp_diff = QLineEdit(); self.inp_diff.setStyleSheet(STYLE_RESULT); self.inp_diff.setAlignment(Qt.AlignCenter)
+        self.inp_diff = QLineEdit()
+        self.inp_diff.setStyleSheet(STYLE_RESULT)
+        self.inp_diff.setAlignment(Qt.AlignCenter)
         self.inp_diff.setReadOnly(True)
         if self.record: self.inp_diff.setText(str(self.record.get('diff', '')))
         grid.addWidget(self._wrap_num(self.inp_diff), 5, 3)
 
         # Ligne 6 : Observations
-        lbl_obs = QLabel("Observation :"); lbl_obs.setStyleSheet(LBL_STYLE); lbl_obs.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl_obs = QLabel("Observation :")
+        lbl_obs.setStyleSheet(LBL_STYLE)
+        lbl_obs.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(lbl_obs, 6, 0)
         
-        self.inp_obs = QLineEdit(); self.inp_obs.setStyleSheet(STYLE_TEXT)
+        self.inp_obs = QLineEdit()
+        self.inp_obs.setStyleSheet(STYLE_TEXT)
         self.inp_obs.setPlaceholderText("Observations / Remarques pour l'opération...")
         if self.record: self.inp_obs.setText(str(self.record.get('observations') or ''))
         grid.addWidget(self._wrap_kb(self.inp_obs), 6, 1, 1, 3)
@@ -635,16 +789,23 @@ class OrderDialog(QDialog):
         self.inp_prix.textChanged.connect(self.calc_diff)
         self.inp_vente.textChanged.connect(self.calc_diff)
 
-        main_layout.addLayout(grid)
+        content_lay.addWidget(grp_form)
 
-        # --- 3. Règlement & Paiement Client ---
-        grp_pay = QGroupBox("💳 Règlement & Paiement Client / تسديد الزبون (Dinars / TPE / Or Cassé OC)")
-        grp_pay.setStyleSheet("QGroupBox { font-size: 14px; font-weight: bold; color: #1e8449; border: 2px solid #27ae60; border-radius: 8px; margin-top: 6px; padding-top: 10px; background-color: #fdfefe; } QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 8px; }")
+        # ── 3. RÈGLEMENT & PAIEMENT CLIENT (Dinars, TPE, Or Cassé, Argent Cassé) ──
+        grp_pay = QGroupBox("💳 Règlement & Paiement Client / تسديد الزبون (Dinars / TPE / Or Cassé OC / Argent Cassé)")
+        grp_pay.setStyleSheet("QGroupBox { font-size: 15px; font-weight: bold; color: #1e8449; border: 2px solid #27ae60; border-radius: 8px; margin-top: 6px; padding-top: 10px; background-color: #ffffff; } QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 8px; }")
         pay_grid = QGridLayout(grp_pay)
-        pay_grid.setSpacing(8)
+        pay_grid.setContentsMargins(12, 12, 12, 12)
+        pay_grid.setSpacing(10)
+        pay_grid.setColumnStretch(0, 0)
+        pay_grid.setColumnStretch(1, 1)
+        pay_grid.setColumnStretch(2, 0)
+        pay_grid.setColumnStretch(3, 1)
 
+        # Espèces (DA)
         lbl_pay_cash = QLabel("💰 Espèces (DA) :")
         lbl_pay_cash.setStyleSheet(LBL_STYLE)
+        lbl_pay_cash.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         pay_grid.addWidget(lbl_pay_cash, 0, 0)
 
         self.inp_pay_cash = QLineEdit()
@@ -655,8 +816,10 @@ class OrderDialog(QDialog):
             self.inp_pay_cash.setText(str(self.record.get('pay_cash_da')))
         pay_grid.addWidget(self._wrap_num_neg(self.inp_pay_cash), 0, 1)
 
+        # TPE (DA)
         lbl_pay_tpe = QLabel("💳 TPE (DA) :")
         lbl_pay_tpe.setStyleSheet(LBL_STYLE)
+        lbl_pay_tpe.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         pay_grid.addWidget(lbl_pay_tpe, 0, 2)
 
         self.inp_pay_tpe = QLineEdit()
@@ -667,8 +830,10 @@ class OrderDialog(QDialog):
             self.inp_pay_tpe.setText(str(self.record.get('pay_tpe_da')))
         pay_grid.addWidget(self._wrap_num(self.inp_pay_tpe), 0, 3)
 
+        # Or Cassé OC (g)
         lbl_pay_oc = QLabel("⚖️ Or Cassé OC (g) :")
         lbl_pay_oc.setStyleSheet(LBL_STYLE)
+        lbl_pay_oc.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         pay_grid.addWidget(lbl_pay_oc, 1, 0)
 
         self.inp_pay_oc = QLineEdit()
@@ -679,28 +844,24 @@ class OrderDialog(QDialog):
             self.inp_pay_oc.setText(str(self.record.get('pay_oc_g')))
         pay_grid.addWidget(self._wrap_num(self.inp_pay_oc), 1, 1)
 
-        main_layout.addWidget(grp_pay)
+        # Argent Cassé OC (g)
+        lbl_pay_oc_silver = QLabel("🥈 Argent Cassé (g) :")
+        lbl_pay_oc_silver.setStyleSheet(LBL_STYLE)
+        lbl_pay_oc_silver.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        pay_grid.addWidget(lbl_pay_oc_silver, 1, 2)
 
-        # --- 4. Boutons ---
-        btn_lay = QHBoxLayout()
-        btn_lay.setSpacing(20)
-        
-        btn_cancel = QPushButton("Annuler")
-        btn_cancel.setFixedHeight(45)
-        btn_cancel.setStyleSheet("QPushButton { background-color: #95a5a6; color: white; font-weight: bold; font-size: 15px; padding: 0 30px; border-radius: 8px; border: none; } QPushButton:hover { background-color: #7f8c8d; }")
-        btn_cancel.clicked.connect(self.reject)
-        btn_lay.addWidget(btn_cancel)
+        self.inp_pay_oc_silver = QLineEdit()
+        self.inp_pay_oc_silver.setStyleSheet(STYLE_NUM)
+        self.inp_pay_oc_silver.setAlignment(Qt.AlignCenter)
+        self.inp_pay_oc_silver.setPlaceholderText("Poids Argent Cassé (g)")
+        if self.record and self.record.get('pay_oc_silver_g') is not None and str(self.record.get('pay_oc_silver_g')) not in ('0', '0.0', '0.00', ''):
+            self.inp_pay_oc_silver.setText(str(self.record.get('pay_oc_silver_g')))
+        pay_grid.addWidget(self._wrap_num(self.inp_pay_oc_silver), 1, 3)
 
-        btn_lay.addStretch()
+        content_lay.addWidget(grp_pay)
 
-        btn_save = QPushButton("Enregistrer l'Opération")
-        btn_save.setFixedHeight(45)
-        btn_save.setCursor(Qt.PointingHandCursor)
-        btn_save.setStyleSheet("QPushButton { background-color: #27ae60; color: white; font-weight: bold; font-size: 16px; padding: 0 40px; border-radius: 8px; border: none; } QPushButton:hover { background-color: #219a52; }")
-        btn_save.clicked.connect(self.accept)
-        btn_lay.addWidget(btn_save)
-
-        main_layout.addLayout(btn_lay)
+        self.scroll_area.setWidget(scroll_content)
+        root_layout.addWidget(self.scroll_area, stretch=1)
 
     def calc_diff(self):
         try:
@@ -709,9 +870,9 @@ class OrderDialog(QDialog):
             diff = vente - prix
             self.inp_diff.setText(f"{diff:,.2f}")
             if diff > 0:
-                self.inp_diff.setStyleSheet("font-size: 15px; font-weight: bold; padding: 8px; border: 2px solid #27ae60; border-radius: 6px; background-color: #d5f5e3;")
+                self.inp_diff.setStyleSheet("font-size: 16px; font-weight: bold; padding: 8px; border: 2px solid #27ae60; border-radius: 8px; background-color: #d5f5e3; color: #1e8449;")
             elif diff < 0:
-                self.inp_diff.setStyleSheet("font-size: 15px; font-weight: bold; padding: 8px; border: 2px solid #e74c3c; border-radius: 6px; background-color: #fadbd8;")
+                self.inp_diff.setStyleSheet("font-size: 16px; font-weight: bold; padding: 8px; border: 2px solid #e74c3c; border-radius: 8px; background-color: #fadbd8; color: #c0392b;")
             else:
                 self.inp_diff.setStyleSheet(STYLE_RESULT)
         except ValueError:
@@ -740,6 +901,7 @@ class OrderDialog(QDialog):
             "pay_cash_da": self.inp_pay_cash.text().strip(),
             "pay_tpe_da": self.inp_pay_tpe.text().strip(),
             "pay_oc_g": self.inp_pay_oc.text().strip(),
+            "pay_oc_silver_g": self.inp_pay_oc_silver.text().strip(),
             "journee_id": self.record.get('journee_id') if self.record else None
         }
 
@@ -1102,6 +1264,7 @@ class ArtisanWorkView(QWidget):
                 status=d['status'], poids_entre_g=d['poids_entre_g'], poids_retour_g=d['poids_retour_g'],
                 observations=d['observations'], cout_artisan_da=d['cout_artisan_da'], prix_vente_da=d['prix_vente_da'],
                 pay_cash_da=d.get('pay_cash_da', 0.0), pay_tpe_da=d.get('pay_tpe_da', 0.0), pay_oc_g=d.get('pay_oc_g', 0.0),
+                pay_oc_silver_g=d.get('pay_oc_silver_g', 0.0),
                 journee_id=d.get('journee_id')
             )
             self.load_atelier_orders()
@@ -1116,6 +1279,7 @@ class ArtisanWorkView(QWidget):
                 status=d['status'], poids_entre_g=d['poids_entre_g'], poids_retour_g=d['poids_retour_g'],
                 observations=d['observations'], cout_artisan_da=d['cout_artisan_da'], prix_vente_da=d['prix_vente_da'],
                 pay_cash_da=d.get('pay_cash_da', 0.0), pay_tpe_da=d.get('pay_tpe_da', 0.0), pay_oc_g=d.get('pay_oc_g', 0.0),
+                pay_oc_silver_g=d.get('pay_oc_silver_g', 0.0),
                 journee_id=d.get('journee_id')
             )
             self.load_atelier_orders()
