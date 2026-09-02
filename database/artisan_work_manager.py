@@ -1,9 +1,39 @@
-# database/artisan_work_manager.py
-import logging
+def safe_float(val):
+    try:
+        if val is None or val == "":
+            return 0.0
+        return float(str(val).replace(' ', '').replace(',', '.'))
+    except (ValueError, TypeError):
+        return 0.0
+
 
 class ArtisanWorkManager:
     def __init__(self, db_instance):
         self.db = db_instance
+
+    def _resolve_journee_id(self, journee_id=None, date_str=None):
+        """الحصول على معرّف يومية العمل المناسبة أو إنشاء جلسة يومية"""
+        if journee_id:
+            try: return int(journee_id)
+            except (ValueError, TypeError): pass
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                if date_str:
+                    cursor.execute("SELECT id FROM DailySessions WHERE DATE(opened_at) = %s ORDER BY id DESC LIMIT 1", (str(date_str)[:10],))
+                    row = cursor.fetchone()
+                    if row:
+                        return row['id']
+                cursor.execute("SELECT id FROM DailySessions WHERE DATE(opened_at) = CURDATE() ORDER BY id DESC LIMIT 1")
+                row = cursor.fetchone()
+                if row:
+                    return row['id']
+                cursor.execute("INSERT INTO DailySessions (starting_cash_da) VALUES (0.0)")
+                conn.commit()
+                return cursor.lastrowid
+        except Exception as e:
+            logging.error(f"Error resolving journee_id in ArtisanWorkManager: {e}")
+            return None
 
     # ========================== ARTISANS (الحرفيين) ==========================
     def add_artisan(self, name: str, notes: str = "", phone: str = "") -> dict:
@@ -63,8 +93,9 @@ class ArtisanWorkManager:
     # ========================== WORK ORDERS (الأعمال المربوطة بالزبائن والورشة) ==========================
     def add_order(self, artisan_id, client_id, numero, date_remis, obj, poid, date_recue, date_sortie, 
                   prix, vente, diff, status='RECEPTION', poids_entre_g=None, poids_retour_g=None, 
-                  observations="", cout_artisan_da=None, prix_vente_da=None):
-        """إضافة عمل/استقبال ورشة جديد"""
+                  observations="", cout_artisan_da=None, prix_vente_da=None,
+                  pay_cash_da=0.0, pay_tpe_da=0.0, pay_oc_g=0.0, pay_oc_silver_g=0.0, journee_id=None):
+        """إضافة عمل/استقبال ورشة جديد مع إمكانية تسجيل الدفع (كاش سالب/موجب، TPE، ذهب كسر OC)"""
         try:
             try: artisan_id = int(artisan_id) if artisan_id not in (None, "", "None", 0, "0") else None
             except (ValueError, TypeError): artisan_id = None
@@ -80,17 +111,27 @@ class ArtisanWorkManager:
             cout_artisan_da = cout_artisan_da or prix
             prix_vente_da = prix_vente_da or vente
 
+            pay_cash_da = safe_float(pay_cash_da)
+            pay_tpe_da = safe_float(pay_tpe_da)
+            pay_oc_g = safe_float(pay_oc_g)
+            pay_oc_silver_g = safe_float(pay_oc_silver_g)
+
+            # ربط العمل بالجلسة اليومية إذا كانت هناك تسديدات أو لتسجيل التاريخ بدقة
+            journee_id = self._resolve_journee_id(journee_id, date_remis)
+
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor()
                 query = """
                     INSERT INTO ArtisanWorkOrders 
-                    (artisan_id, client_id, numero, date_remis, obj, poid, poids_entre_g, poids_retour_g, 
-                     date_recue, date_sortie, prix, vente, diff, status, observations, cout_artisan_da, prix_vente_da) 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (artisan_id, client_id, journee_id, numero, date_remis, obj, poid, poids_entre_g, poids_retour_g, 
+                     date_recue, date_sortie, prix, vente, diff, status, observations, cout_artisan_da, prix_vente_da,
+                     pay_cash_da, pay_tpe_da, pay_oc_g, pay_oc_silver_g) 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
                 cursor.execute(query, (
-                    artisan_id, client_id, numero, date_remis, obj, poid, poids_entre_g, poids_retour_g,
-                    date_recue, date_sortie, prix, vente, diff, status, observations, cout_artisan_da, prix_vente_da
+                    artisan_id, client_id, journee_id, numero, date_remis, obj, poid, poids_entre_g, poids_retour_g,
+                    date_recue, date_sortie, prix, vente, diff, status, observations, cout_artisan_da, prix_vente_da,
+                    pay_cash_da, pay_tpe_da, pay_oc_g, pay_oc_silver_g
                 ))
                 conn.commit()
                 return {"success": True, "id": cursor.lastrowid}
@@ -100,8 +141,9 @@ class ArtisanWorkManager:
 
     def update_order(self, order_id, artisan_id, client_id, numero, date_remis, obj, poid, date_recue, date_sortie, 
                      prix, vente, diff, status='RECEPTION', poids_entre_g=None, poids_retour_g=None, 
-                     observations="", cout_artisan_da=None, prix_vente_da=None):
-        """تعديل عمل/طلب ورشة"""
+                     observations="", cout_artisan_da=None, prix_vente_da=None,
+                     pay_cash_da=0.0, pay_tpe_da=0.0, pay_oc_g=0.0, pay_oc_silver_g=0.0, journee_id=None):
+        """تعديل عمل/طلب ورشة مع الحفاظ على وتحديث الدفعات"""
         try:
             try: artisan_id = int(artisan_id) if artisan_id not in (None, "", "None", 0, "0") else None
             except (ValueError, TypeError): artisan_id = None
@@ -113,25 +155,82 @@ class ArtisanWorkManager:
             cout_artisan_da = cout_artisan_da or prix
             prix_vente_da = prix_vente_da or vente
 
+            pay_cash_da = safe_float(pay_cash_da)
+            pay_tpe_da = safe_float(pay_tpe_da)
+            pay_oc_g = safe_float(pay_oc_g)
+            pay_oc_silver_g = safe_float(pay_oc_silver_g)
+
             with self.db.get_db_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                # جلب الجلسة الحالية إذا لم تكن محددة
+                if not journee_id:
+                    cursor.execute("SELECT journee_id FROM ArtisanWorkOrders WHERE id = %s", (order_id,))
+                    row = cursor.fetchone()
+                    if row and row.get('journee_id'):
+                        journee_id = row['journee_id']
+                    else:
+                        journee_id = self._resolve_journee_id(None, date_remis)
+
                 cursor = conn.cursor()
                 query = """
                     UPDATE ArtisanWorkOrders 
-                    SET artisan_id=%s, client_id=%s, numero=%s, date_remis=%s, obj=%s, 
+                    SET artisan_id=%s, client_id=%s, journee_id=%s, numero=%s, date_remis=%s, obj=%s, 
                         poid=%s, poids_entre_g=%s, poids_retour_g=%s, date_recue=%s, date_sortie=%s, 
                         prix=%s, vente=%s, diff=%s, status=%s, observations=%s, 
-                        cout_artisan_da=%s, prix_vente_da=%s 
+                        cout_artisan_da=%s, prix_vente_da=%s,
+                        pay_cash_da=%s, pay_tpe_da=%s, pay_oc_g=%s, pay_oc_silver_g=%s
                     WHERE id=%s
                 """
                 cursor.execute(query, (
-                    artisan_id, client_id, numero, date_remis, obj, poid, poids_entre_g, poids_retour_g,
+                    artisan_id, client_id, journee_id, numero, date_remis, obj, poid, poids_entre_g, poids_retour_g,
                     date_recue, date_sortie, prix, vente, diff, status, observations,
-                    cout_artisan_da, prix_vente_da, order_id
+                    cout_artisan_da, prix_vente_da,
+                    pay_cash_da, pay_tpe_da, pay_oc_g, pay_oc_silver_g,
+                    order_id
                 ))
                 conn.commit()
                 return True
         except Exception as e:
             logging.error(f"Erreur update_order: {e}")
+            return False
+
+    def update_order_observation(self, order_id: int, observations: str) -> bool:
+        """تحديث ملاحظات أمر الورشة"""
+        try:
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE ArtisanWorkOrders SET observations = %s WHERE id = %s", (observations, order_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Erreur update_order_observation: {e}")
+            return False
+
+    def update_order_payment(self, order_id: int, pay_cash_da: float, pay_tpe_da: float, pay_oc_g: float, pay_oc_silver_g: float = 0.0, journee_id: int = None) -> bool:
+        """تحديث دفعات أمر الورشة"""
+        try:
+            pay_cash_da = safe_float(pay_cash_da)
+            pay_tpe_da = safe_float(pay_tpe_da)
+            pay_oc_g = safe_float(pay_oc_g)
+            pay_oc_silver_g = safe_float(pay_oc_silver_g)
+            with self.db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                if journee_id:
+                    cursor.execute("""
+                        UPDATE ArtisanWorkOrders 
+                        SET pay_cash_da = %s, pay_tpe_da = %s, pay_oc_g = %s, pay_oc_silver_g = %s, journee_id = %s
+                        WHERE id = %s
+                    """, (pay_cash_da, pay_tpe_da, pay_oc_g, pay_oc_silver_g, journee_id, order_id))
+                else:
+                    cursor.execute("""
+                        UPDATE ArtisanWorkOrders 
+                        SET pay_cash_da = %s, pay_tpe_da = %s, pay_oc_g = %s, pay_oc_silver_g = %s
+                        WHERE id = %s
+                    """, (pay_cash_da, pay_tpe_da, pay_oc_g, pay_oc_silver_g, order_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logging.error(f"Erreur update_order_payment: {e}")
             return False
 
     def update_order_status(self, order_id: int, new_status: str, poids_retour_g: str = None) -> bool:
@@ -164,7 +263,7 @@ class ArtisanWorkManager:
             return False
 
     def get_orders_by_artisan(self, artisan_id):
-        """جلب أعمال حرفي محدد مع الهاتف باسم العميل"""
+        """جلب أعمال حرفي محدد مع الهاتف باسم العميل والدفعات"""
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
@@ -182,7 +281,7 @@ class ArtisanWorkManager:
             return []
 
     def get_all_atelier_orders(self, status_filter=None, artisan_id=None, date_from=None, date_to=None) -> list:
-        """جلب جميع عناصر الورشة مع إمكانية الفلترة بالحالة، الحرفي أو النطاق الزمني"""
+        """جلب جميع عناصر الورشة مع إمكانية الفلترة بالحالة، الحرفي أو النطاق الزمني والدفعات"""
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)

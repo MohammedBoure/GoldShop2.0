@@ -365,7 +365,7 @@ class OrderDialog(QDialog):
         self.selected_client_phone = ""
         
         self.setWindowTitle("Modifier la fiche d'Atelier (Production)" if record else "Nouveau Dépôt Atelier (Production)")
-        self.setFixedSize(920, 650)
+        self.setFixedSize(950, 740)
         self.setStyleSheet("QDialog { background-color: #f4f6f7; }")
         self.init_ui()
 
@@ -375,6 +375,11 @@ class OrderDialog(QDialog):
     def _open_numpad(self, target):
         target.setFocus()
         numpad = VirtualNumpad(title="Saisie", mode="direct", target_widget=target, allow_decimal=True, allow_leading_zero=True, parent=self)
+        numpad.show(); numpad.raise_()
+
+    def _open_numpad_neg(self, target):
+        target.setFocus()
+        numpad = VirtualNumpad(title="Saisie Montant (DA)", mode="direct", target_widget=target, allow_decimal=True, allow_leading_zero=True, allow_negative=True, parent=self)
         numpad.show(); numpad.raise_()
 
     def _open_calendar_picker(self, target):
@@ -397,6 +402,14 @@ class OrderDialog(QDialog):
         lay.addWidget(widget, stretch=1)
         btn = QPushButton("🔢"); btn.setFixedSize(32,32); btn.setStyleSheet(BTN_AUX_STYLE + "background-color: #8e44ad; color: white;")
         btn.clicked.connect(lambda: self._open_numpad(widget)); lay.addWidget(btn)
+        w = QWidget(); w.setLayout(lay); return w
+
+    def _wrap_num_neg(self, widget):
+        """Enrobage saisie numérique avec support des valeurs négatives (pour rendu monnaie / retour client)"""
+        lay = QHBoxLayout(); lay.setContentsMargins(0,0,0,0); lay.setSpacing(4)
+        lay.addWidget(widget, stretch=1)
+        btn = QPushButton("🔢±"); btn.setFixedSize(36,32); btn.setStyleSheet(BTN_AUX_STYLE + "background-color: #8e44ad; color: white; font-weight: bold;")
+        btn.clicked.connect(lambda: self._open_numpad_neg(widget)); lay.addWidget(btn)
         w = QWidget(); w.setLayout(lay); return w
 
     def _wrap_date_input(self, widget):
@@ -443,18 +456,18 @@ class OrderDialog(QDialog):
     def init_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(20, 15, 20, 10)
-        main_layout.setSpacing(12)
+        main_layout.setSpacing(10)
 
         # --- 1. Client ---
         grp_client = QGroupBox("Propriétaire / Client (Nom & Tel)")
-        grp_client.setStyleSheet("QGroupBox { font-size: 15px; font-weight: bold; color: #004D40; border: 2px solid #00796B; border-radius: 8px; margin-top: 8px; padding-top: 12px; } QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 8px; }")
+        grp_client.setStyleSheet("QGroupBox { font-size: 15px; font-weight: bold; color: #004D40; border: 2px solid #00796B; border-radius: 8px; margin-top: 6px; padding-top: 10px; } QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 8px; }")
         client_lay = QHBoxLayout(grp_client)
-        client_lay.setContentsMargins(10, 8, 10, 8)
+        client_lay.setContentsMargins(10, 6, 10, 6)
 
         self.btn_select_client = QPushButton("🔍  Cliquer pour sélectionner le client / propriétaire")
         self.btn_select_client.setCursor(Qt.PointingHandCursor)
-        self.btn_select_client.setMinimumHeight(40)
-        self.btn_select_client.setStyleSheet("background-color: #e0f2f1; color: #004D40; font-weight: bold; font-size: 14px; padding: 8px; border-radius: 6px; border: 2px dashed #00796B;")
+        self.btn_select_client.setMinimumHeight(38)
+        self.btn_select_client.setStyleSheet("background-color: #e0f2f1; color: #004D40; font-weight: bold; font-size: 14px; padding: 6px; border-radius: 6px; border: 2px dashed #00796B;")
         self.btn_select_client.clicked.connect(self._open_client_selector)
         client_lay.addWidget(self.btn_select_client)
 
@@ -475,7 +488,7 @@ class OrderDialog(QDialog):
 
         # --- 2. Formulaire Grille ---
         grid = QGridLayout()
-        grid.setSpacing(10)
+        grid.setSpacing(8)
         grid.setColumnStretch(0, 0)
         grid.setColumnStretch(1, 1)
         grid.setColumnStretch(2, 0)
@@ -504,7 +517,7 @@ class OrderDialog(QDialog):
         grid.addWidget(lbl_statut, 0, 2)
         
         self.combo_status = QComboBox()
-        self.combo_status.setStyleSheet("QComboBox { font-size: 14px; font-weight: bold; padding: 8px; border: 2px solid #27ae60; border-radius: 6px; background-color: #d5f5e3; color: #1e8449; }")
+        self.combo_status.setStyleSheet("QComboBox { font-size: 14px; font-weight: bold; padding: 6px; border: 2px solid #27ae60; border-radius: 6px; background-color: #d5f5e3; color: #1e8449; }")
         self.combo_status.addItem("🟢 Au Réceptionniste (لدى المستقبل)", "RECEPTION")
         self.combo_status.addItem("🟡 Chez l'Artisan (عند الصانع)", "CHEZ_ARTISAN")
         self.combo_status.addItem("🔵 Retourné au Magasin (عاد للمستقبل)", "RETOUR_ARTISAN")
@@ -528,7 +541,7 @@ class OrderDialog(QDialog):
         grid.addWidget(lbl_artisan, 1, 2)
 
         self.combo_artisan_dlg = QComboBox()
-        self.combo_artisan_dlg.setStyleSheet("QComboBox { font-size: 14px; font-weight: bold; padding: 8px; border: 2px solid #bdc3c7; border-radius: 6px; background-color: white; }")
+        self.combo_artisan_dlg.setStyleSheet("QComboBox { font-size: 14px; font-weight: bold; padding: 6px; border: 2px solid #bdc3c7; border-radius: 6px; background-color: white; }")
         self.combo_artisan_dlg.addItem("Non assigné / Aucun", None)
         try:
             artisan_list = self.manager.artisan_work.get_all_artisans()
@@ -624,7 +637,51 @@ class OrderDialog(QDialog):
 
         main_layout.addLayout(grid)
 
-        # --- 3. Boutons ---
+        # --- 3. Règlement & Paiement Client ---
+        grp_pay = QGroupBox("💳 Règlement & Paiement Client / تسديد الزبون (Dinars / TPE / Or Cassé OC)")
+        grp_pay.setStyleSheet("QGroupBox { font-size: 14px; font-weight: bold; color: #1e8449; border: 2px solid #27ae60; border-radius: 8px; margin-top: 6px; padding-top: 10px; background-color: #fdfefe; } QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 8px; }")
+        pay_grid = QGridLayout(grp_pay)
+        pay_grid.setSpacing(8)
+
+        lbl_pay_cash = QLabel("💰 Espèces (DA) :")
+        lbl_pay_cash.setStyleSheet(LBL_STYLE)
+        pay_grid.addWidget(lbl_pay_cash, 0, 0)
+
+        self.inp_pay_cash = QLineEdit()
+        self.inp_pay_cash.setStyleSheet(STYLE_NUM)
+        self.inp_pay_cash.setAlignment(Qt.AlignCenter)
+        self.inp_pay_cash.setPlaceholderText("Montant DA (ou négatif)")
+        if self.record and self.record.get('pay_cash_da') is not None and str(self.record.get('pay_cash_da')) not in ('0', '0.0', '0.00', ''):
+            self.inp_pay_cash.setText(str(self.record.get('pay_cash_da')))
+        pay_grid.addWidget(self._wrap_num_neg(self.inp_pay_cash), 0, 1)
+
+        lbl_pay_tpe = QLabel("💳 TPE (DA) :")
+        lbl_pay_tpe.setStyleSheet(LBL_STYLE)
+        pay_grid.addWidget(lbl_pay_tpe, 0, 2)
+
+        self.inp_pay_tpe = QLineEdit()
+        self.inp_pay_tpe.setStyleSheet(STYLE_NUM)
+        self.inp_pay_tpe.setAlignment(Qt.AlignCenter)
+        self.inp_pay_tpe.setPlaceholderText("TPE en DA")
+        if self.record and self.record.get('pay_tpe_da') is not None and str(self.record.get('pay_tpe_da')) not in ('0', '0.0', '0.00', ''):
+            self.inp_pay_tpe.setText(str(self.record.get('pay_tpe_da')))
+        pay_grid.addWidget(self._wrap_num(self.inp_pay_tpe), 0, 3)
+
+        lbl_pay_oc = QLabel("⚖️ Or Cassé OC (g) :")
+        lbl_pay_oc.setStyleSheet(LBL_STYLE)
+        pay_grid.addWidget(lbl_pay_oc, 1, 0)
+
+        self.inp_pay_oc = QLineEdit()
+        self.inp_pay_oc.setStyleSheet(STYLE_NUM)
+        self.inp_pay_oc.setAlignment(Qt.AlignCenter)
+        self.inp_pay_oc.setPlaceholderText("Poids Or Cassé (g)")
+        if self.record and self.record.get('pay_oc_g') is not None and str(self.record.get('pay_oc_g')) not in ('0', '0.0', '0.00', ''):
+            self.inp_pay_oc.setText(str(self.record.get('pay_oc_g')))
+        pay_grid.addWidget(self._wrap_num(self.inp_pay_oc), 1, 1)
+
+        main_layout.addWidget(grp_pay)
+
+        # --- 4. Boutons ---
         btn_lay = QHBoxLayout()
         btn_lay.setSpacing(20)
         
@@ -679,7 +736,11 @@ class OrderDialog(QDialog):
             "cout_artisan_da": self.inp_prix.text().strip(),
             "prix_vente_da": self.inp_vente.text().strip(),
             "diff": self.inp_diff.text().strip(),
-            "observations": self.inp_obs.text().strip()
+            "observations": self.inp_obs.text().strip(),
+            "pay_cash_da": self.inp_pay_cash.text().strip(),
+            "pay_tpe_da": self.inp_pay_tpe.text().strip(),
+            "pay_oc_g": self.inp_pay_oc.text().strip(),
+            "journee_id": self.record.get('journee_id') if self.record else None
         }
 
 
@@ -1039,7 +1100,9 @@ class ArtisanWorkView(QWidget):
                 d['artisan_id'], d['client_id'], d['numero'], d['date_remis'], d['obj'], d['poid'],
                 d['date_recue'], d['date_sortie'], d['prix'], d['vente'], d['diff'],
                 status=d['status'], poids_entre_g=d['poids_entre_g'], poids_retour_g=d['poids_retour_g'],
-                observations=d['observations'], cout_artisan_da=d['cout_artisan_da'], prix_vente_da=d['prix_vente_da']
+                observations=d['observations'], cout_artisan_da=d['cout_artisan_da'], prix_vente_da=d['prix_vente_da'],
+                pay_cash_da=d.get('pay_cash_da', 0.0), pay_tpe_da=d.get('pay_tpe_da', 0.0), pay_oc_g=d.get('pay_oc_g', 0.0),
+                journee_id=d.get('journee_id')
             )
             self.load_atelier_orders()
 
@@ -1051,7 +1114,9 @@ class ArtisanWorkView(QWidget):
                 d['id'], d['artisan_id'], d['client_id'], d['numero'], d['date_remis'], d['obj'], d['poid'],
                 d['date_recue'], d['date_sortie'], d['prix'], d['vente'], d['diff'],
                 status=d['status'], poids_entre_g=d['poids_entre_g'], poids_retour_g=d['poids_retour_g'],
-                observations=d['observations'], cout_artisan_da=d['cout_artisan_da'], prix_vente_da=d['prix_vente_da']
+                observations=d['observations'], cout_artisan_da=d['cout_artisan_da'], prix_vente_da=d['prix_vente_da'],
+                pay_cash_da=d.get('pay_cash_da', 0.0), pay_tpe_da=d.get('pay_tpe_da', 0.0), pay_oc_g=d.get('pay_oc_g', 0.0),
+                journee_id=d.get('journee_id')
             )
             self.load_atelier_orders()
 

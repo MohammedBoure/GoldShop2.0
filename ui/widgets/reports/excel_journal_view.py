@@ -217,7 +217,7 @@ class SaleDetailsDialog(QDialog):
                     WHERE s.id = %s
                 """, (self.sale_id,))
                 sale = cursor.fetchone()
-                while cursor.nextset(): pass
+                while cursor.nextset() is True: pass
 
                 cursor.execute("""
                     SELECT si.*, 
@@ -232,7 +232,7 @@ class SaleDetailsDialog(QDialog):
                     WHERE si.sale_id = %s
                 """, (self.sale_id,))
                 items = cursor.fetchall()
-                while cursor.nextset(): pass
+                while cursor.nextset() is True: pass
 
         except Exception as e:
             layout.addWidget(QLabel(f"Erreur de chargement: {e}"))
@@ -432,7 +432,7 @@ class EditSaleDialog(QDialog):
         from ui.tools.virtual_numpad import VirtualNumpad
         
         def show_pad(inp):
-            VirtualNumpad(mode="direct", target_widget=inp, allow_decimal=True, allow_negative=False, parent=self).show()
+            VirtualNumpad(mode="direct", target_widget=inp, allow_decimal=True, allow_negative=(inp == self.inp_cash), parent=self).show()
         
         for inp in [self.inp_cash, self.inp_tpe, self.inp_oc, self.inp_oc_silver, self.inp_euro, self.inp_dollar, self.inp_impos]:
             inp.setStyleSheet("font-size: 18px; padding: 5px; font-weight: bold;")
@@ -564,7 +564,7 @@ class EditSellerDialog(QDialog):
                     (self.current_seller_id,)
                 )
                 sellers = cursor.fetchall()
-                while cursor.nextset():
+                while cursor.nextset() is True:
                     pass
 
             for seller in sellers:
@@ -1069,7 +1069,7 @@ class ExcelJournalView(QWidget):
         return str(cfg.get("thermal_config", {}).get("printer_name", "") or "").strip()
 
     # ──────────────────────────────────────────────────────────────
-    # القائمة المنسدلة (كليك يمين) - 3 خيارات طباعة
+    # القائمة المنسدلة (كليك يمين) - خيارات الطباعة والتعديل
     # ──────────────────────────────────────────────────────────────
     def _is_versement_row(self, item0):
         if not item0:
@@ -1085,6 +1085,20 @@ class ExcelJournalView(QWidget):
             return True
         return False
 
+    def _is_repair_row(self, item0):
+        if not item0:
+            return False
+        sale_id = item0.data(Qt.UserRole)
+        rec_num = str(item0.data(Qt.UserRole + 12) or "")
+        raw_obs = str(item0.data(Qt.UserRole + 9) or "")
+        if isinstance(sale_id, str) and sale_id.startswith("REP_"):
+            return True
+        if rec_num.startswith("REP-"):
+            return True
+        if "Réparation N°" in raw_obs:
+            return True
+        return False
+
     def show_context_menu(self, pos):
         row = self.table.rowAt(pos.y())
         if row < 0: return
@@ -1095,7 +1109,9 @@ class ExcelJournalView(QWidget):
         if not sale_id: return 
         
         is_versement = self._is_versement_row(item)
+        is_repair = self._is_repair_row(item)
         is_pure_vp = isinstance(sale_id, str) and str(sale_id).startswith("VRS_")
+        is_pure_rep = isinstance(sale_id, str) and str(sale_id).startswith("REP_")
         item_id = item.data(Qt.UserRole + 1)
         
         cash = item.data(Qt.UserRole + 2)
@@ -1128,44 +1144,57 @@ class ExcelJournalView(QWidget):
         if barcode:
             act_copy_bc = menu.addAction(f"📋 Copier le Code-barres : {barcode}")
 
-        act_view_products = menu.addAction("📦 Afficher la liste des produits & Codes-barres")
+        act_view_products = None
+        if not is_repair:
+            act_view_products = menu.addAction("📦 Afficher la liste des produits & Codes-barres")
 
         act_edit_weight = None
-        if not is_versement:
+        if not is_versement and not is_repair:
             act_edit_weight = menu.addAction("⚖️ Modifier le Poids Sorti (P.S)")
 
         menu.addSeparator()
 
-        # ── خيار 1: تحميل PDF ──
-        act_print_pdf = menu.addAction("📄 Télécharger PDF (Aperçu)")
+        act_print_pdf = None
+        act_print_direct = None
+        act_print_thermal = None
+        act_print_custom_note = None
 
-        # ── خيار 2: طباعة مباشرة على طابعة PDF ──
-        if pdf_printer:
-            act_print_direct = menu.addAction(f"🖨️ Imprimer directement → {pdf_printer}")
-        else:
-            act_print_direct = menu.addAction("🖨️ Imprimer directement (non configurée)")
-            act_print_direct.setEnabled(False)
+        if not is_repair:
+            # ── خيار 1: تحميل PDF ──
+            act_print_pdf = menu.addAction("📄 Télécharger PDF (Aperçu)")
 
-        # ── خيار 3: طباعة حرارية ──
-        if thermal_printer:
-            act_print_thermal = menu.addAction(f"🧾 Imprimer sur thermique → {thermal_printer}")
-        else:
-            act_print_thermal = menu.addAction("🧾 Imprimer sur thermique (non configurée)")
-            act_print_thermal.setEnabled(False)
+            # ── خيار 2: طباعة مباشرة على طابعة PDF ──
+            if pdf_printer:
+                act_print_direct = menu.addAction(f"🖨️ Imprimer directement → {pdf_printer}")
+            else:
+                act_print_direct = menu.addAction("🖨️ Imprimer directement (non configurée)")
+                act_print_direct.setEnabled(False)
 
-        # ── خيار 4: طباعة مع ملاحظة مخصصة ──
-        act_print_custom_note = menu.addAction("📝 Imprimer avec Note / Observation...")
+            # ── خيار 3: طباعة حرارية ──
+            if thermal_printer:
+                act_print_thermal = menu.addAction(f"🧾 Imprimer sur thermique → {thermal_printer}")
+            else:
+                act_print_thermal = menu.addAction("🧾 Imprimer sur thermique (non configurée)")
+                act_print_thermal.setEnabled(False)
 
-        menu.addSeparator()
+            # ── خيار 4: طباعة مع ملاحظة مخصصة ──
+            act_print_custom_note = menu.addAction("📝 Imprimer avec Note / Observation...")
+
+            menu.addSeparator()
 
         # ── باقي الخيارات ──
-        act_details = menu.addAction("ℹ️ Détails complets et Bénéfice (Faaida)")
-        menu.addSeparator()
+        act_details = None
+        if not is_repair:
+            act_details = menu.addAction("ℹ️ Détails complets et Bénéfice (Faaida)")
+            menu.addSeparator()
 
         act_edit = None
         act_edit_seller = None
         act_del = None
-        if not is_versement:
+        if is_repair:
+            act_edit = menu.addAction("✏️ Modifier le règlement de cette réparation")
+            act_edit_obs = menu.addAction("📝 Modifier l'observation")
+        elif not is_versement:
             act_edit = menu.addAction("✏️ Modifier les montants de cette vente")
             act_edit_seller = menu.addAction("Modifier le vendeur")
             act_edit_obs = menu.addAction("📝 Modifier l'observation")
@@ -1179,19 +1208,19 @@ class ExcelJournalView(QWidget):
         
         if action == act_copy_bc:
             self.copy_barcode_to_clipboard(barcode)
-        elif action == act_view_products:
+        elif act_view_products and action == act_view_products:
             self.show_sale_products(sale_id)
         elif act_edit_weight and action == act_edit_weight:
             self.edit_p_s(row)
-        elif action == act_print_pdf:
+        elif act_print_pdf and action == act_print_pdf:
             self.print_invoice_pdf(sale_id)
-        elif action == act_print_direct:
+        elif act_print_direct and action == act_print_direct:
             self.print_invoice_pdf(sale_id, open_pdf=False, direct=True)
-        elif action == act_print_thermal:
+        elif act_print_thermal and action == act_print_thermal:
             self.print_invoice_thermal(sale_id)
-        elif action == act_print_custom_note:
+        elif act_print_custom_note and action == act_print_custom_note:
             self.prompt_custom_note_and_print(sale_id)
-        elif action == act_details:
+        elif act_details and action == act_details:
             self.show_sale_details(sale_id)
         elif act_edit and action == act_edit:
             self.edit_sale(sale_id, cash, tpe, oc, euro, dollar, impos, oc_silver)
@@ -1237,7 +1266,9 @@ class ExcelJournalView(QWidget):
         if not sale_id: return 
         
         is_versement = self._is_versement_row(item)
+        is_repair = self._is_repair_row(item)
         is_pure_vp = isinstance(sale_id, str) and str(sale_id).startswith("VRS_")
+        is_pure_rep = isinstance(sale_id, str) and str(sale_id).startswith("REP_")
         item_id = item.data(Qt.UserRole + 1)
         
         raw_obs = item.data(Qt.UserRole + 9)
@@ -1246,43 +1277,54 @@ class ExcelJournalView(QWidget):
         pdf_printer = self._get_pdf_printer_name()
         thermal_printer = self._get_thermal_printer_name()
 
-        # زر عرض المنتجات والباركودات
-        self._add_action_btn("fa5s.boxes", "Afficher la liste des produits & Codes-barres", "#8e44ad", "#9b59b6", lambda: self.show_sale_products(sale_id))
+        cash = item.data(Qt.UserRole + 2)
+        tpe = item.data(Qt.UserRole + 3)
+        oc = item.data(Qt.UserRole + 4)
+        euro = item.data(Qt.UserRole + 5)
+        dollar = item.data(Qt.UserRole + 6)
+        impos = item.data(Qt.UserRole + 7)
+        seller_id = item.data(Qt.UserRole + 8)
+        oc_silver = float(item.data(Qt.UserRole + 14) or 0)
+        current_obs = str(raw_obs if raw_obs is not None else (self.table.item(row, 8).text() if self.table.item(row, 8) else ""))
 
-        # زر نسخ الباركود مباشرة
-        if barcode:
-            self._add_action_btn("fa5s.copy", f"Copier le Code-barres ({barcode})", "#2c3e50", "#34495e", lambda: self.copy_barcode_to_clipboard(barcode))
+        if is_repair:
+            self._add_action_btn("fa5s.edit", "Modifier le règlement de cette réparation", "#27ae60", "#2ecc71", lambda: self.edit_sale(sale_id, cash, tpe, oc, euro, dollar, impos, oc_silver))
+            self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, item_id, current_obs))
+        elif not is_versement:
+            # زر عرض المنتجات والباركودات
+            self._add_action_btn("fa5s.boxes", "Afficher la liste des produits & Codes-barres", "#8e44ad", "#9b59b6", lambda: self.show_sale_products(sale_id))
 
-        if not is_versement:
+            # زر نسخ الباركود مباشرة
+            if barcode:
+                self._add_action_btn("fa5s.copy", f"Copier le Code-barres ({barcode})", "#2c3e50", "#34495e", lambda: self.copy_barcode_to_clipboard(barcode))
+
             # زر تعديل الوزن P.S للمبيعات العادية فقط
             self._add_action_btn("fa5s.weight-hanging", "Modifier le Poids Sorti (P.S)", "#16a085", "#1abc9c", lambda: self.edit_p_s(row))
+            self._add_action_btn("fa5s.info-circle", "Détails complets et Bénéfice (Faaida)", "#3498db", "#2980b9", lambda: self.show_sale_details(sale_id))
 
-        self._add_action_btn("fa5s.info-circle", "Détails complets et Bénéfice (Faaida)", "#3498db", "#2980b9", lambda: self.show_sale_details(sale_id))
+            # أزرار الطباعة
+            self._add_action_btn("fa5s.file-pdf", "Télécharger PDF (Aperçu)", "#e74c3c", "#c0392b", lambda: self.print_invoice_pdf(sale_id))
+            self._add_action_btn("fa5s.print", f"Imprimer directement → {pdf_printer}" if pdf_printer else "Imprimer directement (non configurée)", "#9b59b6", "#8e44ad", lambda: self.print_invoice_pdf(sale_id, open_pdf=False, direct=True), enabled=bool(pdf_printer))
+            self._add_action_btn("fa5s.receipt", f"Imprimer sur thermique → {thermal_printer}" if thermal_printer else "Imprimer sur thermique (non configurée)", "#e67e22", "#d35400", lambda: self.print_invoice_thermal(sale_id), enabled=bool(thermal_printer))
+            self._add_action_btn("fa5s.file-signature", "Imprimer avec Note personnalisée (Tactile)", "#16a085", "#1abc9c", lambda: self.prompt_custom_note_and_print(sale_id))
 
-        # أزرار الطباعة لكافة العمليات (بما فيها الفواتير وعمليات العربون - مخرجات فاتورة بيع قياسية)
-        self._add_action_btn("fa5s.file-pdf", "Télécharger PDF (Aperçu)", "#e74c3c", "#c0392b", lambda: self.print_invoice_pdf(sale_id))
-        self._add_action_btn("fa5s.print", f"Imprimer directement → {pdf_printer}" if pdf_printer else "Imprimer directement (non configurée)", "#9b59b6", "#8e44ad", lambda: self.print_invoice_pdf(sale_id, open_pdf=False, direct=True), enabled=bool(pdf_printer))
-        self._add_action_btn("fa5s.receipt", f"Imprimer sur thermique → {thermal_printer}" if thermal_printer else "Imprimer sur thermique (non configurée)", "#e67e22", "#d35400", lambda: self.print_invoice_thermal(sale_id), enabled=bool(thermal_printer))
-        self._add_action_btn("fa5s.file-signature", "Imprimer avec Note personnalisée (Tactile)", "#16a085", "#1abc9c", lambda: self.prompt_custom_note_and_print(sale_id))
-
-        if not is_versement:
-            cash = item.data(Qt.UserRole + 2)
-            tpe = item.data(Qt.UserRole + 3)
-            oc = item.data(Qt.UserRole + 4)
-            euro = item.data(Qt.UserRole + 5)
-            dollar = item.data(Qt.UserRole + 6)
-            impos = item.data(Qt.UserRole + 7)
-            seller_id = item.data(Qt.UserRole + 8)
-            oc_silver = float(item.data(Qt.UserRole + 14) or 0)
             self._add_action_btn("fa5s.edit", "Modifier les montants de cette vente", "#27ae60", "#2ecc71", lambda: self.edit_sale(sale_id, cash, tpe, oc, euro, dollar, impos, oc_silver))
             self._add_action_btn("fa5s.user-edit", "Modifier le vendeur", "#16a085", "#1abc9c", lambda: self.edit_seller(sale_id, seller_id))
             self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, item_id, current_obs))
             self._add_action_btn("fa5s.trash-alt", "Supprimer (Annuler) cette vente", "#c0392b", "#962d2d", lambda: self.delete_sale(sale_id))
-            current_vrs_obs = str(raw_obs if raw_obs is not None else (self.table.item(row, 8).text() if self.table.item(row, 8) else ""))
+        else: # Versement
+            self._add_action_btn("fa5s.boxes", "Afficher la liste des produits & Codes-barres", "#8e44ad", "#9b59b6", lambda: self.show_sale_products(sale_id))
+            if barcode:
+                self._add_action_btn("fa5s.copy", f"Copier le Code-barres ({barcode})", "#2c3e50", "#34495e", lambda: self.copy_barcode_to_clipboard(barcode))
+            self._add_action_btn("fa5s.info-circle", "Détails complets et Bénéfice (Faaida)", "#3498db", "#2980b9", lambda: self.show_sale_details(sale_id))
+            self._add_action_btn("fa5s.file-pdf", "Télécharger PDF (Aperçu)", "#e74c3c", "#c0392b", lambda: self.print_invoice_pdf(sale_id))
+            self._add_action_btn("fa5s.print", f"Imprimer directement → {pdf_printer}" if pdf_printer else "Imprimer directement (non configurée)", "#9b59b6", "#8e44ad", lambda: self.print_invoice_pdf(sale_id, open_pdf=False, direct=True), enabled=bool(pdf_printer))
+            self._add_action_btn("fa5s.receipt", f"Imprimer sur thermique → {thermal_printer}" if thermal_printer else "Imprimer sur thermique (non configurée)", "#e67e22", "#d35400", lambda: self.print_invoice_thermal(sale_id), enabled=bool(thermal_printer))
+            self._add_action_btn("fa5s.file-signature", "Imprimer avec Note personnalisée (Tactile)", "#16a085", "#1abc9c", lambda: self.prompt_custom_note_and_print(sale_id))
             if is_pure_vp:
-                self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_versement_observation(item_id, current_vrs_obs))
+                self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_versement_observation(item_id, current_obs))
             else:
-                self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, item_id, current_vrs_obs))
+                self._add_action_btn("fa5s.comment-dots", "Modifier l'observation", "#f1c40f", "#f39c12", lambda: self.edit_observation(sale_id, item_id, current_obs))
 
     def _get_sale_or_versement_details(self, sale_id):
         """
@@ -1706,10 +1748,20 @@ class ExcelJournalView(QWidget):
         dlg = EditSaleDialog(cash, tpe, oc, euro, dollar, impos, oc_silver, self)
         if dlg.exec() == QDialog.Accepted:
             n_cash, n_tpe, n_oc, n_euro, n_dollar, n_impos, n_oc_silver = dlg.get_values()
-            if self.manager.sales.update_sale_financials(sale_id, n_cash, n_tpe, n_oc, n_euro, n_dollar, n_impos, n_oc_silver):
-                self.load_data() 
+            if isinstance(sale_id, str) and sale_id.startswith("REP_"):
+                try:
+                    order_id = int(str(sale_id).replace("REP_", ""))
+                    if hasattr(self.manager, "artisan_work") and self.manager.artisan_work.update_order_payment(order_id, n_cash, n_tpe, n_oc, n_oc_silver):
+                        self.load_data()
+                    else:
+                        QMessageBox.warning(self, "Erreur", "Erreur lors de la mise à jour du règlement de la réparation.")
+                except Exception as e:
+                    QMessageBox.warning(self, "Erreur", f"Erreur: {e}")
             else:
-                QMessageBox.warning(self, "Erreur", "Erreur lors de la mise à jour.")
+                if self.manager.sales.update_sale_financials(sale_id, n_cash, n_tpe, n_oc, n_euro, n_dollar, n_impos, n_oc_silver):
+                    self.load_data() 
+                else:
+                    QMessageBox.warning(self, "Erreur", "Erreur lors de la mise à jour.")
 
     def edit_seller(self, sale_id, current_seller_id):
         dlg = EditSellerDialog(self.manager, current_seller_id, self)
@@ -1728,10 +1780,18 @@ class ExcelJournalView(QWidget):
         if dlg.exec() == QDialog.Accepted:
             n_obs = dlg.get_value()
             updated = False
-            if hasattr(self.manager.sales, "update_sale_notes"):
-                updated = self.manager.sales.update_sale_notes(sale_id, n_obs)
-            if not updated and sale_item_id and hasattr(self.manager.sales, "update_sale_item_notes"):
-                updated = self.manager.sales.update_sale_item_notes(sale_item_id, n_obs)
+            if isinstance(sale_id, str) and sale_id.startswith("REP_"):
+                try:
+                    order_id = int(str(sale_id).replace("REP_", ""))
+                    if hasattr(self.manager, "artisan_work") and hasattr(self.manager.artisan_work, "update_order_observation"):
+                        updated = self.manager.artisan_work.update_order_observation(order_id, n_obs)
+                except Exception:
+                    pass
+            else:
+                if hasattr(self.manager.sales, "update_sale_notes"):
+                    updated = self.manager.sales.update_sale_notes(sale_id, n_obs)
+                if not updated and sale_item_id and hasattr(self.manager.sales, "update_sale_item_notes"):
+                    updated = self.manager.sales.update_sale_item_notes(sale_item_id, n_obs)
             if updated:
                 self.load_data()
             else:
@@ -1749,6 +1809,14 @@ class ExcelJournalView(QWidget):
                 QMessageBox.warning(self, "Erreur", "Erreur lors de la mise à jour de l'observation.")
 
     def delete_sale(self, sale_id):
+        if isinstance(sale_id, str) and sale_id.startswith("REP_"):
+            QMessageBox.warning(
+                self,
+                "Action Non Autorisée",
+                "Les opérations de réparations / atelier doivent être gérées ou supprimées depuis l'onglet 'Réparations' (Atelier)."
+            )
+            return
+
         if isinstance(sale_id, str) and sale_id.startswith("VRS_"):
             QMessageBox.warning(
                 self,
@@ -1783,9 +1851,11 @@ class ExcelJournalView(QWidget):
             with self.manager.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
                 cursor.execute("SELECT id, username FROM Users WHERE is_active = 1")
-                for u in cursor.fetchall():
-                    self.combo_seller.addItem(u['username'], u['id'])
-                while cursor.nextset(): pass
+                rows = cursor.fetchall()
+                if isinstance(rows, (list, tuple)):
+                    for u in rows:
+                        if isinstance(u, dict) and 'username' in u:
+                            self.combo_seller.addItem(u['username'], u['id'])
         except Exception: pass
             
     def set_starting_cash(self):
@@ -1911,7 +1981,7 @@ class ExcelJournalView(QWidget):
                 query_sessions += " ORDER BY opened_at ASC"
                 cursor.execute(query_sessions, tuple(params))
                 sessions = cursor.fetchall()
-                while cursor.nextset(): pass
+                while cursor.nextset() is True: pass
                 
             if not sessions:
                 self.add_merged_row("Aucune donnée trouvée pour cette période.", 9, bg_color="#ecf0f1", text_color="#7f8c8d")

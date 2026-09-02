@@ -644,6 +644,7 @@ ARTISAN_WORK_TABLE_QUERIES = [
         id INT PRIMARY KEY AUTO_INCREMENT,
         artisan_id INT NULL,
         client_id INT NULL,
+        journee_id INT NULL,
         numero VARCHAR(50) NOT NULL DEFAULT 'x',
         date_remis VARCHAR(50),
         obj TEXT,
@@ -659,8 +660,14 @@ ARTISAN_WORK_TABLE_QUERIES = [
         observations TEXT NULL,
         cout_artisan_da VARCHAR(50) NULL,
         prix_vente_da VARCHAR(50) NULL,
+        pay_cash_da DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+        pay_tpe_da DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+        pay_oc_g DECIMAL(10, 3) NOT NULL DEFAULT 0.000,
+        pay_oc_silver_g DECIMAL(10, 3) NOT NULL DEFAULT 0.000,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (artisan_id) REFERENCES Artisans(id) ON DELETE SET NULL,
-        FOREIGN KEY (client_id) REFERENCES Clients(id) ON DELETE SET NULL
+        FOREIGN KEY (client_id) REFERENCES Clients(id) ON DELETE SET NULL,
+        FOREIGN KEY (journee_id) REFERENCES DailySessions(id) ON DELETE SET NULL
     );""",
 
     """CREATE TABLE IF NOT EXISTS ArtisanTransactions (
@@ -688,6 +695,11 @@ ARTISAN_WORK_TABLE_QUERIES = [
     "ALTER TABLE ArtisanWorkOrders ADD COLUMN observations TEXT NULL;",
     "ALTER TABLE ArtisanWorkOrders ADD COLUMN cout_artisan_da VARCHAR(50) NULL;",
     "ALTER TABLE ArtisanWorkOrders ADD COLUMN prix_vente_da VARCHAR(50) NULL;",
+    "ALTER TABLE ArtisanWorkOrders ADD COLUMN journee_id INT NULL;",
+    "ALTER TABLE ArtisanWorkOrders ADD COLUMN pay_cash_da DECIMAL(15, 2) NOT NULL DEFAULT 0.00;",
+    "ALTER TABLE ArtisanWorkOrders ADD COLUMN pay_tpe_da DECIMAL(15, 2) NOT NULL DEFAULT 0.00;",
+    "ALTER TABLE ArtisanWorkOrders ADD COLUMN pay_oc_g DECIMAL(10, 3) NOT NULL DEFAULT 0.000;",
+    "ALTER TABLE ArtisanWorkOrders ADD COLUMN pay_oc_silver_g DECIMAL(10, 3) NOT NULL DEFAULT 0.000;",
     "ALTER TABLE ArtisanTransactions ADD COLUMN metal_type_id INT NULL;"
 ]
 

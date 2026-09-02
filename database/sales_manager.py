@@ -326,22 +326,77 @@ class SalesManager:
                 cursor.execute(query_vp, tuple(journee_ids))
                 vp_results = cursor.fetchall()
                 while cursor.nextset(): pass
+
+                # 3. جلب عمليات الورشة والتصليح المسددة (ArtisanWorkOrders)
+                query_awo = f"""
+                    SELECT 
+                        awo.journee_id,
+                        CONCAT('REP_', awo.id) as sale_id,
+                        CONCAT('REP-', awo.numero) as receipt_number,
+                        awo.id as item_id,
+                        '' as barcode,
+                        c.name as client_name,
+                        CONCAT('Réparation N° ', awo.numero, IF(awo.obj IS NOT NULL AND awo.obj != '', CONCAT(' | ', awo.obj), '')) as Designation,
+                        0.0 as P_S,
+                        'GOLD' as metal_category,
+                        0.0 as P_S_Silver,
+                        0.0 as P_S_Gold,
+                        COALESCE(awo.pay_cash_da, 0.0) as Recette,
+                        COALESCE(awo.pay_oc_g, 0.0) as OC,
+                        COALESCE(awo.pay_oc_g, 0.0) as OC_Gold,
+                        COALESCE(awo.pay_oc_silver_g, 0.0) as OC_Silver,
+                        COALESCE(awo.pay_tpe_da, 0.0) as TPE,
+                        0.0 as Impos,
+                        0.0 as Euro,
+                        0.0 as Dollar,
+                        COALESCE(a.name, '') as Vendeur_Name,
+                        NULL as vendeur_id,
+                        awo.observations as raw_notes,
+                        awo.numero as repair_numero,
+                        COALESCE(awo.created_at, awo.date_remis) as timestamp
+                    FROM ArtisanWorkOrders awo
+                    LEFT JOIN Clients c ON awo.client_id = c.id
+                    LEFT JOIN Artisans a ON awo.artisan_id = a.id
+                    WHERE awo.journee_id IN ({format_strings})
+                      AND (
+                          COALESCE(awo.pay_cash_da, 0) != 0 
+                          OR COALESCE(awo.pay_tpe_da, 0) != 0 
+                          OR COALESCE(awo.pay_oc_g, 0) != 0
+                          OR COALESCE(awo.pay_oc_silver_g, 0) != 0
+                      )
+                """
+                cursor.execute(query_awo, tuple(journee_ids))
+                awo_results = cursor.fetchall()
+                while cursor.nextset(): pass
                 
                 results_by_session = {jid: [] for jid in journee_ids}
                 from datetime import datetime
-                for r in sales_results + vp_results:
+                for r in sales_results + vp_results + awo_results:
                     jid = r.get('journee_id')
                     c_name = r.get('client_name')
                     r_notes = str(r.get('raw_notes') or r.get('Observation') or '').strip()
-                    obs_parts = []
-                    if c_name and str(c_name).strip() and str(c_name).strip() != 'Passager':
-                        obs_parts.append(f"Client: {str(c_name).strip()}")
-                    if r_notes:
-                        if c_name and f" - {c_name}" in r_notes:
-                            r_notes = r_notes.replace(f" - {c_name}", "").strip()
+                    sale_id_str = str(r.get('sale_id') or '')
+
+                    if sale_id_str.startswith('REP_'):
+                        obs_parts = []
+                        client_display = str(c_name).strip() if (c_name and str(c_name).strip()) else "Passager"
+                        obs_parts.append(f"Client: {client_display}")
+                        rep_num = str(r.get('repair_numero') or r.get('item_id') or '')
+                        obs_parts.append(f"Réparation N° {rep_num}")
                         if r_notes and r_notes not in obs_parts:
                             obs_parts.append(r_notes)
-                    r['Observation'] = " | ".join(obs_parts) if obs_parts else (r_notes or "-")
+                        r['Observation'] = " | ".join(obs_parts)
+                    else:
+                        obs_parts = []
+                        if c_name and str(c_name).strip() and str(c_name).strip() != 'Passager':
+                            obs_parts.append(f"Client: {str(c_name).strip()}")
+                        if r_notes:
+                            if c_name and f" - {c_name}" in r_notes:
+                                r_notes = r_notes.replace(f" - {c_name}", "").strip()
+                            if r_notes and r_notes not in obs_parts:
+                                obs_parts.append(r_notes)
+                        r['Observation'] = " | ".join(obs_parts) if obs_parts else (r_notes or "-")
+
                     if jid in results_by_session:
                         results_by_session[jid].append(r)
 
@@ -405,15 +460,26 @@ class SalesManager:
                 """, (journee_id,))
                 vp_totals = cursor.fetchone() or {}
 
-                total_oc_gold = float((sales_totals.get('total_oc_gold') or 0) + (vp_totals.get('total_oc_gold') or 0))
-                total_oc_silver = float((sales_totals.get('total_oc_silver') or 0) + (vp_totals.get('total_oc_silver') or 0))
+                cursor.execute("""
+                    SELECT 
+                        SUM(pay_cash_da) as total_recette,
+                        SUM(pay_tpe_da) as total_tpe,
+                        SUM(pay_oc_g) as total_oc_gold,
+                        SUM(COALESCE(pay_oc_silver_g, 0)) as total_oc_silver
+                    FROM ArtisanWorkOrders 
+                    WHERE journee_id = %s
+                """, (journee_id,))
+                awo_totals = cursor.fetchone() or {}
+
+                total_oc_gold = float((sales_totals.get('total_oc_gold') or 0) + (vp_totals.get('total_oc_gold') or 0) + (awo_totals.get('total_oc_gold') or 0))
+                total_oc_silver = float((sales_totals.get('total_oc_silver') or 0) + (vp_totals.get('total_oc_silver') or 0) + (awo_totals.get('total_oc_silver') or 0))
                 total_ps_gold = float(weight_totals.get('total_p_s_gold') or 0)
                 total_ps_silver = float(weight_totals.get('total_p_s_silver') or 0)
                 total_ps = float((weight_totals.get('total_p_s') or 0) + (vp_totals.get('total_p_s') or 0))
 
                 return {
-                    'total_recette': float((sales_totals.get('total_recette') or 0) + (vp_totals.get('total_recette') or 0)),
-                    'total_tpe': float((sales_totals.get('total_tpe') or 0) + (vp_totals.get('total_tpe') or 0)),
+                    'total_recette': float((sales_totals.get('total_recette') or 0) + (vp_totals.get('total_recette') or 0) + (awo_totals.get('total_recette') or 0)),
+                    'total_tpe': float((sales_totals.get('total_tpe') or 0) + (vp_totals.get('total_tpe') or 0) + (awo_totals.get('total_tpe') or 0)),
                     'total_oc': total_oc_gold,
                     'total_oc_gold': total_oc_gold,
                     'total_oc_silver': total_oc_silver,

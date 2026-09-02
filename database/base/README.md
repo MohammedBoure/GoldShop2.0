@@ -8,4 +8,4 @@
 
 * `__init__.py`: تهيئة الحزمة وتصدير فئة `Database` المركزية.
 * `database.py`: إدارة الاتصال بقاعدة بيانات MySQL ومجمعات الاتصال (Connection Pools) وتأكيد وتنفيذ الاستعلامات.
-* `tables.py`: تعريف مخططات وجداول النظام الأساسية (Sales, SaleItems, Inventory, MetalTypes, Suppliers, Versement_Payments, إلخ) وتنفيذ ترقيات وتعديلات الجداول تلقائياً (Migrations) بما فيها دعم الفضة والذهب المتعدد وكسر الفضة وترقية حقول الموردين (`supplier_type`, `primary_purity`, `old_silver_weight_g`, `metal_category`, `argent_casse_g`).
+* `tables.py`: تعريف مخططات وجداول النظام الأساسية (Sales, SaleItems, Inventory, MetalTypes, Suppliers, Versement_Payments, ArtisanWorkOrders, إلخ) وتنفيذ ترقيات وتعديلات الجداول تلقائياً (Migrations) بما فيها دعم الفضة والذهب المتعدد وكسر الفضة وترقية حقول الموردين وحقول دفعات ورشة الحرفيين والتصليح (`journee_id`, `pay_cash_da`, `pay_tpe_da`, `pay_oc_g`, `pay_oc_silver_g`).
