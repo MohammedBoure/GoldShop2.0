@@ -624,12 +624,16 @@ COFFRE_MAGASIN_TABLE_QUERIES = [
         id INT PRIMARY KEY AUTO_INCREMENT,
         date_operation VARCHAR(50) NOT NULL,
         montant_da VARCHAR(50) NOT NULL DEFAULT '0',
+        oc_or VARCHAR(50) NOT NULL DEFAULT '0',
+        oc_argent VARCHAR(50) NOT NULL DEFAULT '0',
         tpe VARCHAR(50) NOT NULL DEFAULT '0',
         ccp VARCHAR(50) NOT NULL DEFAULT '0',
         euro VARCHAR(50) NOT NULL DEFAULT '0',
         dollar VARCHAR(50) NOT NULL DEFAULT '0',
         designation TEXT NULL
-    );"""
+    );""",
+    "ALTER TABLE CoffreMagasin ADD COLUMN oc_or VARCHAR(50) NOT NULL DEFAULT '0';",
+    "ALTER TABLE CoffreMagasin ADD COLUMN oc_argent VARCHAR(50) NOT NULL DEFAULT '0';"
 ]
 
 ARTISAN_WORK_TABLE_QUERIES = [

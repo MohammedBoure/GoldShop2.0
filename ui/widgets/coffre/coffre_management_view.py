@@ -76,7 +76,7 @@ class OperationDialog(QDialog):
         super().__init__(parent)
         self.record = record
         self.setWindowTitle("Modifier l'opération" if record else "Nouvelle Opération")
-        self.setFixedSize(620, 480)
+        self.setFixedSize(620, 560)
         self.setStyleSheet("QDialog { background-color: white; }")
         self.init_ui()
 
@@ -118,7 +118,15 @@ class OperationDialog(QDialog):
         else: self.inp_date.setDate(QDate.currentDate())
         form.addRow("📅 Date :", self._wrap_kb(self.inp_date))
 
-        fields = [("💰 Montant (DA) :", "montant_da"), ("💳 TPE :", "tpe"), ("📮 CCP :", "ccp"), ("💶 Euro :", "euro"), ("💵 Dollar :", "dollar")]
+        fields = [
+            ("💰 Montant (DA) :", "montant_da"),
+            ("🥇 O.C Or (g) :", "oc_or"),
+            ("🥈 O.C Argent (g) :", "oc_argent"),
+            ("💳 TPE :", "tpe"),
+            ("📮 CCP :", "ccp"),
+            ("💶 Euro :", "euro"),
+            ("💵 Dollar :", "dollar")
+        ]
         self.inp_fields = {}
         for label, key in fields:
             inp = QLineEdit(); inp.setStyleSheet(DIALOG_FIELD_STYLE); inp.setAlignment(Qt.AlignRight | Qt.AlignVCenter); inp.setPlaceholderText("0")
@@ -141,6 +149,8 @@ class OperationDialog(QDialog):
             "id": self.record['id'] if self.record else None,
             "date_operation": self.inp_date.date().toString("dd/MM/yyyy"),
             "montant_da": self.inp_fields['montant_da'].text().strip() or "0",
+            "oc_or": self.inp_fields['oc_or'].text().strip() or "0",
+            "oc_argent": self.inp_fields['oc_argent'].text().strip() or "0",
             "tpe": self.inp_fields['tpe'].text().strip() or "0",
             "ccp": self.inp_fields['ccp'].text().strip() or "0",
             "euro": self.inp_fields['euro'].text().strip() or "0",
@@ -183,8 +193,8 @@ class CoffreMagasinView(QWidget):
         btn_add = QPushButton("➕ Nouvelle Opération"); btn_add.setStyleSheet(BTN_ADD_STYLE); btn_add.clicked.connect(self.open_add_dialog)
         header.addWidget(btn_add); layout.addLayout(header)
 
-        self.table = QTableWidget(0, 7)
-        self.table.setHorizontalHeaderLabels(["Date", "Montant (DA)", "TPE", "CCP", "Euro", "Dollar", "Désignation"])
+        self.table = QTableWidget(0, 9)
+        self.table.setHorizontalHeaderLabels(["Date", "Montant (DA)", "O.C Or (g)", "O.C Ag (g)", "TPE", "CCP", "Euro", "Dollar", "Désignation"])
         self.table.setStyleSheet(EXCEL_STYLE)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -199,7 +209,9 @@ class CoffreMagasinView(QWidget):
         hh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         hh.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         hh.setSectionResizeMode(5, QHeaderView.ResizeToContents)
-        hh.setSectionResizeMode(6, QHeaderView.Stretch)
+        hh.setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(7, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(8, QHeaderView.Stretch)
         layout.addWidget(self.table)
 
     def show_context_menu(self, pos):
@@ -259,13 +271,26 @@ class CoffreMagasinView(QWidget):
 
     def _render_table(self, records):
         self.table.setRowCount(0)
-        total_da = total_tpe = total_ccp = total_euro = total_dollar = 0.0
+        total_da = total_oc_or = total_oc_argent = total_tpe = total_ccp = total_euro = total_dollar = 0.0
 
         for r in records:
             row = self.table.rowCount(); self.table.insertRow(row)
-            montant = safe_float(r.get('montant_da', '0')); tpe = safe_float(r.get('tpe', '0'))
-            ccp = safe_float(r.get('ccp', '0')); euro = safe_float(r.get('euro', '0')); dollar = safe_float(r.get('dollar', '0'))
-            total_da += montant; total_tpe += tpe; total_ccp += ccp; total_euro += euro; total_dollar += dollar
+            montant = safe_float(r.get('montant_da', '0'))
+            oc_or = safe_float(r.get('oc_or', '0'))
+            oc_argent = safe_float(r.get('oc_argent', '0'))
+            tpe = safe_float(r.get('tpe', '0'))
+            ccp = safe_float(r.get('ccp', '0'))
+            euro = safe_float(r.get('euro', '0'))
+            dollar = safe_float(r.get('dollar', '0'))
+
+            total_da += montant
+            total_oc_or += oc_or
+            total_oc_argent += oc_argent
+            total_tpe += tpe
+            total_ccp += ccp
+            total_euro += euro
+            total_dollar += dollar
+
             color = self._color_for_amount(r.get('montant_da', '0'))
 
             def m_item(text, align=Qt.AlignCenter, color=None, bold=False):
@@ -276,23 +301,36 @@ class CoffreMagasinView(QWidget):
 
             self.table.setItem(row, 0, m_item(r.get('date_operation', '')))
             self.table.setItem(row, 1, m_item(r.get('montant_da', '0'), color=color, bold=True))
-            self.table.setItem(row, 2, m_item(r.get('tpe', '0')))
-            self.table.setItem(row, 3, m_item(r.get('ccp', '0')))
-            self.table.setItem(row, 4, m_item(r.get('euro', '0')))
-            self.table.setItem(row, 5, m_item(r.get('dollar', '0')))
-            self.table.setItem(row, 6, m_item(r.get('designation') or '', align=Qt.AlignLeft | Qt.AlignVCenter))
+            self.table.setItem(row, 2, m_item(f"{oc_or:.2f}" if oc_or != 0 else "0", color=QColor("#b8860b") if oc_or > 0 else None, bold=(oc_or > 0)))
+            self.table.setItem(row, 3, m_item(f"{oc_argent:.2f}" if oc_argent != 0 else "0", color=QColor("#7f8c8d") if oc_argent > 0 else None, bold=(oc_argent > 0)))
+            self.table.setItem(row, 4, m_item(r.get('tpe', '0')))
+            self.table.setItem(row, 5, m_item(r.get('ccp', '0')))
+            self.table.setItem(row, 6, m_item(r.get('euro', '0')))
+            self.table.setItem(row, 7, m_item(r.get('dollar', '0')))
+            self.table.setItem(row, 8, m_item(r.get('designation') or '', align=Qt.AlignLeft | Qt.AlignVCenter))
 
         if records:
             row = self.table.rowCount(); self.table.insertRow(row)
             it_lbl = QTableWidgetItem("TOTAUX :"); it_lbl.setTextAlignment(Qt.AlignCenter)
             it_lbl.setBackground(QBrush(QColor("#e2e8f0"))); it_lbl.setForeground(QBrush(QColor("#000000"))); it_lbl.setFont(QFont("", 12, QFont.Bold))
             self.table.setItem(row, 0, it_lbl)
-            for i, val in enumerate([total_da, total_tpe, total_ccp, total_euro, total_dollar]):
-                it = QTableWidgetItem(f"{val:,.2f}"); it.setTextAlignment(Qt.AlignCenter)
+
+            tot_vals = [
+                f"{total_da:,.2f}",
+                f"{total_oc_or:.2f} g",
+                f"{total_oc_argent:.2f} g",
+                f"{total_tpe:,.2f}",
+                f"{total_ccp:,.2f}",
+                f"{total_euro:,.2f}",
+                f"{total_dollar:,.2f}"
+            ]
+            for i, val_text in enumerate(tot_vals):
+                it = QTableWidgetItem(val_text); it.setTextAlignment(Qt.AlignCenter)
                 it.setBackground(QBrush(QColor("#e2e8f0"))); it.setForeground(QBrush(QColor("#000000"))); it.setFont(QFont("", 11, QFont.Bold))
                 self.table.setItem(row, i + 1, it)
+
             it_empty = QTableWidgetItem(""); it_empty.setBackground(QBrush(QColor("#e2e8f0")))
-            self.table.setItem(row, 6, it_empty)
+            self.table.setItem(row, 8, it_empty)
 
     def load_data(self):
         self.full_data = self.manager.coffre.get_all_operations()
@@ -303,14 +341,35 @@ class CoffreMagasinView(QWidget):
         dlg = OperationDialog(parent=self)
         if dlg.exec() == QDialog.Accepted:
             d = dlg.get_data()
-            self.manager.coffre.add_operation(d['date_operation'], d['montant_da'], d['tpe'], d['ccp'], d['euro'], d['dollar'], d['designation'])
+            self.manager.coffre.add_operation(
+                d['date_operation'], 
+                d['montant_da'], 
+                d['tpe'], 
+                d['ccp'], 
+                d['euro'], 
+                d['dollar'], 
+                d['designation'],
+                oc_or=d['oc_or'],
+                oc_argent=d['oc_argent']
+            )
             self.load_data()
 
     def open_edit_dialog(self, record):
         dlg = OperationDialog(record=record, parent=self)
         if dlg.exec() == QDialog.Accepted:
             d = dlg.get_data()
-            self.manager.coffre.update_operation(d['id'], d['date_operation'], d['montant_da'], d['tpe'], d['ccp'], d['euro'], d['dollar'], d['designation'])
+            self.manager.coffre.update_operation(
+                d['id'], 
+                d['date_operation'], 
+                d['montant_da'], 
+                d['tpe'], 
+                d['ccp'], 
+                d['euro'], 
+                d['dollar'], 
+                d['designation'],
+                oc_or=d['oc_or'],
+                oc_argent=d['oc_argent']
+            )
             self.load_data()
 
     def delete_record(self, rid):

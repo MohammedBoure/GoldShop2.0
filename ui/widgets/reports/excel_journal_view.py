@@ -5,9 +5,10 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QFrame,
-    QInputDialog, QMessageBox, QLineEdit, QTextEdit, QMenu, QDialog, QFormLayout, QGridLayout
+    QInputDialog, QMessageBox, QLineEdit, QTextEdit, QMenu, QDialog, QFormLayout, QGridLayout,
+    QDateEdit
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QDate
 from PySide6.QtGui import QColor, QFont, QBrush
 import qtawesome as qta
 
@@ -848,6 +849,195 @@ class SaleProductsDialog(QDialog):
         if action == act_copy:
             from PySide6.QtWidgets import QApplication
             QApplication.clipboard().setText(bc)
+class TransferToCoffreDialog(QDialog):
+    """
+    نافذة مخصصة لتأكيد ومراجعة تحويل الإيراد اليومي والذهب والفضة الكسر (O.C)
+    من شريط الإجمالي باليومية إلى الخزينة المركزية (Coffre Magasin).
+    """
+    def __init__(self, manager, date_str, recette=0.0, oc_gold=0.0, oc_silver=0.0, 
+                 tpe=0.0, euro=0.0, dollar=0.0, journee_id=None, parent=None):
+        super().__init__(parent)
+        self.manager = manager
+        self.date_str = date_str
+        self.journee_id = journee_id
+        self.setWindowTitle("Transférer la recette et l'O.C vers le Coffre Magasin")
+        self.setFixedSize(580, 580)
+        self.setStyleSheet("""
+            QDialog { background-color: #f8fafc; border-radius: 8px; }
+            QLabel { font-size: 13px; color: #1e293b; font-weight: bold; }
+            QLineEdit, QDateEdit { font-size: 14px; font-weight: bold; padding: 6px 10px; border: 2px solid #cbd5e1; border-radius: 6px; background-color: white; color: #0f172a; }
+            QLineEdit:focus, QDateEdit:focus { border-color: #0f8f83; }
+        """)
+        self._init_ui(recette, oc_gold, oc_silver, tpe, euro, dollar)
+
+    def _open_keyboard(self, target):
+        try:
+            from ui.tools.virtual_keyboard import VirtualKeyboardDialog, KeyboardFocusTracker
+            target.setFocus()
+            KeyboardFocusTracker.last_input_widget = target
+            kb = VirtualKeyboardDialog._instance
+            if not kb:
+                kb = VirtualKeyboardDialog(parent=self)
+            kb.set_active_parent(self)
+            kb.show()
+        except Exception:
+            pass
+
+    def _open_numpad(self, target, allow_decimal=True):
+        try:
+            from ui.tools.virtual_numpad import VirtualNumpad
+            target.setFocus()
+            numpad = VirtualNumpad(title="Saisie Montant", mode="direct", target_widget=target, allow_decimal=allow_decimal, allow_leading_zero=True, parent=self)
+            numpad.show(); numpad.raise_()
+        except Exception:
+            pass
+
+    def _wrap_num(self, widget, allow_decimal=True):
+        lay = QHBoxLayout(); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(4)
+        lay.addWidget(widget, stretch=1)
+        btn = QPushButton("🔢"); btn.setFixedSize(40, 36)
+        btn.setStyleSheet("QPushButton { background-color: #8e44ad; color: white; border-radius: 5px; font-size: 15px; border: none; } QPushButton:hover { background-color: #7d3c98; }")
+        btn.clicked.connect(lambda: self._open_numpad(widget, allow_decimal))
+        lay.addWidget(btn)
+        w = QWidget(); w.setLayout(lay); return w
+
+    def _wrap_kb(self, widget):
+        lay = QHBoxLayout(); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(4)
+        lay.addWidget(widget, stretch=1)
+        btn = QPushButton("⌨️"); btn.setFixedSize(40, 36)
+        btn.setStyleSheet("QPushButton { background-color: #3498db; color: white; border-radius: 5px; font-size: 15px; border: none; } QPushButton:hover { background-color: #2980b9; }")
+        btn.clicked.connect(lambda: self._open_keyboard(widget))
+        lay.addWidget(btn)
+        w = QWidget(); w.setLayout(lay); return w
+
+    def _init_ui(self, recette, oc_gold, oc_silver, tpe, euro, dollar):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(10)
+
+        header_frame = QFrame()
+        header_frame.setStyleSheet("background-color: #0f8f83; border-radius: 6px; padding: 10px;")
+        h_layout = QVBoxLayout(header_frame)
+        lbl_head = QLabel("🏦 Transfert vers le Coffre Magasin")
+        lbl_head.setStyleSheet("color: white; font-size: 16px; font-weight: bold;")
+        lbl_head.setAlignment(Qt.AlignCenter)
+        lbl_sub = QLabel(f"Journée du : {self.date_str}")
+        lbl_sub.setStyleSheet("color: #e6fffa; font-size: 13px; font-weight: bold;")
+        lbl_sub.setAlignment(Qt.AlignCenter)
+        h_layout.addWidget(lbl_head)
+        h_layout.addWidget(lbl_sub)
+        layout.addWidget(header_frame)
+
+        form = QFormLayout()
+        form.setSpacing(8)
+        form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+        self.inp_date = QDateEdit()
+        self.inp_date.setCalendarPopup(True)
+        self.inp_date.setDisplayFormat("dd/MM/yyyy")
+        qdate = QDate.fromString(self.date_str, "dd/MM/yyyy")
+        self.inp_date.setDate(qdate if qdate.isValid() else QDate.currentDate())
+        form.addRow("📅 Date opération :", self.inp_date)
+
+        # Montant Recette (DA)
+        self.inp_montant = QLineEdit(f"{recette:.0f}" if (recette % 1 == 0) else f"{recette:.2f}")
+        self.inp_montant.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.addRow("💰 Recette (DA) :", self._wrap_num(self.inp_montant, allow_decimal=True))
+
+        # O.C Or
+        self.inp_oc_or = QLineEdit(f"{oc_gold:.2f}")
+        self.inp_oc_or.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.addRow("🥇 O.C Or (g) :", self._wrap_num(self.inp_oc_or, allow_decimal=True))
+
+        # O.C Argent
+        self.inp_oc_argent = QLineEdit(f"{oc_silver:.2f}")
+        self.inp_oc_argent.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.addRow("🥈 O.C Argent (g) :", self._wrap_num(self.inp_oc_argent, allow_decimal=True))
+
+        # TPE
+        self.inp_tpe = QLineEdit(f"{tpe:.0f}" if (tpe % 1 == 0) else f"{tpe:.2f}")
+        self.inp_tpe.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.addRow("💳 TPE (DA) :", self._wrap_num(self.inp_tpe, allow_decimal=True))
+
+        # Euro
+        self.inp_euro = QLineEdit(f"{euro:.0f}" if (euro % 1 == 0) else f"{euro:.2f}")
+        self.inp_euro.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.addRow("💶 Euro (€) :", self._wrap_num(self.inp_euro, allow_decimal=True))
+
+        # Dollar
+        self.inp_dollar = QLineEdit(f"{dollar:.0f}" if (dollar % 1 == 0) else f"{dollar:.2f}")
+        self.inp_dollar.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.addRow("💵 Dollar ($) :", self._wrap_num(self.inp_dollar, allow_decimal=True))
+
+        # Designation
+        self.inp_designation = QLineEdit(f"Recette & O.C Journal du {self.date_str}")
+        form.addRow("📝 Désignation :", self._wrap_kb(self.inp_designation))
+
+        layout.addLayout(form)
+        layout.addStretch()
+
+        btn_box = QHBoxLayout()
+        btn_cancel = QPushButton("Annuler")
+        btn_cancel.setStyleSheet("background-color: #94a3b8; color: white; font-weight: bold; font-size: 14px; padding: 10px 18px; border-radius: 6px; border: none;")
+        btn_cancel.clicked.connect(self.reject)
+
+        btn_confirm = QPushButton("✅ Confirmer le Transfert")
+        btn_confirm.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; font-size: 14px; padding: 10px 22px; border-radius: 6px; border: none;")
+        btn_confirm.clicked.connect(self._do_transfer)
+
+        btn_box.addWidget(btn_cancel)
+        btn_box.addWidget(btn_confirm)
+        layout.addLayout(btn_box)
+
+    def _do_transfer(self):
+        date_op = self.inp_date.date().toString("dd/MM/yyyy")
+        montant = self.inp_montant.text().strip() or "0"
+        oc_or = self.inp_oc_or.text().strip() or "0"
+        oc_argent = self.inp_oc_argent.text().strip() or "0"
+        tpe = self.inp_tpe.text().strip() or "0"
+        euro = self.inp_euro.text().strip() or "0"
+        dollar = self.inp_dollar.text().strip() or "0"
+        designation = self.inp_designation.text().strip()
+
+        # Check existing transfer
+        if hasattr(self.manager, 'coffre') and hasattr(self.manager.coffre, 'check_existing_transfer'):
+            existing = self.manager.coffre.check_existing_transfer(date_op)
+            if existing:
+                res = QMessageBox.warning(
+                    self,
+                    "Opération existante",
+                    f"⚠️ Attention : {len(existing)} opération(s) existe(nt) déjà dans le Coffre pour la date {date_op}.\n\n"
+                    "Voulez-vous quand même enregistrer ce nouveau transfert ?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                if res != QMessageBox.Yes:
+                    return
+
+        # Execute insertion in coffre
+        try:
+            result = self.manager.coffre.add_operation(
+                date_operation=date_op,
+                montant_da=montant,
+                tpe=tpe,
+                ccp="0",
+                euro=euro,
+                dollar=dollar,
+                designation=designation,
+                oc_or=oc_or,
+                oc_argent=oc_argent
+            )
+            if result.get("success"):
+                QMessageBox.information(
+                    self,
+                    "Transfert Réussi",
+                    f"✅ Le montant de {montant} DA et l'O.C ({oc_or} g Or / {oc_argent} g Ag) ont été transférés avec succès vers le Coffre Magasin."
+                )
+                self.accept()
+            else:
+                QMessageBox.critical(self, "Erreur", f"Échec du transfert : {result.get('message', 'Erreur inconnue')}")
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur", f"Erreur lors du transfert : {e}")
 
 
 class ExcelJournalView(QWidget):
@@ -1099,11 +1289,74 @@ class ExcelJournalView(QWidget):
             return True
         return False
 
+    def _show_daily_total_context_menu(self, pos, total_item):
+        """عرض قائمة الخيارات الخاصة بشريط إجمالي اليومية للتحويل إلى الخزينة."""
+        date_str = str(total_item.data(Qt.UserRole + 1) or "")
+        recette = float(total_item.data(Qt.UserRole + 2) or 0)
+        oc_gold = float(total_item.data(Qt.UserRole + 3) or 0)
+        oc_silver = float(total_item.data(Qt.UserRole + 4) or 0)
+        tpe = float(total_item.data(Qt.UserRole + 5) or 0)
+        euro = float(total_item.data(Qt.UserRole + 6) or 0)
+        dollar = float(total_item.data(Qt.UserRole + 7) or 0)
+        journee_id = total_item.data(Qt.UserRole + 8)
+
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu { font-size: 14px; background-color: white; border: 1px solid #ccc; padding: 5px 0; }
+            QMenu::item { padding: 8px 30px; }
+            QMenu::item:selected { background-color: #0f8f83; color: white; }
+            QMenu::separator { height: 1px; background: #ddd; margin: 4px 10px; }
+        """)
+
+        header_title = f"📅 Total Journée : {date_str}" if date_str else "📅 Total Journée"
+        act_header = menu.addAction(header_title)
+        act_header.setEnabled(False)
+        menu.addSeparator()
+
+        existing_transfers = []
+        if hasattr(self.manager, 'coffre') and hasattr(self.manager.coffre, 'check_existing_transfer') and date_str:
+            existing_transfers = self.manager.coffre.check_existing_transfer(date_str)
+
+        if existing_transfers:
+            act_info = menu.addAction(f"⚠️ Déjà transféré au Coffre ({len(existing_transfers)} opération(s))")
+            act_info.setEnabled(False)
+            menu.addSeparator()
+
+        act_transfer = menu.addAction(qta.icon("fa5s.donate", color="#27ae60"), "📥 Transférer vers le Coffre (Recette & O.C)")
+        menu.addSeparator()
+        act_open_coffre = menu.addAction(qta.icon("fa5s.vault", color="#2980b9"), "🏦 Ouvrir le Coffre Magasin")
+
+        action = menu.exec_(self.table.viewport().mapToGlobal(pos))
+        if not action:
+            return
+
+        if action == act_transfer:
+            dlg = TransferToCoffreDialog(
+                self.manager,
+                date_str=date_str,
+                recette=recette,
+                oc_gold=oc_gold,
+                oc_silver=oc_silver,
+                tpe=tpe,
+                euro=euro,
+                dollar=dollar,
+                journee_id=journee_id,
+                parent=self
+            )
+            dlg.exec()
+        elif action == act_open_coffre:
+            self.open_coffre_interface()
+
     def show_context_menu(self, pos):
         row = self.table.rowAt(pos.y())
         if row < 0: return
         item = self.table.item(row, 0)
         if not item: return
+
+        row_type = item.data(Qt.UserRole)
+        if row_type == "TOTAL_JOURNEE" or (item.text() and item.text().strip() == "Total Journée"):
+            self._show_daily_total_context_menu(pos, item)
+            return
         
         sale_id = item.data(Qt.UserRole)
         if not sale_id: return 
@@ -2126,11 +2379,22 @@ class ExcelJournalView(QWidget):
                 row = self.table.rowCount()
                 self.table.insertRow(row)
                 
+                op_date_str = date_obj.strftime("%d/%m/%Y") if hasattr(date_obj, 'strftime') else str(date_obj)
                 empty_item = QTableWidgetItem("Total Journée")
                 empty_item.setFont(self.FONT_BOLD_11)
                 empty_item.setTextAlignment(Qt.AlignCenter)
                 empty_item.setBackground(self.BRUSH_TOTAL_BG)
                 empty_item.setForeground(self.BRUSH_WHITE)
+                empty_item.setData(Qt.UserRole, "TOTAL_JOURNEE")
+                empty_item.setData(Qt.UserRole + 1, op_date_str)
+                empty_item.setData(Qt.UserRole + 2, float(t_rec))
+                empty_item.setData(Qt.UserRole + 3, float(t_oc_gold))
+                empty_item.setData(Qt.UserRole + 4, float(t_oc_silver))
+                empty_item.setData(Qt.UserRole + 5, float(t_tpe))
+                empty_item.setData(Qt.UserRole + 6, float(t_euro))
+                empty_item.setData(Qt.UserRole + 7, float(t_dollar))
+                empty_item.setData(Qt.UserRole + 8, journee_id)
+                empty_item.setToolTip(f"Total Journée ({op_date_str})\n(Clic droit pour transférer la recette et l'O.C vers le Coffre)")
                 self.table.setItem(row, 0, empty_item)
                 
                 # Format totals for P.S and O.C
@@ -2151,12 +2415,12 @@ class ExcelJournalView(QWidget):
                     t_oc_display = f"{t_oc_gold:.2f}"
 
                 totals_list = [
-                    (1, t_ps_display, f"P.S Or: {t_ps_gold:.2f} g | P.S Argent: {t_ps_silver:.2f} g", self.FONT_BOLD_10 if is_multi_ps else self.FONT_BOLD_11),
-                    (2, f"{t_rec:.0f}", f"Total Recette: {t_rec:,.2f} DA", self.FONT_BOLD_11),
-                    (3, t_oc_display, f"O.C Or: {t_oc_gold:.2f} g | O.C Argent: {t_oc_silver:.2f} g", self.FONT_BOLD_10 if is_multi_oc else self.FONT_BOLD_11),
-                    (4, f"{t_tpe:.0f}", f"Total TPE: {t_tpe:,.2f} DA", self.FONT_BOLD_11),
-                    (5, f"{t_euro:.0f}", f"Total Euro: {t_euro:,.2f} €", self.FONT_BOLD_11),
-                    (6, f"{t_dollar:.0f}", f"Total Dollar: {t_dollar:,.2f} $", self.FONT_BOLD_11)
+                    (1, t_ps_display, f"P.S Or: {t_ps_gold:.2f} g | P.S Argent: {t_ps_silver:.2f} g\n(Clic droit pour transférer vers le Coffre)", self.FONT_BOLD_10 if is_multi_ps else self.FONT_BOLD_11),
+                    (2, f"{t_rec:.0f}", f"Total Recette: {t_rec:,.2f} DA\n(Clic droit pour transférer vers le Coffre)", self.FONT_BOLD_11),
+                    (3, t_oc_display, f"O.C Or: {t_oc_gold:.2f} g | O.C Argent: {t_oc_silver:.2f} g\n(Clic droit pour transférer vers le Coffre)", self.FONT_BOLD_10 if is_multi_oc else self.FONT_BOLD_11),
+                    (4, f"{t_tpe:.0f}", f"Total TPE: {t_tpe:,.2f} DA\n(Clic droit pour transférer vers le Coffre)", self.FONT_BOLD_11),
+                    (5, f"{t_euro:.0f}", f"Total Euro: {t_euro:,.2f} €\n(Clic droit pour transférer vers le Coffre)", self.FONT_BOLD_11),
+                    (6, f"{t_dollar:.0f}", f"Total Dollar: {t_dollar:,.2f} $\n(Clic droit pour transférer vers le Coffre)", self.FONT_BOLD_11)
                 ]
 
                 for idx, text_val, tip, font in totals_list:
@@ -2172,6 +2436,7 @@ class ExcelJournalView(QWidget):
                     item = QTableWidgetItem("")
                     item.setBackground(self.BRUSH_TOTAL_BG)
                     item.setForeground(self.BRUSH_WHITE)
+                    item.setToolTip("Clic droit pour transférer la recette et l'O.C vers le Coffre")
                     self.table.setItem(row, col_idx, item)
 
         except Exception as e:
@@ -2189,3 +2454,9 @@ class ExcelJournalView(QWidget):
         app = QApplication.instance()
         if hasattr(app, 'current_main_window'):
             app.current_main_window.switch_page(2)
+
+    def open_coffre_interface(self):
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if hasattr(app, 'current_main_window'):
+            app.current_main_window.switch_page(16)

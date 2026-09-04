@@ -17,3 +17,4 @@
 * `test_versement_quantity_ui.py`: اختبارات واجهة المستخدم لإدارة كميات العربون.
 * `test_versement_reservation.py`: اختبارات حجز المخزون لملفات العربون.
 * `test_supplier_type_migration.py`: اختبارات ترقية حقول الموردين (supplier_type, primary_purity) في المخطط ونماذج الإدخال.
+* `test_coffre_transfer.py`: اختبارات تحويل الإيرادات والذهب والفضة الكسر (O.C) من شريط الإجمالي باليومية إلى الخزينة، وهيكل جدول الخزينة بـ 9 أعمدة وإجمالياتها.
