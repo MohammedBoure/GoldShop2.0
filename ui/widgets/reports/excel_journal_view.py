@@ -1321,10 +1321,29 @@ class ExcelJournalView(QWidget):
             act_info = menu.addAction(f"⚠️ Déjà transféré au Coffre ({len(existing_transfers)} opération(s))")
             act_info.setEnabled(False)
             menu.addSeparator()
+        icon_transfer = None
+        try:
+            icon_transfer = qta.icon("fa5s.donate", color="#27ae60")
+        except Exception:
+            pass
 
-        act_transfer = menu.addAction(qta.icon("fa5s.donate", color="#27ae60"), "📥 Transférer vers le Coffre (Recette & O.C)")
+        icon_coffre = None
+        try:
+            icon_coffre = qta.icon("fa5s.archive", color="#2980b9")
+        except Exception:
+            pass
+
+        if icon_transfer:
+            act_transfer = menu.addAction(icon_transfer, "📥 Transférer vers le Coffre (Recette & O.C)")
+        else:
+            act_transfer = menu.addAction("📥 Transférer vers le Coffre (Recette & O.C)")
+
         menu.addSeparator()
-        act_open_coffre = menu.addAction(qta.icon("fa5s.vault", color="#2980b9"), "🏦 Ouvrir le Coffre Magasin")
+
+        if icon_coffre:
+            act_open_coffre = menu.addAction(icon_coffre, "🏦 Ouvrir le Coffre Magasin")
+        else:
+            act_open_coffre = menu.addAction("🏦 Ouvrir le Coffre Magasin")
 
         action = menu.exec_(self.table.viewport().mapToGlobal(pos))
         if not action:
