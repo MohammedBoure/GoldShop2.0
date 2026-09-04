@@ -572,8 +572,9 @@ class VirtualPasswordInputDialog(QDialog):
     """
     نافذة إدخال كلمة المرور المخصصة لشاشات اللمس مع دعم الكيبورد الافتراضي.
     """
-    def __init__(self, parent=None, title="Mot de passe", label="Veuillez entrer le mot de passe :", echo_mode=QLineEdit.Password):
+    def __init__(self, parent=None, title="Mot de passe", label="Veuillez entrer le mot de passe :", echo_mode=QLineEdit.Password, auto_open_keyboard=False):
         super().__init__(parent)
+        self.auto_open_keyboard = auto_open_keyboard
         self.setWindowTitle(title)
         self.setMinimumWidth(450)
         self.setStyleSheet("""
@@ -640,7 +641,8 @@ class VirtualPasswordInputDialog(QDialog):
     def showEvent(self, event):
         super().showEvent(event)
         self.inp_password.setFocus()
-        QTimer.singleShot(100, self._open_virtual_keyboard)
+        if getattr(self, "auto_open_keyboard", False):
+            QTimer.singleShot(100, self._open_virtual_keyboard)
 
     def _toggle_password_visibility(self):
         if self.inp_password.echoMode() == QLineEdit.Password:
@@ -683,8 +685,8 @@ class VirtualPasswordInputDialog(QDialog):
         return self.inp_password.text()
 
     @classmethod
-    def getText(cls, parent=None, title="Mot de passe", label="Entrez le mot de passe :", mode=QLineEdit.Password, default=""):
-        dlg = cls(parent=parent, title=title, label=label, echo_mode=mode)
+    def getText(cls, parent=None, title="Mot de passe", label="Entrez le mot de passe :", mode=QLineEdit.Password, default="", auto_open_keyboard=False):
+        dlg = cls(parent=parent, title=title, label=label, echo_mode=mode, auto_open_keyboard=auto_open_keyboard)
         if default:
             dlg.inp_password.setText(default)
         if dlg.exec() == QDialog.Accepted:

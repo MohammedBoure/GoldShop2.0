@@ -3,11 +3,12 @@ from datetime import date, datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QFrame, QStyledItemDelegate,
-    QInputDialog, QMessageBox, QLineEdit, QApplication
+    QMessageBox, QLineEdit, QApplication
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QBrush, QPalette
 import qtawesome as qta
+
 
 class ColorOverrideDelegate(QStyledItemDelegate):
     def initStyleOption(self, option, index):
@@ -38,31 +39,58 @@ class ColorOverrideDelegate(QStyledItemDelegate):
 
         super().paint(painter, option, index)
 
+
 class MonthlySummaryView(QWidget):
+    """
+    Interface de suivi et de synthèse mensuelle des recettes et bénéfices.
+    Protégée par mot de passe administrateur avec session persistante lors de la navigation
+    et bouton explicite de déconnexion.
+    """
+    # État de session partagé au niveau applicatif pour persister lors de la navigation
+    _session_authenticated = False
+
     def __init__(self, manager, current_user=None):
         super().__init__()
         self.manager = manager
         self.current_user = current_user or {}
-        self._is_authenticated = False
+        self._is_authenticated = MonthlySummaryView._session_authenticated
+        self._is_prompting = False
+
         self.init_ui()
         self.populate_filters()
+        self._update_auth_ui_state()
 
     def showEvent(self, event):
         super().showEvent(event)
+        # Vérification si la session globale est déjà déverrouillée
+        if not self._is_authenticated and MonthlySummaryView._session_authenticated:
+            self._is_authenticated = True
+
         if not self._is_authenticated:
-            if self._prompt_admin_password():
+            if not self._is_prompting:
+                self._is_prompting = True
+                try:
+                    if self._prompt_admin_password():
+                        self.load_data()
+                    else:
+                        self._render_locked_state()
+                finally:
+                    self._is_prompting = False
+                    self._update_auth_ui_state()
+        else:
+            self._update_auth_ui_state()
+            if self.table.rowCount() == 0:
                 self.load_data()
-            else:
-                self.table.setRowCount(0)
 
     def hideEvent(self, event):
         super().hideEvent(event)
-        self._is_authenticated = False
+        # 🟢 Important : La session reste active lors de la navigation dans les onglets/pages.
+        # La déconnexion ne se fait que si l'utilisateur clique volontairement sur le bouton de déconnexion.
 
     def _get_current_user(self):
         if hasattr(self, 'current_user') and self.current_user:
             return self.current_user
-        
+
         app = QApplication.instance()
         if app:
             main_win = getattr(app, 'current_main_window', None)
@@ -70,32 +98,34 @@ class MonthlySummaryView(QWidget):
                 main_win = app.activeWindow()
             if main_win and hasattr(main_win, 'current_user'):
                 return main_win.current_user
-                
+
         if hasattr(self.manager, 'current_user'):
             return self.manager.current_user
-            
+
         return {}
 
     def _prompt_admin_password(self):
         user = self._get_current_user()
         username = user.get('username') if user else None
-        
+
         if username:
             prompt_label = f"Veuillez entrer le mot de passe de l'administrateur ({username}) :"
         else:
             prompt_label = "Veuillez entrer le mot de passe Administrateur :"
 
         from ui.tools.virtual_keyboard import VirtualPasswordInputDialog
+        # 🟢 auto_open_keyboard=False : ouverture normale sans forcer le clavier virtuel tactile
         pwd, ok = VirtualPasswordInputDialog.getText(
             self,
             "Protection Administrateur",
             prompt_label,
-            QLineEdit.Password
+            QLineEdit.Password,
+            auto_open_keyboard=False
         )
-        
+
         if not ok or not pwd:
             return False
-            
+
         is_valid = False
         if username and hasattr(self.manager, 'users') and hasattr(self.manager.users, 'authenticate'):
             try:
@@ -104,7 +134,7 @@ class MonthlySummaryView(QWidget):
                     is_valid = True
             except Exception:
                 pass
-                
+
         if not is_valid and hasattr(self.manager, 'users') and hasattr(self.manager.users, 'verify_admin_password'):
             try:
                 if self.manager.users.verify_admin_password(pwd):
@@ -114,85 +144,268 @@ class MonthlySummaryView(QWidget):
 
         if is_valid:
             self._is_authenticated = True
+            MonthlySummaryView._session_authenticated = True
+            self._update_auth_ui_state()
             return True
         else:
             QMessageBox.warning(self, "Accès Refusé", "Mot de passe Administrateur incorrect.")
             self._is_authenticated = False
+            MonthlySummaryView._session_authenticated = False
+            self._update_auth_ui_state()
             return False
+
+    def lock_session(self):
+        """Verrouille manuellement la session administrateur."""
+        self._is_authenticated = False
+        MonthlySummaryView._session_authenticated = False
+        self._render_locked_state()
+        self._update_auth_ui_state()
+        QMessageBox.information(self, "Session Verrouillée", "La session administrateur du résumé mensuel a été verrouillée.")
+
+    def _on_unlock_clicked(self):
+        """Déclenche la demande de mot de passe lors d'un clic explicite sur Déverrouiller."""
+        if self._prompt_admin_password():
+            self.load_data()
+
+    def _render_locked_state(self):
+        """Affiche un état verrouillé clair dans le tableau."""
+        self.table.clearSpans()
+        self.table.setRowCount(1)
+        item = QTableWidgetItem("🔒 Accès Administrateur requis — Cliquez sur 'Déverrouiller' pour afficher le résumé mensuel.")
+        item.setTextAlignment(Qt.AlignCenter)
+        item.setFont(QFont("", 13, QFont.Bold))
+        item.setForeground(QBrush(QColor("#64748b")))
+        self.table.setItem(0, 0, item)
+        for i in range(1, self.table.columnCount()):
+            self.table.setItem(0, i, QTableWidgetItem(""))
+        self.table.setSpan(0, 0, 1, self.table.columnCount())
+
+    def _update_auth_ui_state(self):
+        """Met à jour l'apparence des contrôles et des boutons selon l'état d'authentification."""
+        if self._is_authenticated:
+            self.btn_unlock.setVisible(False)
+            self.btn_logout.setVisible(True)
+            self.lbl_session_status.setText("🟢 Session Admin active")
+            self.lbl_session_status.setStyleSheet("""
+                color: #0f8f83;
+                font-weight: bold;
+                font-size: 12px;
+                padding: 5px 10px;
+                background-color: #e8f7f4;
+                border-radius: 6px;
+                border: 1px solid #bfe7df;
+            """)
+            self.lbl_session_status.setVisible(True)
+            self.btn_search.setEnabled(True)
+            self.combo_year.setEnabled(True)
+            self.combo_month.setEnabled(True)
+        else:
+            self.btn_unlock.setVisible(True)
+            self.btn_logout.setVisible(False)
+            self.lbl_session_status.setText("🔒 Session verrouillée")
+            self.lbl_session_status.setStyleSheet("""
+                color: #be3528;
+                font-weight: bold;
+                font-size: 12px;
+                padding: 5px 10px;
+                background-color: #fff5f3;
+                border-radius: 6px;
+                border: 1px solid #f9d2ce;
+            """)
+            self.lbl_session_status.setVisible(True)
+            self.btn_search.setEnabled(False)
 
     def init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(10)
 
-        # --- شريط الفلاتر العلوي ---
+        # --- شريط الفلاتر العلوي وأزرار التحكم بالوصول ---
         filter_frame = QFrame()
-        filter_frame.setStyleSheet("background-color: #f8f9fa; border-radius: 8px; padding: 10px;")
+        filter_frame.setObjectName("panel")
+        filter_frame.setStyleSheet("""
+            QFrame#panel {
+                background-color: #ffffff;
+                border: 1px solid #d9e0e7;
+                border-radius: 8px;
+                padding: 6px 12px;
+            }
+            QLabel {
+                font-size: 13px;
+                font-weight: bold;
+                color: #24313f;
+            }
+            QComboBox {
+                font-size: 13px;
+                font-weight: bold;
+                padding: 5px 10px;
+                border: 1px solid #cbd5df;
+                border-radius: 6px;
+                background-color: #ffffff;
+                min-width: 140px;
+            }
+            QComboBox:focus {
+                border: 2px solid #0f8f83;
+            }
+        """)
         row1 = QHBoxLayout(filter_frame)
-        
-        row1.addWidget(QLabel("<b>📅 Année :</b>"))
+        row1.setContentsMargins(8, 6, 8, 6)
+        row1.setSpacing(10)
+
+        row1.addWidget(QLabel("📅 Année :"))
         self.combo_year = QComboBox()
+        self.combo_year.currentIndexChanged.connect(self._on_filter_changed)
         row1.addWidget(self.combo_year)
-        
-        row1.addSpacing(15)
-        row1.addWidget(QLabel("<b>Mois :</b>"))
+
+        row1.addSpacing(10)
+        row1.addWidget(QLabel("Mois :"))
         self.combo_month = QComboBox()
+        self.combo_month.currentIndexChanged.connect(self._on_filter_changed)
         row1.addWidget(self.combo_month)
-        
-        row1.addSpacing(20)
+
+        row1.addSpacing(15)
         self.btn_search = QPushButton(" Afficher le Tableau")
         self.btn_search.setIcon(qta.icon("fa5s.calendar-alt", color="white"))
-        self.btn_search.setStyleSheet("background-color: #0f8f83; color: white; padding: 6px 15px; border-radius: 4px; font-weight: bold; font-size: 14px;")
+        self.btn_search.setStyleSheet("""
+            QPushButton {
+                background-color: #0f8f83;
+                color: white;
+                padding: 6px 15px;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 13px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #0a7c72;
+            }
+        """)
         self.btn_search.setCursor(Qt.PointingHandCursor)
         self.btn_search.clicked.connect(self.load_data)
         row1.addWidget(self.btn_search)
+
         row1.addStretch()
-        
+
+        # Badge de statut de session
+        self.lbl_session_status = QLabel("")
+        row1.addWidget(self.lbl_session_status)
+
+        # Bouton Déverrouiller (quand verrouillé)
+        self.btn_unlock = QPushButton(" Déverrouiller")
+        self.btn_unlock.setIcon(qta.icon("fa5s.unlock-alt", color="white"))
+        self.btn_unlock.setCursor(Qt.PointingHandCursor)
+        self.btn_unlock.setStyleSheet("""
+            QPushButton {
+                background-color: #0f8f83;
+                color: white;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 6px 14px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #0a7c72;
+            }
+        """)
+        self.btn_unlock.clicked.connect(self._on_unlock_clicked)
+        row1.addWidget(self.btn_unlock)
+
+        # Bouton Déconnexion / Verrouiller (quand connecté)
+        self.btn_logout = QPushButton(" Déconnexion")
+        self.btn_logout.setIcon(qta.icon("fa5s.sign-out-alt", color="#be3528"))
+        self.btn_logout.setToolTip("Verrouiller la session administrateur du résumé mensuel")
+        self.btn_logout.setCursor(Qt.PointingHandCursor)
+        self.btn_logout.setStyleSheet("""
+            QPushButton {
+                background-color: #fff5f3;
+                border: 1px solid #e66f61;
+                color: #be3528;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 6px 14px;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #d94d3f;
+                color: white;
+            }
+        """)
+        self.btn_logout.clicked.connect(self.lock_session)
+        row1.addWidget(self.btn_logout)
+
         layout.addWidget(filter_frame)
 
         # --- عنوان الصفحة ---
-        self.lbl_main_title = QLabel("Recettes Du Mois")
-        self.lbl_main_title.setStyleSheet("font-size: 20px; font-weight: bold; color: white; background-color: #0f8f83; padding: 10px; border-radius: 5px;")
+        self.lbl_main_title = QLabel("RÉSUMÉ MENSUEL DES RECETTES")
+        self.lbl_main_title.setStyleSheet("""
+            font-size: 19px;
+            font-weight: 900;
+            color: white;
+            background-color: #0f8f83;
+            padding: 10px 16px;
+            border-radius: 6px;
+            letter-spacing: 1px;
+        """)
         self.lbl_main_title.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.lbl_main_title)
 
         # --- إعداد الجدول ---
-        self.table = QTableWidget(0, 12) # 12 أعمدة
+        self.table = QTableWidget(0, 12)
         self.table.setItemDelegate(ColorOverrideDelegate(self.table))
         self.table.setHorizontalHeaderLabels([
             "Jours", "Dates", "P.S (Or)", "P.S (Argent)", "Recettes DA", "O.C (Or)", "O.C (Argent)", "TPE", "Euro", "Dollar", "Vendeur", "Bénéfice (Faaida)"
         ])
-        
-        # تنسيق الجدول ليشبه الصورة (اللون البنفسجي)
+
         self.table.setStyleSheet("""
             QTableWidget {
-                background-color: white; gridline-color: black; font-size: 14px; font-weight: bold;
+                background-color: #ffffff;
+                gridline-color: #eef2f6;
+                border: 1px solid #cbd5df;
+                border-radius: 6px;
+                selection-background-color: #dff5f1;
+                selection-color: #17202a;
+                font-size: 13px;
             }
             QHeaderView::section {
-                background-color: #0f8f83; color: white; font-weight: bold; font-size: 14px; padding: 8px; border: 1px solid #0d7a70;
+                background-color: #0f8f83;
+                color: white;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 7px 6px;
+                border: 1px solid #0b776d;
             }
             QTableWidget::item {
-                border-bottom: 1px solid #bdc3c7;
-                border-right: 1px solid #bdc3c7;
+                padding: 5px 8px;
+            }
+            QTableWidget::item:selected {
+                background-color: #dff5f1;
+                color: #17202a;
             }
         """)
+        self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        
+
         header = self.table.horizontalHeader()
         for i in range(self.table.columnCount()):
             header.setSectionResizeMode(i, QHeaderView.Stretch if i in [4, 11] else QHeaderView.ResizeToContents)
-            
+
         layout.addWidget(self.table)
+
+    def _on_filter_changed(self):
+        """Recharge automatiquement les données lors du changement de mois ou d'année si authentifié."""
+        if self._is_authenticated:
+            self.load_data()
 
     def populate_filters(self):
         current_date = datetime.now()
         for y in range(current_date.year - 2, current_date.year + 3):
             self.combo_year.addItem(str(y), y)
         self.combo_year.setCurrentText(str(current_date.year))
-        
+
         months = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
-        for i, m in enumerate(months, 1): 
+        for i, m in enumerate(months, 1):
             self.combo_month.addItem(m, i)
         self.combo_month.setCurrentIndex(current_date.month - 1)
 
@@ -203,14 +416,16 @@ class MonthlySummaryView(QWidget):
     def load_data(self):
         if not self._is_authenticated:
             if not self._prompt_admin_password():
-                self.table.setRowCount(0)
+                self._render_locked_state()
                 return
+
+        self.table.clearSpans()
         self.table.setRowCount(0)
         year = self.combo_year.currentData()
         month = self.combo_month.currentData()
         month_name = self.combo_month.currentText()
-        
-        self.lbl_main_title.setText(f"Recettes Du Mois {month_name} {year}")
+
+        self.lbl_main_title.setText(f"RÉSUMÉ MENSUEL DES RECETTES — {month_name.upper()} {year}")
 
         def to_date_key(val):
             if not val:
@@ -319,14 +534,14 @@ class MonthlySummaryView(QWidget):
                     current_date = date(year, month, day)
                     day_name = self.get_french_day(current_date)
                     date_str = f"{day:02d}/{month:02d}/{year}"
-                    
+
                     row_idx = self.table.rowCount()
                     self.table.insertRow(row_idx)
-                    
+
                     item_day = QTableWidgetItem(day_name)
                     item_day.setTextAlignment(Qt.AlignCenter)
                     self.table.setItem(row_idx, 0, item_day)
-                    
+
                     item_date = QTableWidgetItem(date_str)
                     item_date.setTextAlignment(Qt.AlignCenter)
                     self.table.setItem(row_idx, 1, item_date)
@@ -344,7 +559,7 @@ class MonthlySummaryView(QWidget):
                         s_data = sales_by_date.get(current_date, {})
                         vp_data = vp_by_date.get(current_date, {})
                         awo_data = awo_by_date.get(current_date, {})
-                        
+
                         ps_gold = float(w_data.get('total_ps_gold') or 0)
                         ps_silver = float(w_data.get('total_ps_silver') or 0)
                         recette = float(s_data.get('total_recette') or 0) + float(vp_data.get('total_vp_recette') or 0) + float(awo_data.get('total_awo_recette') or 0)
@@ -353,11 +568,11 @@ class MonthlySummaryView(QWidget):
                         tpe = float(s_data.get('total_tpe') or 0) + float(vp_data.get('total_vp_tpe') or 0) + float(awo_data.get('total_awo_tpe') or 0)
                         euro = float(s_data.get('total_euro') or 0) + float(vp_data.get('total_vp_euro') or 0)
                         dollar = float(s_data.get('total_dollar') or 0) + float(vp_data.get('total_vp_dollar') or 0)
-                        
+
                         sales_profit = float(profit_by_date.get(current_date, {}).get('profit_da') or 0)
                         awo_profit = float(awo_data.get('total_awo_benefice') or 0)
                         benefice = sales_profit + awo_profit
-                        
+
                         # تجميع الإجماليات
                         sum_ps_gold += ps_gold
                         sum_ps_silver += ps_silver
@@ -381,7 +596,7 @@ class MonthlySummaryView(QWidget):
                             "Multi" if any([ps_gold, ps_silver, recette, oc_gold, oc_silver, tpe, euro, dollar, benefice]) else "●",
                             f"{benefice:,.2f}" if benefice != 0 else "●"
                         ]
-                        
+
                         for col_idx, val in enumerate(cols, start=2):
                             item = QTableWidgetItem(val)
                             item.setTextAlignment(Qt.AlignCenter)
@@ -404,7 +619,7 @@ class MonthlySummaryView(QWidget):
                 # --- إضافة السطر الأخير للمجاميع (Totals) ---
                 total_row_idx = self.table.rowCount()
                 self.table.insertRow(total_row_idx)
-                
+
                 totals = [
                     "TOTAL", "",
                     f"{sum_ps_gold:.2f}" if sum_ps_gold else "●",
@@ -418,12 +633,12 @@ class MonthlySummaryView(QWidget):
                     "",
                     f"{sum_benefice:,.2f}" if sum_benefice != 0 else "●"
                 ]
-                
+
                 for col_idx, val in enumerate(totals):
                     item = QTableWidgetItem(val)
                     item.setTextAlignment(Qt.AlignCenter)
-                    item.setFont(QFont("", 14, QFont.Bold))
-                    item.setBackground(QBrush(QColor("#0f8f83"))) # لون أخضر مميز
+                    item.setFont(QFont("", 13, QFont.Bold))
+                    item.setBackground(QBrush(QColor("#0f8f83")))
                     item.setForeground(QBrush(QColor("#e74c3c" if val == "●" else "white")))
                     self.table.setItem(total_row_idx, col_idx, item)
 
