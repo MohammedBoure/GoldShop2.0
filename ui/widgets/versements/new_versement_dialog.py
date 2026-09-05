@@ -33,14 +33,10 @@ class NewVersementDialog(QDialog):
         self.cart_items = []
         self.selected_client_id = None
         self.products_autocomplete_map = {}
+        self.products_cache = {}
         self.is_processing = False
         self._target_price_per_gram = None
-        
-        self._last_key_time = 0.0                    
-        self._scan_timer = QTimer(self)             
-        self._scan_timer.setSingleShot(True)        
-        self._scan_timer.setInterval(100)           
-        self._scan_timer.timeout.connect(self._on_scan_complete)  
+        self._processing_barcode = False  
 
         self.setWindowTitle("Nouveau Versement (Acompte)")
         
@@ -701,25 +697,9 @@ class NewVersementDialog(QDialog):
             if text:
                 azerty_map = str.maketrans("&é\"'(-è_çà", "1234567890")
                 corrected_text = text.translate(azerty_map).upper()
-                
-                now = time.time()
-                delta = now - self._last_key_time
-                self._last_key_time = now
-                
-                is_scanner = (self._last_key_time > 0 and delta < 0.05)
-                
-                if is_scanner:
-                    if self._completer_instance:
-                        self._completer_instance.setWidget(None)
-                    self._scan_timer.start()
-                else:
-                    if self._completer_instance:
-                        self._completer_instance.setWidget(self.inp_barcode)
-
                 if text != corrected_text:
                     self.inp_barcode.insert(corrected_text)
                     return True
-                    
         return super().eventFilter(obj, event)
 
     def setup_product_completer(self):
@@ -728,97 +708,212 @@ class NewVersementDialog(QDialog):
             items = self.manager.inventory.get_inventory_paginated(**query_options)[0]
             autocomplete_strings = []
             self.products_autocomplete_map.clear()
-            
+            self.products_cache = {}
+
             for item in items:
-                barcode = str(item.get('barcode') or '').strip()
+                code = str(item.get('barcode') or '').strip()
                 name = str(item.get('name') or 'Article').strip()
                 weight = float(item.get('remaining_weight') or item.get('weight') or 0.0)
                 cat = str(item.get('category_name') or '').strip()
                 sup = str(item.get('supplier_name') or '').strip()
-                display_text = f"{barcode} | {name}"
-                if cat: display_text += f" | Cat: {cat}"
-                if sup: display_text += f" | Fourn: {sup}"
+
+                display_text = f"{code} | {name}" if code else f"[ID:{item['id']}] | {name}"
+                if cat:
+                    display_text += f" | Cat: {cat}"
+                if sup:
+                    display_text += f" | Fourn: {sup}"
                 display_text += f" | {weight:.2f}g"
-                
-                if barcode:
-                    autocomplete_strings.append(display_text)
-                    self.products_autocomplete_map[display_text] = barcode
-                    self.products_autocomplete_map[barcode] = barcode
-            
+
+                autocomplete_strings.append(display_text)
+                if code:
+                    self.products_autocomplete_map[code] = code
+                    self.products_cache[code] = item
+                self.products_autocomplete_map[display_text] = code or str(item['id'])
+
             model = QStringListModel(autocomplete_strings)
             completer = QCompleter(model, self)
-            self._completer_instance = completer 
+            self._completer_instance = completer
             completer.setCaseSensitivity(Qt.CaseInsensitive)
             completer.setFilterMode(Qt.MatchContains)
             completer.setCompletionMode(QCompleter.PopupCompletion)
+            popup = completer.popup()
+            popup.setMinimumWidth(500)
+            popup.setStyleSheet("""
+                QListView { font-size: 15px; font-weight: bold; background-color: white;
+                            border: 2px solid #0f8f83; border-radius: 6px; }
+                QListView::item { padding: 10px; border-bottom: 1px solid #ecf0f1; }
+                QListView::item:selected { background-color: #0f8f83; color: white; }
+            """)
             self.inp_barcode.setCompleter(completer)
             completer.activated[str].connect(self.on_completer_activated)
         except Exception as e:
             logging.error(f"[Versement] Erreur completer: {e}")
 
     def _extract_barcode_from_text(self, text):
-        if " | " in text: return text.split(" | ")[0].strip()
-        return self.products_autocomplete_map.get(text, text)
+        if " | " in text:
+            return text.split(" | ")[0].strip()
+        return self.products_autocomplete_map.get(text, text.strip())
 
     def force_clear_barcode(self):
-        QTimer.singleShot(50, lambda: self.inp_barcode.clear())
+        self.inp_barcode.blockSignals(True)
+        self.inp_barcode.clear()
+        self.inp_barcode.blockSignals(False)
+        self.inp_barcode.setFocus()
 
     def _on_barcode_text_changed(self, text):
-        if self.is_processing: return
+        if getattr(self, '_processing_barcode', False) or self.is_processing:
+            return
         text = text.strip()
-        if not text or len(text) < 3: return
-
-        now = time.time()
-        delta = now - self._last_key_time
-        self._last_key_time = now
-
-        if delta < 0.2 and text in self.products_autocomplete_map:
-            self._scan_timer.start()
-
-    def _on_scan_complete(self):
-        if getattr(self, '_processing_barcode', False): return
-        if self._completer_instance: self._completer_instance.setWidget(self.inp_barcode)
-        if self.is_processing: return
-        text = self.inp_barcode.text().strip()
-        if not text: return
-        barcode = self._extract_barcode_from_text(text)
-        if barcode in self.products_autocomplete_map:
-            self._processing_barcode = True
-            try:
-                self.is_processing = True
-                self.process_barcode(barcode)
-                QTimer.singleShot(300, lambda: setattr(self, 'is_processing', False))
-            finally:
-                self._processing_barcode = False
+        if not text:
+            return
+        clean_code = text.split(" | ")[0].strip() if " | " in text else text.strip()
+        if hasattr(self, 'products_cache') and clean_code in self.products_cache:
+            self.process_barcode(clean_code)
 
     def on_completer_activated(self, text):
-        if getattr(self, '_processing_barcode', False): return
-        if self.is_processing: return
+        if not text:
+            return
+        if getattr(self, '_processing_barcode', False) or self.is_processing:
+            return
         self._processing_barcode = True
         try:
             self.is_processing = True
-            self.process_barcode(self._extract_barcode_from_text(text))
-            QTimer.singleShot(300, lambda: setattr(self, 'is_processing', False))
+            extracted = self._extract_barcode_from_text(text)
+            self.inp_barcode.blockSignals(True)
+            self.inp_barcode.setText(extracted)
+            self.inp_barcode.blockSignals(False)
+            self.process_barcode(extracted)
         finally:
+            self.is_processing = False
             self._processing_barcode = False
 
     def on_barcode_entered(self):
-        if getattr(self, '_processing_barcode', False): return
-        if self.is_processing: return
+        if getattr(self, '_processing_barcode', False) or self.is_processing:
+            return
         text = self.inp_barcode.text().strip()
-        if not text: return
+        if not text:
+            return
         self._processing_barcode = True
         try:
             self.is_processing = True
-            self.process_barcode(self._extract_barcode_from_text(text))
-            QTimer.singleShot(300, lambda: setattr(self, 'is_processing', False))
+            extracted = self._extract_barcode_from_text(text)
+            self.process_barcode(extracted)
         finally:
+            self.is_processing = False
             self._processing_barcode = False
 
-    def process_barcode(self, barcode):
-        item = self.manager.inventory.get_item_by_barcode(barcode)
+    def _select_item_from_candidates(self, candidates):
+        """Displays a dialog allowing the user to select an article from matching results."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Sélection de l'article")
+        dlg.setMinimumSize(600, 350)
+        dlg.setStyleSheet("QDialog { background-color: #f8f9fa; }")
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        lbl = QLabel(f"Plusieurs articles correspondent ({len(candidates)} trouvés). Veuillez sélectionner :")
+        lbl.setStyleSheet("font-weight: bold; font-size: 14px; color: #2c3e50;")
+        layout.addWidget(lbl)
+
+        table = QTableWidget(len(candidates), 5)
+        table.setHorizontalHeaderLabels(["Code", "Désignation", "Type", "Poids/Qté", "Prix Vente"])
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setSelectionMode(QTableWidget.SingleSelection)
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.setStyleSheet("""
+            QTableWidget { background-color: white; font-size: 13px; gridline-color: #eef2f6; }
+            QHeaderView::section { background-color: #0f8f83; color: white; font-weight: bold; padding: 6px; border: none; }
+            QTableWidget::item:selected { background-color: #0f8f83; color: white; }
+        """)
+
+        for row, it in enumerate(candidates):
+            c_code = QTableWidgetItem(str(it.get("barcode") or f"ID:{it.get('id')}"))
+            c_name = QTableWidgetItem(str(it.get("name") or ""))
+            c_type = QTableWidgetItem(str(it.get("item_type") or "WEIGHT"))
+            rem_w = float(it.get("remaining_weight") or it.get("weight") or 0.0)
+            rem_q = int(it.get("remaining_quantity") or it.get("quantity") or 0)
+            p_str = f"{rem_q} pcs" if str(it.get("item_type")).upper() == "PIECE" else f"{rem_w:.2f} g"
+            c_weight = QTableWidgetItem(p_str)
+            p_vente = float(it.get("selling_price") or it.get("estimated_price") or 0.0)
+            c_price = QTableWidgetItem(f"{p_vente:,.2f} DA" if p_vente > 0 else "-")
+
+            c_code.setTextAlignment(Qt.AlignCenter)
+            c_type.setTextAlignment(Qt.AlignCenter)
+            c_weight.setTextAlignment(Qt.AlignCenter)
+            c_price.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+            table.setItem(row, 0, c_code)
+            table.setItem(row, 1, c_name)
+            table.setItem(row, 2, c_type)
+            table.setItem(row, 3, c_weight)
+            table.setItem(row, 4, c_price)
+
+        table.selectRow(0)
+        layout.addWidget(table)
+
+        btn_box = QHBoxLayout()
+        btn_box.addStretch()
+        btn_cancel = QPushButton("Annuler")
+        btn_cancel.setStyleSheet("padding: 8px 16px; font-weight: bold;")
+        btn_cancel.clicked.connect(dlg.reject)
+        btn_confirm = QPushButton("Sélectionner")
+        btn_confirm.setStyleSheet("background-color: #0f8f83; color: white; padding: 8px 16px; font-weight: bold; border-radius: 4px;")
+        btn_confirm.clicked.connect(dlg.accept)
+        btn_box.addWidget(btn_cancel)
+        btn_box.addWidget(btn_confirm)
+        layout.addLayout(btn_box)
+
+        table.cellDoubleClicked.connect(lambda r, c: dlg.accept())
+
+        if dlg.exec() == QDialog.Accepted:
+            cur_row = table.currentRow()
+            if 0 <= cur_row < len(candidates):
+                return candidates[cur_row]
+        return None
+
+    def process_barcode(self, query):
+        item = None
+        clean_query = query.strip()
+
+        # 1. Try finding in products_cache by barcode
+        if hasattr(self, 'products_cache') and clean_query in self.products_cache:
+            item = self.products_cache[clean_query]
+
+        # 2. Try ID lookup if format [ID:123] or ID:123
+        if not item and "ID:" in clean_query:
+            id_part = clean_query.replace("[", "").replace("]", "").replace("ID:", "").strip()
+            if id_part.isdigit():
+                item = self.manager.inventory.get_item_by_id(int(id_part))
+
+        # 3. Try exact barcode lookup via manager
         if not item:
-            QMessageBox.warning(self, "Introuvable", f"L'article avec le code '{barcode}' est introuvable.")
+            item = self.manager.inventory.get_item_by_barcode(clean_query)
+
+        # 4. If still not found, search by name/barcode in inventory database
+        if not item:
+            try:
+                matches, _, _ = self.manager.inventory.get_inventory_paginated(
+                    limit=20, offset=0, search_text=clean_query,
+                    show_zero_stock=False, status_filter="SELLABLE",
+                    include_totals=False
+                )
+                if len(matches) == 1:
+                    item = matches[0]
+                elif len(matches) > 1:
+                    selected = self._select_item_from_candidates(matches)
+                    if selected:
+                        item = selected
+                    else:
+                        self.force_clear_barcode()
+                        return
+            except Exception as e:
+                logging.error(f"[Versement] Erreur recherche nom: {e}")
+
+        if not item:
+            QMessageBox.warning(self, "Introuvable", f"L'article avec '{query}' est introuvable.")
             self.force_clear_barcode()
             return
 

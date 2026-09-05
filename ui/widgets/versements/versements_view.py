@@ -434,7 +434,7 @@ class VersementsView(QWidget):
         self.combo_status.currentTextChanged.connect(self._on_filter_changed)
         tools_layout.addWidget(self.combo_status)
 
-        self.btn_new = QPushButton(" + Nouveau Versement")
+        self.btn_new = QPushButton(" Nouveau Versement")
         self.btn_new.setIcon(qta.icon("fa5s.plus", color="white"))
         self.btn_new.setStyleSheet("""
             QPushButton { background-color: #27ae60; color: white; font-weight: bold; font-size: 13px; padding: 5px 12px; border-radius: 4px; }

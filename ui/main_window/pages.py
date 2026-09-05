@@ -234,6 +234,8 @@ class MainWindowPagesMixin:
             if widget:
                 self._pending_page_id = None
                 self.content_area.setCurrentIndex(page_id)
+                if page_id == 8 and isinstance(widget, QTabWidget) and widget.count() > 0:
+                    widget.setCurrentIndex(0)
                 self.trigger_refresh(widget)
             else:
                 self._pending_page_id = None
