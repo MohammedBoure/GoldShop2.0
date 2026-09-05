@@ -35,6 +35,7 @@ from web.routes import (
     register_suppliers_routes,
     register_operation_routes,
     register_partner_routes,
+    register_ui_routes,
 )
 from services.runtime_control import (
     DEFAULT_FORCE_LOGOUT_URL,
@@ -44,7 +45,11 @@ from services.runtime_control import (
 
 logger = logging.getLogger("JEWELLERY_SYS")
 
-flask_app = Flask(__name__)
+flask_app = Flask(
+    __name__,
+    template_folder=os.path.join(os.path.dirname(__file__), "web", "templates"),
+    static_folder=os.path.join(os.path.dirname(__file__), "web", "static"),
+)
 flask_app.url_map.strict_slashes = False
 
 db = Database()
@@ -59,7 +64,11 @@ stats_manager = StatisticsManager(db)
 reports_manager = ReportsManager(db)
 
 READ_ONLY_METHODS = {"GET", "HEAD", "OPTIONS"}
-WRITE_POST_PATHS = {"/api/v1/market-price/gold", "/api/v1/runtime/force-logout"}
+WRITE_POST_PATHS = {
+    "/api/v1/market-price/gold",
+    "/api/v1/runtime/force-logout",
+    "/api/v1/auth/login",
+}
 WEB_PASSWORD_HEADER = "X-GoldShop-Password"
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
@@ -329,13 +338,16 @@ def inject_i18n():
 def require_api_password():
     if not request.path.startswith("/api") or request.method == "OPTIONS":
         return None
+    if request.path in {"/api/v1/auth/status", "/api/v1/auth/login"}:
+        return None
     if not web_password_configured():
         return _json_error(_translate_key("auth.not_configured"), status=503)
 
     client_key = request.remote_addr or "unknown"
     if login_is_rate_limited(client_key):
         return _json_error(_translate_key("auth.rate_limited"), status=429)
-    if not verify_web_password(request.headers.get(WEB_PASSWORD_HEADER, "")):
+    password = request.headers.get(WEB_PASSWORD_HEADER, "") or request.cookies.get("goldshop_web_password", "")
+    if not verify_web_password(str(password)):
         record_failed_login(client_key)
         return _json_error(_translate_key("auth.invalid_password"), status=401)
 
@@ -415,6 +427,7 @@ for _register_routes in (
     register_artisan_work_routes,
     register_suppliers_routes,
     register_operation_routes,
+    register_ui_routes,
 ):
     globals().update(_register_routes(flask_app, _route_context))
 

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}{% if current_lang == 'ar' %}الحصيلة الشهرية{% else %}Résumé Mensuel{% endif %}{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div class="section-title">
+    <span>📅</span>
+    <span>{% if current_lang == 'ar' %}الحصيلة والملخص الشهري{% else %}Résumé Mensuel & Synthèse des Bénéfices{% endif %}</span>
+  </div>
+  <div class="section-desc">
+    {% if current_lang == 'ar' %}
+      مطابقة لواجهة monthly_summary_view.py: تجميع يومي للإيرادات، حركات الصندوق، والأرباح الصافية.
+    {% else %}
+      Conforme à monthly_summary_view.py: agrégation par jour, chiffre d'affaires, marges et bénéfices.
+    {% endif %}
+  </div>
+</div>
+
+<!-- Month & Year Controls -->
+<div class="filter-card">
+  <div class="filter-row">
+    <select id="monthlyMonthSelect" class="form-control" title="Mois">
+      <option value="1">01 - Janvier / جانفي</option>
+      <option value="2">02 - Février / فيفري</option>
+      <option value="3">03 - Mars / مارس</option>
+      <option value="4">04 - Avril / أفريل</option>
+      <option value="5">05 - Mai / ماي</option>
+      <option value="6">06 - Juin / جوان</option>
+      <option value="7">07 - Juillet / جويلية</option>
+      <option value="8">08 - Août / أوت</option>
+      <option value="9">09 - Septembre / سبتمبر</option>
+      <option value="10">10 - Octobre / أكتوبر</option>
+      <option value="11">11 - Novembre / نوفمبر</option>
+      <option value="12">12 - Décembre / ديسمبر</option>
+    </select>
+
+    <select id="monthlyYearSelect" class="form-control" title="Année" style="max-width: 120px;">
+      <option value="{{ current_year }}">{{ current_year }}</option>
+      <option value="{{ current_year - 1 }}">{{ current_year - 1 }}</option>
+      <option value="{{ current_year - 2 }}">{{ current_year - 2 }}</option>
+    </select>
+  </div>
+</div>
+
+<!-- Monthly Synthesis KPI Grid -->
+<div class="kpi-grid">
+  <div class="kpi-card success">
+    <div class="kpi-label">Ventes Total</div>
+    <div id="kpiMonthlySales" class="kpi-value">0.00 DA</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}إجمالي المبيعات{% else %}Chiffre d'affaires{% endif %}</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-label">Espèces (Cash)</div>
+    <div id="kpiMonthlyCash" class="kpi-value">0.00 DA</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}النقد المقبوض{% else %}Total en caisse{% endif %}</div>
+  </div>
+
+  <div class="kpi-card info">
+    <div class="kpi-label">TPE</div>
+    <div id="kpiMonthlyTpe" class="kpi-value">0.00 DA</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}الدفع بالبطاقة{% else %}Total carte bancaire{% endif %}</div>
+  </div>
+
+  <div class="kpi-card danger">
+    <div class="kpi-label">Or Cassé (O.C)</div>
+    <div id="kpiMonthlyOc" class="kpi-value" style="font-size: 13px;">0.00 g</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}الذهب الكسر المشترى{% else %}Poids & montant O.C{% endif %}</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-label">Versements</div>
+    <div id="kpiMonthlyVersements" class="kpi-value">0.00 DA</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}مداخيل العربون{% else %}Acomptes encaissés{% endif %}</div>
+  </div>
+
+  <div class="kpi-card purple">
+    <div class="kpi-label">Atelier</div>
+    <div id="kpiMonthlyWorkshop" class="kpi-value">0.00 DA</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}مداخيل الورشة{% else %}Prestations atelier{% endif %}</div>
+  </div>
+
+  <div class="kpi-card" style="grid-column: span 2; border-color: var(--gold-500); background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), var(--bg-surface));">
+    <div class="kpi-label" style="color: var(--gold-500);">Bénéfice Net Total (Faaida)</div>
+    <div id="kpiMonthlyBenefice" class="kpi-value" style="color: var(--gold-400); font-size: 20px;">0.00 DA</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}الربح الصافي الشامل لشهر كامل (مبيعات + ورشة){% else %}Marge nette globale mensuelle (ventes + façon){% endif %}</div>
+  </div>
+</div>
+
+<!-- Daily Breakdown List -->
+<div id="monthlyContentArea"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/monthly.js') }}"></script>
+{% endblock %}

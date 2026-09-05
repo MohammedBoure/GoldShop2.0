@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}{% if current_lang == 'ar' %}الورشة والتصليحات{% else %}Atelier & Réparations{% endif %}{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div class="section-title">
+    <span>⚒️</span>
+    <span>{% if current_lang == 'ar' %}الورشة والتصليحات والحرفيين{% else %}Atelier, Réparations & Artisans{% endif %}</span>
+  </div>
+  <div class="section-desc">
+    {% if current_lang == 'ar' %}
+      مطابقة لواجهة artisan_work_view.py: جدول أوامر الإنتاج، أجور الصياغة، وحسابات الذهب الخالص.
+    {% else %}
+      Conforme à artisan_work_view.py: tableau de production, façon, marges et grand livre artisan.
+    {% endif %}
+  </div>
+</div>
+
+<!-- Sub-Navigation Switcher -->
+<div class="filter-card" style="padding: 6px; margin-bottom: 12px;">
+  <div class="filter-pills" style="padding-bottom: 0; justify-content: space-around;">
+    <button class="pill-btn active" data-artisan-subnav="orders" style="flex: 1; text-align: center;">
+      📋 {% if current_lang == 'ar' %}أوامر الإنتاج (Tableau){% else %}Ordres de Production{% endif %}
+    </button>
+    <button class="pill-btn" data-artisan-subnav="artisans" style="flex: 1; text-align: center;">
+      👤 {% if current_lang == 'ar' %}الحرفيين والأرصدة{% else %}Artisans & Soldes{% endif %}
+    </button>
+  </div>
+</div>
+
+<!-- Order Filters (Hidden when on Artisans tab) -->
+<div id="artisanOrderFilters" class="filter-card">
+  <div class="filter-row">
+    <input type="text" id="artisanSearchInput" class="form-control" placeholder="{% if current_lang == 'ar' %}بحث بالزبون، الهاتف، الحرفي أو رقم الطلب...{% else %}Rechercher ordre, client, téléphone...{% endif %}">
+    <select id="artisanDaysSelect" class="form-control" style="max-width: 110px;" title="Période">
+      <option value="7">7 j / أيام</option>
+      <option value="30" selected>30 j / يوماً</option>
+      <option value="90">90 j / يوماً</option>
+      <option value="365">1 an / سنة</option>
+      <option value="0">Tout / الكل</option>
+    </select>
+  </div>
+
+  <div class="filter-pills">
+    <button class="pill-btn active" data-order-status="ALL">{% if current_lang == 'ar' %}الكل{% else %}Tous{% endif %}</button>
+    <button class="pill-btn" data-order-status="EN_ATTENTE">⏳ {% if current_lang == 'ar' %}انتظار{% else %}Attente{% endif %}</button>
+    <button class="pill-btn" data-order-status="EN_COURS">⚙️ {% if current_lang == 'ar' %}قيد العمل{% else %}En cours{% endif %}</button>
+    <button class="pill-btn" data-order-status="TERMINE">✅ {% if current_lang == 'ar' %}جاهز{% else %}Terminé{% endif %}</button>
+    <button class="pill-btn" data-order-status="LIVRE">📦 {% if current_lang == 'ar' %}مسلّم{% else %}Livré{% endif %}</button>
+  </div>
+</div>
+
+<!-- Dynamic Workshop Content Area -->
+<div id="artisanContentArea"></div>
+
+<!-- Modal Sheet for Artisan Ledger Movements -->
+<div id="artisanLedgerModal" class="modal-backdrop">
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <h3 id="artisanLedgerTitle" class="modal-title">Grand Livre Artisan</h3>
+      <button class="btn-close" onclick="closeArtisanLedgerModal()">✕</button>
+    </div>
+    <div id="artisanLedgerBody" style="margin-top: 10px;"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/artisan.js') }}"></script>
+{% endblock %}

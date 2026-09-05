@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}{% if current_lang == 'ar' %}العربون والحجوزات{% else %}Versements & Réservations{% endif %}{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div class="section-title">
+    <span>📦</span>
+    <span>{% if current_lang == 'ar' %}العربون وحجوزات الزبائن{% else %}Dossiers de Versement & Réservations{% endif %}</span>
+  </div>
+  <div class="section-desc">
+    {% if current_lang == 'ar' %}
+      مطابقة لواجهة versements_view.py: حساب دقيق للأوزان المحجوزة والمقتناة، وسجل الدفعات.
+    {% else %}
+      Conforme à versements_view.py: suivi des articles réservés, poids déduits et historique des acomptes.
+    {% endif %}
+  </div>
+</div>
+
+<!-- Stats Row -->
+<div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 12px;">
+  <div class="kpi-card success">
+    <div class="kpi-label">Dossiers Actifs</div>
+    <div id="kpiVersementActiveCount" class="kpi-value">0</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}الملفات الجارية{% else %}En cours{% endif %}</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-label">Poids Réservé</div>
+    <div id="kpiVersementReservedWeight" class="kpi-value gold">0.00 g</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}الذهب المحجوز{% else %}Or bloqué{% endif %}</div>
+  </div>
+
+  <div class="kpi-card danger">
+    <div class="kpi-label">Reste Dû (DA)</div>
+    <div id="kpiVersementTotalDue" class="kpi-value" style="font-size: 14px; color: var(--danger);">0.00 DA</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}المبالغ المتبقية{% else %}Créance totale{% endif %}</div>
+  </div>
+</div>
+
+<!-- Search & Status Filter -->
+<div class="filter-card">
+  <div class="filter-row">
+    <input type="text" id="versementsSearchInput" class="form-control" placeholder="{% if current_lang == 'ar' %}بحث باسم الزبون، الهاتف أو رقم الملف...{% else %}Recherche client, téléphone ou N° dossier...{% endif %}">
+  </div>
+
+  <div class="filter-pills">
+    <button class="pill-btn active" data-versement-status="EN_COURS">🟢 {% if current_lang == 'ar' %}قيد التنفيذ{% else %}En Cours{% endif %}</button>
+    <button class="pill-btn" data-versement-status="LIVRE">🔵 {% if current_lang == 'ar' %}مسلّم{% else %}Livré{% endif %}</button>
+    <button class="pill-btn" data-versement-status="ANNULE">🔴 {% if current_lang == 'ar' %}ملغى{% else %}Annulé{% endif %}</button>
+    <button class="pill-btn" data-versement-status="ALL">{% if current_lang == 'ar' %}الكل{% else %}Tous{% endif %}</button>
+  </div>
+</div>
+
+<!-- Versements Cards Container -->
+<div id="versementsContentArea"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/versements.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}{% if current_lang == 'ar' %}الرئيسية{% else %}Tableau de Bord{% endif %}{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div class="section-title">
+    <span>💍</span>
+    <span>{% if current_lang == 'ar' %}لوحة التحكم والمتابعة السريعة{% else %}Tableau de Bord Mobile{% endif %}</span>
+  </div>
+  <div class="section-desc">
+    {% if current_lang == 'ar' %}
+      مرحباً بك في واجهة الهاتف لنظام GoldShop 2.0. وصول مباشر ومؤشرات حية.
+    {% else %}
+      Bienvenue sur l'interface mobile de GoldShop 2.0. Consultation en direct et suivi des opérations.
+    {% endif %}
+  </div>
+</div>
+
+<!-- Gold Market Price Card -->
+<div class="mobile-card" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(17, 24, 39, 0.9)); border-color: var(--gold-500); margin-bottom: 14px;">
+  <div class="card-top">
+    <div class="card-title-group">
+      <span class="card-badge badge-gold">✨ {% if current_lang == 'ar' %}سعر الذهب الحالي{% else %}Cours de l'Or Actuel{% endif %}</span>
+    </div>
+    <span style="font-size: 11px; color: var(--text-dim);">{{ today_date }}</span>
+  </div>
+  <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px;">
+    <div>
+      <div style="font-size: 11px; color: var(--text-muted);">{% if current_lang == 'ar' %}الذهب المرجعي{% else %}Or de Référence (18K / 24K){% endif %}</div>
+      <div id="homeGoldPriceText" style="font-size: 22px; font-weight: 800; color: var(--gold-400);">-- DA/g</div>
+    </div>
+    <a href="{{ url_for('view_journal') }}" class="pill-btn active" style="text-decoration: none;">
+      {% if current_lang == 'ar' %}اليومية ➔{% else %}Journal ➔{% endif %}
+    </a>
+  </div>
+</div>
+
+<!-- 5 Primary Modules Navigation Cards -->
+<div style="font-size: 13px; font-weight: 700; margin-bottom: 8px; color: var(--text-muted);">
+  {% if current_lang == 'ar' %}الأقسام الرئيسية لنظام المتجر{% else %}Modules Principaux{% endif %}
+</div>
+
+<div class="data-list" style="margin-bottom: 16px;">
+  <!-- Module 1: Journal -->
+  <a href="{{ url_for('view_journal') }}" class="mobile-card" style="text-decoration: none; color: inherit;">
+    <div class="card-top">
+      <div class="card-title-group">
+        <span class="card-badge badge-gold">📊</span>
+        <span style="font-size: 15px; font-weight: 700;">
+          {% if current_lang == 'ar' %}اليومية بنمط إكسل (Journal){% else %}Journal des Ventes & Recettes{% endif %}
+        </span>
+      </div>
+      <span style="color: var(--gold-500); font-size: 18px;">➔</span>
+    </div>
+    <div style="font-size: 12px; color: var(--text-muted);">
+      {% if current_lang == 'ar' %}
+        سجل الصندوق، مبيعات الذهب والفضة، الذهب الكسر (O.C)، الدفع الإلكتروني والعملات الصعبة.
+      {% else %}
+        Suivi quotidien de la caisse, ventes or/argent, or cassé, TPE et devises selon excel_journal_view.
+      {% endif %}
+    </div>
+  </a>
+
+  <!-- Module 2: Monthly Summary -->
+  <a href="{{ url_for('view_monthly_summary') }}" class="mobile-card" style="text-decoration: none; color: inherit;">
+    <div class="card-top">
+      <div class="card-title-group">
+        <span class="card-badge badge-info">📅</span>
+        <span style="font-size: 15px; font-weight: 700;">
+          {% if current_lang == 'ar' %}الحصيلة الشهرية (Résumé Mensuel){% else %}Résumé & Synthèse Mensuelle{% endif %}
+        </span>
+      </div>
+      <span style="color: var(--gold-500); font-size: 18px;">➔</span>
+    </div>
+    <div style="font-size: 12px; color: var(--text-muted);">
+      {% if current_lang == 'ar' %}
+        الإيرادات الشهرية، حركة الصندوق والأرباح الصافية (الفائدة / Bénéfice) لكل يوم مع الإجماليات.
+      {% else %}
+        Synthèse mensuelle des recettes, versements, réparations et bénéfices nets par jour.
+      {% endif %}
+    </div>
+  </a>
+
+  <!-- Module 3: Versements -->
+  <a href="{{ url_for('view_versements') }}" class="mobile-card" style="text-decoration: none; color: inherit;">
+    <div class="card-top">
+      <div class="card-title-group">
+        <span class="card-badge badge-success">📦</span>
+        <span style="font-size: 15px; font-weight: 700;">
+          {% if current_lang == 'ar' %}العربون والحجوزات (Versements){% else %}Versements & Réservations Client{% endif %}
+        </span>
+      </div>
+      <span style="color: var(--gold-500); font-size: 18px;">➔</span>
+    </div>
+    <div style="font-size: 12px; color: var(--text-muted);">
+      {% if current_lang == 'ar' %}
+        ملفات الزبائن، القطع المحجوزة، حساب الأوزان المقتناة والمتبقية، وتتبع الدفعات والتنبيهات.
+      {% else %}
+        Dossiers clients en cours, poids déduits et restants, observations et historique de paiement.
+      {% endif %}
+    </div>
+  </a>
+
+  <!-- Module 4: Artisan Work -->
+  <a href="{{ url_for('view_artisan_work') }}" class="mobile-card" style="text-decoration: none; color: inherit;">
+    <div class="card-top">
+      <div class="card-title-group">
+        <span class="card-badge badge-purple">⚒️</span>
+        <span style="font-size: 15px; font-weight: 700;">
+          {% if current_lang == 'ar' %}الورشة والتصليحات (Atelier Artisan){% else %}Atelier & Tableau de Production{% endif %}
+        </span>
+      </div>
+      <span style="color: var(--gold-500); font-size: 18px;">➔</span>
+    </div>
+    <div style="font-size: 12px; color: var(--text-muted);">
+      {% if current_lang == 'ar' %}
+        أوامر الإنتاج والتصليح، أجور الصياغة وأرباح الفرق، وأرصدة الذهب الخالص لحسابات الحرفيين.
+      {% else %}
+        Tableau de production, prix façon, marges et solde d'or pur des artisans.
+      {% endif %}
+    </div>
+  </a>
+
+  <!-- Module 5: Suppliers -->
+  <a href="{{ url_for('view_suppliers') }}" class="mobile-card" style="text-decoration: none; color: inherit;">
+    <div class="card-top">
+      <div class="card-title-group">
+        <span class="card-badge badge-danger">👥</span>
+        <span style="font-size: 15px; font-weight: 700;">
+          {% if current_lang == 'ar' %}دفتر الموردين (Grand Livre Fournisseurs){% else %}Grand Livre & Comptes Fournisseurs{% endif %}
+        </span>
+      </div>
+      <span style="color: var(--gold-500); font-size: 18px;">➔</span>
+    </div>
+    <div style="font-size: 12px; color: var(--text-muted);">
+      {% if current_lang == 'ar' %}
+        دليل الموردين، أرصدة الوزن والأموال، والجدول الفرنسي التفصيلي بأعمدته الخمسة وتمييز الألوان.
+      {% else %}
+        Fiches fournisseurs, soldes en poids et espèces, et grand livre au format tableur français.
+      {% endif %}
+    </div>
+  </a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Load live gold price for home ticker
+  document.addEventListener("DOMContentLoaded", async () => {
+    try {
+      const res = await GoldShopApp.apiFetch("/api/v1/references/metal-types");
+      if (res && res.data && Array.isArray(res.data)) {
+        const gold = res.data.find(m => m.metal_category === "GOLD" || (m.name && m.name.includes("18")));
+        if (gold && gold.purchase_price) {
+          const el = document.getElementById("homeGoldPriceText");
+          if (el) el.textContent = GoldShopApp.formatMoney(gold.purchase_price) + " /g";
+        }
+      }
+    } catch {}
+  });
+</script>
+{% endblock %}

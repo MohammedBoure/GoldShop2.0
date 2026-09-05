@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}{% if current_lang == 'ar' %}اليومية بنمط إكسل{% else %}Journal des Ventes{% endif %}{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div class="section-title">
+    <span>📊</span>
+    <span>{% if current_lang == 'ar' %}اليومية بنمط إكسل{% else %}Journal Quotidien des Ventes & Caisse{% endif %}</span>
+  </div>
+  <div class="section-desc">
+    {% if current_lang == 'ar' %}
+      مطابقة دقيقة لواجهة excel_journal_view.py: رأس المال الأولي، مبيعات الذهب والفضة، والدفعات.
+    {% else %}
+      Vue fidèle à excel_journal_view.py: fond de caisse, ventes or/argent, recette et devises.
+    {% endif %}
+  </div>
+</div>
+
+<!-- Filter & Search Controls -->
+<div class="filter-card">
+  <div class="filter-row">
+    <input type="date" id="journalDateInput" class="form-control" value="{{ today_date }}" title="Date du journal">
+    <select id="journalSellerSelect" class="form-control" title="Filtrer par vendeur">
+      <option value="">-- {% if current_lang == 'ar' %}كل البائعين{% else %}Tous les vendeurs{% endif %} --</option>
+    </select>
+  </div>
+
+  <div class="filter-row">
+    <input type="text" id="journalSearchInput" class="form-control" placeholder="{% if current_lang == 'ar' %}بحث في اليومية أو الملاحظات...{% else %}Rechercher dans les sessions...{% endif %}">
+  </div>
+
+  <!-- View Mode Switcher -->
+  <div class="filter-row" style="justify-content: space-between;">
+    <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">
+      {% if current_lang == 'ar' %}طريقة العرض:{% else %}Mode d'affichage:{% endif %}
+    </div>
+    <div class="filter-pills" style="padding-bottom: 0;">
+      <button class="pill-btn active" data-journal-view="cards">📱 {% if current_lang == 'ar' %}بطاقات الهاتف{% else %}Cartes Mobile{% endif %}</button>
+      <button class="pill-btn" data-journal-view="table">📑 {% if current_lang == 'ar' %}جدول إكسل{% else %}Tableau Excel{% endif %}</button>
+    </div>
+  </div>
+</div>
+
+<!-- 8 Summary KPI Cards Grid -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Fond Caisse (Fc)</div>
+    <div id="kpiJournalFc" class="kpi-value">0.00 DA</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}رأس مال البداية{% else %}Caisse de départ{% endif %}</div>
+  </div>
+
+  <div class="kpi-card success">
+    <div class="kpi-label">Recette (DA)</div>
+    <div id="kpiJournalRecette" class="kpi-value" style="color: var(--success);">0.00 DA</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}إجمالي الإيراد النقدي{% else %}Encaissements espèces{% endif %}</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-label">P_S Or (g)</div>
+    <div id="kpiJournalPsGold" class="kpi-value gold">0.00 g</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}مبيعات الذهب{% else %}Poids vendu or{% endif %}</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-label">P_S Argent (g)</div>
+    <div id="kpiJournalPsSilver" class="kpi-value">0.00 g</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}مبيعات الفضة{% else %}Poids vendu argent{% endif %}</div>
+  </div>
+
+  <div class="kpi-card danger">
+    <div class="kpi-label">O.C Or (g)</div>
+    <div id="kpiJournalOcGold" class="kpi-value" style="color: var(--danger);">0.00 g</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}الذهب الكسر المشترى{% else %}Or cassé acheté{% endif %}</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-label">O.C Argent (g)</div>
+    <div id="kpiJournalOcSilver" class="kpi-value">0.00 g</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}الفضة الكسر{% else %}Argent cassé acheté{% endif %}</div>
+  </div>
+
+  <div class="kpi-card info">
+    <div class="kpi-label">TPE (DA)</div>
+    <div id="kpiJournalTpe" class="kpi-value" style="color: var(--info);">0.00 DA</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}الدفع الإلكتروني{% else %}Paiements par carte{% endif %}</div>
+  </div>
+
+  <div class="kpi-card purple">
+    <div class="kpi-label">Devises</div>
+    <div id="kpiJournalDevises" class="kpi-value" style="font-size: 14px;">0 € | 0 $</div>
+    <div class="kpi-subtext">{% if current_lang == 'ar' %}اليورو والدولار{% else %}Euro & Dollar{% endif %}</div>
+  </div>
+</div>
+
+<!-- Dynamic Journal Content Area -->
+<div id="journalContentArea"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/journal.js') }}"></script>
+{% endblock %}

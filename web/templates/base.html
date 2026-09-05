@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ current_dir }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f19">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>{% block title %}{{ shop_name }}{% endblock %} - GoldShop 2.0</title>
+  
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile.css') }}">
+  {% block styles %}{% endblock %}
+</head>
+<body>
+
+  <!-- Top App Header -->
+  <header class="app-header">
+    <a href="{{ url_for('view_dashboard') }}" class="brand-wrapper">
+      <div class="brand-logo">💍</div>
+      <div class="brand-text">
+        <span class="brand-title">{{ shop_name }}</span>
+        <span class="brand-subtitle">GoldShop 2.0 Mobile</span>
+      </div>
+    </a>
+
+    <div class="header-actions">
+      <!-- Language Switcher -->
+      {% if current_lang == 'ar' %}
+        <a href="{{ url_with_lang('fr') }}" class="lang-pill" title="Français">FR</a>
+      {% else %}
+        <a href="{{ url_with_lang('ar') }}" class="lang-pill" title="العربية">عربي</a>
+      {% endif %}
+
+      <!-- Password / Auth Modal Trigger -->
+      <button id="btnAuthPrompt" class="btn-icon" title="Authentification Web" aria-label="Authentification">
+        🔒
+      </button>
+
+      <!-- Global Refresh Button -->
+      <button id="btnGlobalRefresh" class="btn-icon" title="Actualiser" aria-label="Actualiser">
+        🔄
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="app-container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Bottom Navigation Bar for Mobile -->
+  <nav class="bottom-nav">
+    <a href="{{ url_for('view_journal') }}" class="nav-item {% if active_tab == 'journal' %}active{% endif %}">
+      <span class="nav-icon">📊</span>
+      <span>{% if current_lang == 'ar' %}اليومية{% else %}Journal{% endif %}</span>
+    </a>
+
+    <a href="{{ url_for('view_monthly_summary') }}" class="nav-item {% if active_tab == 'monthly' %}active{% endif %}">
+      <span class="nav-icon">📅</span>
+      <span>{% if current_lang == 'ar' %}الحصيلة{% else %}Résumé{% endif %}</span>
+    </a>
+
+    <a href="{{ url_for('view_versements') }}" class="nav-item {% if active_tab == 'versements' %}active{% endif %}">
+      <span class="nav-icon">📦</span>
+      <span>{% if current_lang == 'ar' %}العربون{% else %}Versements{% endif %}</span>
+    </a>
+
+    <a href="{{ url_for('view_artisan_work') }}" class="nav-item {% if active_tab == 'artisan' %}active{% endif %}">
+      <span class="nav-icon">⚒️</span>
+      <span>{% if current_lang == 'ar' %}الورشة{% else %}Atelier{% endif %}</span>
+    </a>
+
+    <a href="{{ url_for('view_suppliers') }}" class="nav-item {% if active_tab == 'suppliers' %}active{% endif %}">
+      <span class="nav-icon">👥</span>
+      <span>{% if current_lang == 'ar' %}الموردين{% else %}Fournisseurs{% endif %}</span>
+    </a>
+  </nav>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Web Password Authentication Modal -->
+  <div id="authModal" class="modal-backdrop">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <h3 class="modal-title">
+          {% if current_lang == 'ar' %}تسجيل الدخول إلى الخادم{% else %}Connexion au Serveur Web{% endif %}
+        </h3>
+        <button class="btn-close" onclick="GoldShopApp.hideAuthModal()">✕</button>
+      </div>
+
+      <form id="authForm">
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+          {% if current_lang == 'ar' %}
+            يرجى إدخال كلمة مرور الويب المحددة في إعدادات البرنامج للوصول إلى كافة البيانات بأمان.
+          {% else %}
+            Veuillez saisir le mot de passe Web configuré dans les paramètres du logiciel pour accéder aux données en toute sécurité.
+          {% endif %}
+        </p>
+
+        <div id="authErrorBox" style="display: none; background: var(--danger-surface); color: var(--danger); border: 1px solid var(--danger); border-radius: 6px; padding: 8px 12px; font-size: 12px; margin-bottom: 12px;"></div>
+
+        <div style="margin-bottom: 16px;">
+          <input type="password" id="authPasswordInput" class="form-control" placeholder="{% if current_lang == 'ar' %}كلمة مرور الويب{% else %}Mot de passe Web{% endif %}" required autocomplete="current-password">
+        </div>
+
+        <button type="submit" class="btn-primary">
+          {% if current_lang == 'ar' %}تأكيد والاتصال{% else %}Valider et Se Connecter{% endif %}
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Core App JS -->
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

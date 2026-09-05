@@ -152,7 +152,7 @@ def main():
     from ui.main_window import MainWindow
     window = MainWindow(data_manager, current_user)
     window.show()
-    #QTimer.singleShot(1500, lambda: start_flask_server(qt_app))
+    QTimer.singleShot(1500, lambda: start_flask_server(qt_app))
     
     sys.exit(qt_app.exec())
 

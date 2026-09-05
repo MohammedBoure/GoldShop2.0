@@ -194,6 +194,60 @@ class TestWebApiEndpoints(unittest.TestCase):
                     self.assertIn("is_red", first_op)
                     self.assertIn("is_blue", first_op)
 
+    def test_web_ui_pages(self):
+        """Test rendering of mobile web pages, templates, and static assets."""
+        # 1. Test Dashboard Home Page
+        res_home = self.client.get("/")
+        self.assertEqual(res_home.status_code, 200)
+        self.assertIn(b"GoldShop 2.0 Mobile", res_home.data)
+
+        # 2. Test Excel Journal Page
+        res_journal = self.client.get("/journal")
+        self.assertEqual(res_journal.status_code, 200)
+        self.assertIn(b"journalDateInput", res_journal.data)
+        self.assertIn(b"kpiJournalFc", res_journal.data)
+
+        # 3. Test Monthly Summary Page
+        res_monthly = self.client.get("/monthly-summary")
+        self.assertEqual(res_monthly.status_code, 200)
+        self.assertIn(b"monthlyMonthSelect", res_monthly.data)
+        self.assertIn(b"kpiMonthlySales", res_monthly.data)
+
+        # 4. Test Versements / Layaways Page
+        res_versements = self.client.get("/versements")
+        self.assertEqual(res_versements.status_code, 200)
+        self.assertIn(b"versementsSearchInput", res_versements.data)
+        self.assertIn(b"kpiVersementActiveCount", res_versements.data)
+
+        # 5. Test Artisan Work Page
+        res_artisan = self.client.get("/artisan-work")
+        self.assertEqual(res_artisan.status_code, 200)
+        self.assertIn(b"artisanSearchInput", res_artisan.data)
+        self.assertIn(b"artisanDaysSelect", res_artisan.data)
+
+        # 6. Test Suppliers Page
+        res_suppliers = self.client.get("/suppliers")
+        self.assertEqual(res_suppliers.status_code, 200)
+        self.assertIn(b"suppliersSearchInput", res_suppliers.data)
+        self.assertIn(b"supplierLedgerContainer", res_suppliers.data)
+
+        # 7. Test Static Assets
+        res_css = self.client.get("/static/css/mobile.css")
+        self.assertEqual(res_css.status_code, 200)
+        self.assertIn(b"GoldShop 2.0", res_css.data)
+
+        res_js_app = self.client.get("/static/js/app.js")
+        self.assertEqual(res_js_app.status_code, 200)
+        self.assertIn(b"GoldShopApp", res_js_app.data)
+
+        # 8. Test Auth Status
+        res_auth_status = self.client.get("/api/v1/auth/status")
+        self.assertEqual(res_auth_status.status_code, 200)
+        auth_status_data = res_auth_status.get_json()
+        self.assertTrue(auth_status_data.get("success"))
+        self.assertIn("password_required", auth_status_data.get("data", {}))
+
 
 if __name__ == "__main__":
     unittest.main()
+

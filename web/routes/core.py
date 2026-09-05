@@ -109,12 +109,50 @@ def get_api_catalog():
 def register_core_routes(flask_app, api):
     """Register core utility, authentication, catalog, dashboard, and gold price routes."""
 
-    @flask_app.route("/")
     @flask_app.route("/api")
     @flask_app.route("/api/v1")
     def api_catalog():
         """Return the API catalog and documentation overview."""
         return api._ok(get_api_catalog())
+
+    @flask_app.route("/api/v1/auth/status")
+    def api_v1_auth_status():
+        """Check whether password is required and if the current request is already authenticated."""
+        is_configured = api.web_password_configured()
+        token = api.request.headers.get(api.WEB_PASSWORD_HEADER, "") or api.request.cookies.get("goldshop_web_password", "")
+        is_authenticated = api.verify_web_password(token) if is_configured else True
+        return api._ok({
+            "password_required": is_configured,
+            "authenticated": is_authenticated,
+        })
+
+    @flask_app.route("/api/v1/auth/login", methods=["POST"])
+    def api_v1_auth_login():
+        """Authenticate with password and set session cookie."""
+        if not api.web_password_configured():
+            return api._json_error(api._translate_key("auth.not_configured"), status=503)
+
+        client_key = api.request.remote_addr or "unknown"
+        if api.login_is_rate_limited(client_key):
+            return api._json_error(api._translate_key("auth.rate_limited"), status=429)
+
+        payload = api.request.get_json(silent=True) or {}
+        password = payload.get("password") or api.request.headers.get(api.WEB_PASSWORD_HEADER, "")
+
+        if not api.verify_web_password(str(password)):
+            api.record_failed_login(client_key)
+            return api._json_error(api._translate_key("auth.invalid_password"), status=401)
+
+        api.clear_failed_logins(client_key)
+        resp = api._ok({"authenticated": True, "message": "Authentication successful"})
+        resp.set_cookie(
+            "goldshop_web_password",
+            str(password),
+            max_age=60 * 60 * 24 * 30,
+            httponly=False,
+            samesite="Lax",
+        )
+        return resp
 
     @flask_app.route("/api/v1/auth/check")
     def api_v1_auth_check():
@@ -244,6 +282,8 @@ def register_core_routes(flask_app, api):
         function.__name__: function
         for function in (
             api_catalog,
+            api_v1_auth_status,
+            api_v1_auth_login,
             api_v1_auth_check,
             api_health,
             api_dashboard,

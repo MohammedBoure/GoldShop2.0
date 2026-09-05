@@ -8,6 +8,7 @@ from .artisan_work import register_artisan_work_routes
 from .suppliers import register_suppliers_routes
 from .operations import register_operation_routes
 from .partners import register_partner_routes
+from .ui import register_ui_routes
 
 __all__ = [
     "register_core_routes",
@@ -17,4 +18,5 @@ __all__ = [
     "register_suppliers_routes",
     "register_operation_routes",
     "register_partner_routes",
+    "register_ui_routes",
 ]

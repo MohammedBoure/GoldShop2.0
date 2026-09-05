@@ -19,4 +19,4 @@
 * `test_supplier_type_migration.py`: اختبارات ترقية حقول الموردين (supplier_type, primary_purity) في المخطط ونماذج الإدخال.
 * `test_coffre_transfer.py`: اختبارات تحويل الإيرادات والذهب والفضة الكسر (O.C) من شريط الإجمالي باليومية إلى الخزينة، وهيكل جدول الخزينة بـ 9 أعمدة وإجمالياتها.
 * `test_monthly_summary_auth.py`: اختبارات حماية واجهة الملخص الشهري، حفظ جلسة المدير عبر التنقل، عدم فتح الكيبورد الافتراضي تلقائياً، وزر تسجيل الخروج/قفل الجلسة.
-* `test_web_api.py`: اختبارات واجهة الويب الشاملة (REST API) المطابقة لواجهات اليومية (`excel_journal_view.py`)، الحصيلة الشهرية (`monthly_summary_view.py`)، العربون (`versements_view.py`)، ورشة الحرفيين (`artisan_work_view.py`)، ودفتر الموردين (`suppliers_view.py`).
+* `test_web_api.py`: اختبارات واجهة الويب الشاملة (REST API) وصفحات واجهة الهاتف المحمول وقوالب Jinja2 والأصول الثابتة، المطابقة لواجهات اليومية (`excel_journal_view.py`)، الحصيلة الشهرية (`monthly_summary_view.py`)، العربون (`versements_view.py`)، ورشة الحرفيين (`artisan_work_view.py`)، ودفتر الموردين (`suppliers_view.py`).
