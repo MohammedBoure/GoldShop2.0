@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
     QLabel, QTableWidget, QTableWidgetItem, QHeaderView, QWidget,
     QFormLayout, QMessageBox, QApplication, QFrame, QTextEdit, QGroupBox,
-    QComboBox, QStackedWidget
+    QComboBox, QStackedWidget, QMenu
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QColor, QBrush
@@ -161,8 +161,8 @@ class AddPaymentDialog(QDialog):
         lbl_items.setStyleSheet("font-size: 14px; font-weight: bold; color: #075f58;")
         left_layout.addWidget(lbl_items)
 
-        self.table_items = QTableWidget(0, 6)
-        self.table_items.setHorizontalHeaderLabels(["Désignation", "Poids Initial", "Déduit", "Reste", "Observation", "Prix Estimé"])
+        self.table_items = QTableWidget(0, 7)
+        self.table_items.setHorizontalHeaderLabels(["Statut", "Désignation", "Poids Initial", "Prix Estimé", "Déduit", "Reste", "Note / Obs"])
         self.table_items.setStyleSheet("""
             QTableWidget { background-color: white; font-size: 13px; gridline-color: #eef2f6; }
             QHeaderView::section { background-color: #0f8f83; color: white; font-weight: bold; padding: 5px; font-size: 12px; border: none; }
@@ -171,14 +171,18 @@ class AddPaymentDialog(QDialog):
         self.table_items.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table_items.setSelectionBehavior(QTableWidget.SelectRows)
         self.table_items.verticalHeader().setVisible(False)
+        self.table_items.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table_items.customContextMenuRequested.connect(self._on_table_items_context_menu)
         self.table_items.doubleClicked.connect(self._on_table_items_double_clicked)
 
         header_it = self.table_items.horizontalHeader()
-        header_it.setSectionResizeMode(0, QHeaderView.Stretch)
-        for c in range(1, 4):
-            header_it.setSectionResizeMode(c, QHeaderView.ResizeToContents)
-        header_it.setSectionResizeMode(4, QHeaderView.Stretch)
+        header_it.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header_it.setSectionResizeMode(1, QHeaderView.Stretch)
+        header_it.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header_it.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header_it.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         header_it.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        header_it.setSectionResizeMode(6, QHeaderView.Stretch)
 
         left_layout.addWidget(self.table_items, stretch=3)
 
@@ -843,6 +847,52 @@ class AddPaymentDialog(QDialog):
             self.table_history.setItem(i, 3, it_rem)
             self.table_history.setItem(i, 4, it_ded)
             self.table_history.setRowHeight(i, 26)
+
+    def _on_table_items_context_menu(self, pos):
+        row = self.table_items.rowAt(pos.y())
+        if row < 0:
+            return
+        menu = QMenu(self)
+        act_edit = menu.addAction("🏷️ Modifier Observation / Note")
+        action = menu.exec_(self.table_items.viewport().mapToGlobal(pos))
+        if action == act_edit:
+            self._on_table_items_double_clicked(row)
+
+    def _on_table_items_double_clicked(self, index_or_row=None, col=None):
+        if not self.v_data:
+            return
+        items = self.v_data.get('items', [])
+        row = -1
+        if hasattr(index_or_row, 'row'):
+            row = index_or_row.row()
+        elif isinstance(index_or_row, int):
+            row = index_or_row
+        else:
+            selected = self.table_items.selectedIndexes()
+            if selected:
+                row = selected[0].row()
+
+        if row < 0 or row >= len(items):
+            return
+
+        item_data = items[row]
+        try:
+            from ui.widgets.versements.versements_view import VersementItemNoteDialog
+            dlg = VersementItemNoteDialog(self.manager, item_data, self)
+            if dlg.exec() == QDialog.Accepted:
+                new_note = dlg.get_product_note()
+                new_obs = dlg.get_observation()
+                item_id = item_data.get('item_id') or item_data.get('id')
+                if self.manager.versements.update_versement_item_notes(item_id, new_note, observation=new_obs):
+                    item_data['custom_note'] = new_note
+                    item_data['notes'] = new_note
+                    item_data['observation'] = new_obs
+                    self._load_versement_data()
+                    self._populate_left_panel_tables()
+                    if self.parent() and hasattr(self.parent(), 'load_data'):
+                        self.parent().load_data()
+        except Exception as e:
+            logging.error(f"[AddPaymentDialog] Erreur modification note article: {e}")
 
     def show_product_details(self):
         try:
