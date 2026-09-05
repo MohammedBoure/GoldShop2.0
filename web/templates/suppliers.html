@@ -50,27 +50,9 @@
   </div>
 </div>
 
-<!-- 3. Action Toolbar Matching desktop toolbar in suppliers_view.py -->
+<!-- 3. View Mode Switcher -->
 <div class="filter-card" style="padding: 8px 12px; margin-bottom: 12px;">
-  <div class="filter-row" style="flex-wrap: wrap; gap: 8px; align-items: center;">
-    <button id="btnAddSupplierOp" class="btn-green-sale" title="Nouvelle Opération">
-      <span>➕</span>
-      <span>Nouvelle Opération</span>
-    </button>
-    <button id="btnEditSupplierOp" class="btn-blue-action" title="Modifier">
-      <span>✏️</span>
-      <span>Modifier</span>
-    </button>
-    <button id="btnDeleteSupplierOp" class="btn-red-danger" title="Supprimer">
-      <span>🗑️</span>
-      <span>Supprimer</span>
-    </button>
-    <button id="btnToggleColorOp" class="btn-secondary-light" title="Changer Couleur (Rouge/Normal)">
-      <span>🎨</span>
-      <span>Changer Couleur</span>
-    </button>
-
-    <!-- View Mode Switcher -->
+  <div class="filter-row" style="justify-content: flex-end; align-items: center;">
     <div class="filter-pills" style="margin-left: auto; padding-bottom: 0;">
       <button class="pill-btn active" data-supplier-view="ledger">📑 {% if current_lang == 'ar' %}دفتر الأستاذ (Grand Livre){% else %}Grand Livre Excel{% endif %}</button>
       <button class="pill-btn" data-supplier-view="directory">👥 {% if current_lang == 'ar' %}دليل الموردين{% else %}Répertoire{% endif %}</button>

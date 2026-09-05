@@ -3,8 +3,7 @@
  * Implements the French Excel Ledger spreadsheet format matching suppliers_view.py:
  * - 1. Top Bar: Supplier Selection combo + [🔄 Actualiser]
  * - 2. Prominent Header Card: Title, Poids Net, Solde DA
- * - 3. Action Toolbar: [➕ Nouvelle Opération], [✏️ Modifier], [🗑️ Supprimer], [🎨 Changer Couleur]
- * - 4. 5-column French Excel Table: Date | Poids | Afaçon | Montant | Obs / Libellé
+ * - 3. 5-column French Excel Table: Date | Poids | Afaçon | Montant | Obs / Libellé (Consultation lecture seule)
  */
 
 (function() {
@@ -13,11 +12,6 @@
   const headerTitle = document.getElementById("supplierHeaderCardTitle");
   const headerPoidsNet = document.getElementById("supplierHeaderPoidsNet");
   const headerSoldeDa = document.getElementById("supplierHeaderSoldeDa");
-
-  const btnAddOp = document.getElementById("btnAddSupplierOp");
-  const btnEditOp = document.getElementById("btnEditSupplierOp");
-  const btnDeleteOp = document.getElementById("btnDeleteSupplierOp");
-  const btnToggleColor = document.getElementById("btnToggleColorOp");
 
   const viewModePills = document.querySelectorAll("[data-supplier-view]");
   const ledgerSection = document.getElementById("supplierLedgerSection");
@@ -320,30 +314,6 @@
         } else {
           loadSuppliersList();
         }
-      });
-    }
-
-    if (btnAddOp) {
-      btnAddOp.addEventListener("click", () => {
-        GoldShopApp.showToast("Pour enregistrer une nouvelle opération fournisseur, utilisez l'interface de gestion sur le PC.", "info");
-      });
-    }
-
-    if (btnEditOp) {
-      btnEditOp.addEventListener("click", () => {
-        GoldShopApp.showToast("Pour modifier une ligne du grand livre, utilisez la fenêtre de modification sur le PC.", "info");
-      });
-    }
-
-    if (btnDeleteOp) {
-      btnDeleteOp.addEventListener("click", () => {
-        GoldShopApp.showToast("La suppression d'écritures s'effectue avec confirmation administrative sur le PC.", "info");
-      });
-    }
-
-    if (btnToggleColor) {
-      btnToggleColor.addEventListener("click", () => {
-        GoldShopApp.showToast("Le marquage couleur (Rouge/Normal) est géré via le clic droit sur la table du PC.", "info");
       });
     }
 

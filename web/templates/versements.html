@@ -59,32 +59,10 @@
         <option value="ANNULE">🔴 Annulé</option>
       </select>
     </div>
-
-    <button id="btnNewVersement" class="btn-green-sale" title="+ Nouveau Versement">
-      <span>➕</span>
-      <span>+ Nouveau Versement</span>
-    </button>
   </div>
 
-  <!-- Row 2: Desktop Context Toolbar Actions -->
-  <div class="filter-row" style="flex-wrap: wrap; gap: 8px; align-items: center; border-top: 1px solid var(--border-subtle); padding-top: 8px;">
-    <button id="btnVersementDetails" class="btn-blue-action" title="Détails Complets">
-      <span>ℹ️</span>
-      <span>Détails Articles</span>
-    </button>
-    <button id="btnVersementPdf" class="btn-secondary-light" title="Télécharger Bon PDF">
-      <span>📄</span>
-      <span>Bon (PDF)</span>
-    </button>
-    <button id="btnVersementGlobalPay" class="btn-orange-fc" title="Paiement Global">
-      <span>💵</span>
-      <span>Paiement Global</span>
-    </button>
-    <button id="btnVersementClose" class="btn-primary-teal" title="Clôturer Dossier">
-      <span>✅</span>
-      <span>Clôturer</span>
-    </button>
-
+  <!-- Row 2: Display Mode Switcher -->
+  <div class="filter-row" style="justify-content: flex-end; align-items: center; border-top: 1px solid var(--border-subtle); padding-top: 8px;">
     <!-- Mode Switcher -->
     <div class="filter-pills" style="margin-left: auto; padding-bottom: 0;">
       <button class="pill-btn active" data-versement-view="table">📑 {% if current_lang == 'ar' %}جدول الحسابات{% else %}Tableau (9 col){% endif %}</button>

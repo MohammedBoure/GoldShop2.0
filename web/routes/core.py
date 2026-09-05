@@ -100,7 +100,6 @@ def get_api_catalog():
                 "expenses": "/api/v1/expenses",
                 "references": "/api/v1/references",
                 "search": "/api/v1/search",
-                "gold_price_update": "/api/v1/market-price/gold (POST)",
             },
         },
     }
@@ -206,78 +205,6 @@ def register_core_routes(flask_app, api):
             days=days,
         )
 
-    @flask_app.route("/api/v1/market-price/gold", methods=["POST"])
-    def api_v1_gold_price_update():
-        """Update market gold price by reference metal and recalculate inventory items."""
-        payload = api.request.get_json(silent=True)
-        if not isinstance(payload, dict):
-            return api._json_error(api._translate_key("api.errors.invalid_payload"), status=400)
-
-        try:
-            reference_metal_id = int(payload.get("reference_metal_id"))
-            new_price = float(payload.get("new_price"))
-            raw_target_ids = payload.get("target_metal_ids")
-            if not isinstance(raw_target_ids, list):
-                raise ValueError
-            target_metal_ids = list(dict.fromkeys(int(value) for value in raw_target_ids))
-        except (TypeError, ValueError):
-            return api._json_error(api._translate_key("api.errors.invalid_price_update"), status=400)
-
-        if new_price <= 0 or new_price > 1000000 or not target_metal_ids:
-            return api._json_error(api._translate_key("api.errors.invalid_price_update"), status=400)
-
-        reference_metal = api._fetch_one(
-            """
-            SELECT id, name, purity_value, metal_category
-            FROM MetalTypes
-            WHERE id = %s AND metal_category = 'GOLD'
-            """,
-            (reference_metal_id,),
-        )
-        placeholders = ",".join(["%s"] * len(target_metal_ids))
-        target_metals = api._fetch_rows(
-            f"""
-            SELECT id, name, purity_value, metal_category
-            FROM MetalTypes
-            WHERE id IN ({placeholders}) AND metal_category = 'GOLD'
-            ORDER BY purity_value DESC, name ASC
-            """,
-            target_metal_ids,
-        )
-        if not reference_metal or len(target_metals) != len(target_metal_ids):
-            return api._json_error(api._translate_key("api.errors.gold_metals_only"), status=400)
-
-        raw_update_currency = payload.get("update_currency", True)
-        update_currency = (
-            str(raw_update_currency).strip().lower() in {"1", "true", "yes", "on"}
-            if isinstance(raw_update_currency, str)
-            else bool(raw_update_currency)
-        )
-        affected = api.inventory_manager.update_market_price_by_reference(
-            reference_purity=float(reference_metal["purity_value"]),
-            new_price=new_price,
-            target_metal_ids=target_metal_ids,
-            currency_code="OR" if update_currency else None,
-        )
-        if affected < 0:
-            return api._json_error(api._translate_key("api.errors.price_update_failed"), status=500)
-
-        api.logger.info(
-            "Web gold price update completed: reference_metal_id=%s new_price=%s affected=%s",
-            reference_metal_id,
-            new_price,
-            affected,
-        )
-        return api._ok(
-            {
-                "affected": affected,
-                "new_price": new_price,
-                "reference_metal": reference_metal,
-                "target_metals": target_metals,
-                "currency_updated": update_currency,
-            }
-        )
-
     return {
         function.__name__: function
         for function in (
@@ -287,6 +214,5 @@ def register_core_routes(flask_app, api):
             api_v1_auth_check,
             api_health,
             api_dashboard,
-            api_v1_gold_price_update,
         )
     }

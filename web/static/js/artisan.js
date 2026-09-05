@@ -10,7 +10,6 @@
   const searchInput = document.getElementById("artisanSearchInput");
   const dateFilter = document.getElementById("artisanDateFilter");
   const statusFilter = document.getElementById("artisanStatusFilter");
-  const btnNewOrder = document.getElementById("btnNewAtelierOrder");
   const viewModePills = document.querySelectorAll("[data-artisan-view]");
   const filterCard = document.getElementById("artisanOrderFilters");
 
@@ -470,12 +469,6 @@
       searchInput.addEventListener("input", () => {
         clearTimeout(debounce);
         debounce = setTimeout(fetchProductionOrders, 300);
-      });
-    }
-
-    if (btnNewOrder) {
-      btnNewOrder.addEventListener("click", () => {
-        GoldShopApp.showToast("Pour créer un nouveau dépôt d'atelier, utilisez le module atelier de l'application de caisse.", "info");
       });
     }
 

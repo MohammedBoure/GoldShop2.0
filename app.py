@@ -64,9 +64,7 @@ stats_manager = StatisticsManager(db)
 reports_manager = ReportsManager(db)
 
 READ_ONLY_METHODS = {"GET", "HEAD", "OPTIONS"}
-WRITE_POST_PATHS = {
-    "/api/v1/market-price/gold",
-    "/api/v1/runtime/force-logout",
+AUTH_POST_PATHS = {
     "/api/v1/auth/login",
 }
 WEB_PASSWORD_HEADER = "X-GoldShop-Password"
@@ -335,6 +333,18 @@ def inject_i18n():
     }
 
 @flask_app.before_request
+def enforce_read_only_api():
+    if not request.path.startswith("/api"):
+        return None
+    if request.method == "OPTIONS":
+        return _json_response({}, status=204)
+    if request.method == "POST" and request.path.rstrip("/") in AUTH_POST_PATHS:
+        return None
+    if request.method not in READ_ONLY_METHODS:
+        return _json_error("Toutes les modifications sont strictement interdites. L'API et le site sont en lecture seule.", status=405)
+    return None
+
+@flask_app.before_request
 def require_api_password():
     if not request.path.startswith("/api") or request.method == "OPTIONS":
         return None
@@ -357,37 +367,7 @@ def require_api_password():
     if request.method in READ_ONLY_METHODS:
         return None
 
-    # Write operations require configured password
-    if not web_password_configured():
-        return _json_error(_translate_key("auth.not_configured"), status=503)
-    return _json_error(_translate_key("auth.invalid_password"), status=401)
-
-@flask_app.before_request
-def enforce_read_only_api():
-    if not request.path.startswith("/api"):
-        return None
-    if request.method == "OPTIONS":
-        return _json_response({}, status=204)
-    if request.method == "POST" and request.path.rstrip("/") in WRITE_POST_PATHS:
-        return None
-    if request.method not in READ_ONLY_METHODS:
-        return _json_error(_translate_key("api.errors.read_only"), status=405)
-    return None
-
-@flask_app.route("/api/v1/runtime/force-logout", methods=["POST"])
-def api_v1_runtime_force_logout():
-    payload = request.get_json(silent=True) or {}
-    if not isinstance(payload, dict):
-        return _json_error(_translate_key("api.errors.invalid_payload"), status=400)
-
-    command = create_force_logout_command(
-        db,
-        url=DEFAULT_FORCE_LOGOUT_URL,
-        issued_by=request.remote_addr or "api",
-    )
-    execute_force_logout_command(command, exit_delay_seconds=0.5)
-    logger.warning("Runtime force logout command issued by %s: %s", request.remote_addr or "api", command.get("id"))
-    return _ok({"command_id": command.get("id"), "target": "all_running_devices", "url": command.get("url") or DEFAULT_FORCE_LOGOUT_URL})
+    return _json_error("Toutes les modifications sont strictement interdites. L'API et le site sont en lecture seule.", status=405)
 
 @flask_app.after_request
 def add_api_headers(response):
@@ -396,11 +376,11 @@ def add_api_headers(response):
         response.set_cookie(LANGUAGE_COOKIE, requested_lang, max_age=60 * 60 * 24 * 365, samesite="Lax")
 
     if request.path.startswith("/api"):
-        if request.path.rstrip("/") in WRITE_POST_PATHS:
-            response.headers["X-API-Mode"] = "password-protected-write"
+        if request.path.rstrip("/") in AUTH_POST_PATHS:
+            response.headers["X-API-Mode"] = "auth-login"
             response.headers["Allow"] = "POST, OPTIONS"
         else:
-            response.headers["X-API-Mode"] = "password-protected-read"
+            response.headers["X-API-Mode"] = "strictly-read-only"
             response.headers["Allow"] = "GET, HEAD, OPTIONS"
 
         allowed_origins = [origin.strip() for origin in os.getenv("READ_API_ALLOWED_ORIGINS", "").split(",") if origin.strip()]
@@ -410,7 +390,7 @@ def add_api_headers(response):
         elif request_origin and request_origin in allowed_origins:
             response.headers["Access-Control-Allow-Origin"] = request_origin
         if allowed_origins:
-            response.headers["Access-Control-Allow-Methods"] = "GET, HEAD, POST, OPTIONS"
+            response.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
             response.headers["Access-Control-Allow-Headers"] = f"Content-Type, {WEB_PASSWORD_HEADER}"
     return response
 

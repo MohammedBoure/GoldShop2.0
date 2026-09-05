@@ -1,19 +1,13 @@
 /**
  * GoldShop 2.0 - Versements / Layaways View Controller (versements.js)
  * Implements dossiers, reserved item weights, payments, and 9-column table matching versements_view.py:
- * - Search input + Status dropdown combo + [➕ Nouveau Versement]
- * - Context toolbar: [ℹ️ Détails Articles], [📄 Bon PDF], [💵 Paiement Global], [✅ Clôturer]
+ * - Search input + Status dropdown combo (Consultation lecture seule)
  * - 9-column table: Date/Opération, Cash (DA), TPE (DA), Montant (€/$), Taux, Or Cassé (g), Poids Déduit, Statut, Observation
  */
 
 (function() {
   const searchInput = document.getElementById("versementsSearchInput");
   const statusSelect = document.getElementById("versementsStatusSelect");
-  const btnNewVersement = document.getElementById("btnNewVersement");
-  const btnDetails = document.getElementById("btnVersementDetails");
-  const btnPdf = document.getElementById("btnVersementPdf");
-  const btnGlobalPay = document.getElementById("btnVersementGlobalPay");
-  const btnClose = document.getElementById("btnVersementClose");
   const viewModePills = document.querySelectorAll("[data-versement-view]");
 
   let currentViewMode = "table"; // Default to table matching desktop
@@ -390,43 +384,6 @@
 
     if (statusSelect) {
       statusSelect.addEventListener("change", fetchVersementsList);
-    }
-
-    if (btnNewVersement) {
-      btnNewVersement.addEventListener("click", () => {
-        GoldShopApp.showToast("Pour créer un nouveau versement, utilisez l'interface de caisse principale.", "info");
-      });
-    }
-
-    if (btnDetails) {
-      btnDetails.addEventListener("click", () => {
-        if (!selectedVersementId && cachedVersements.length > 0) {
-          selectedVersementId = cachedVersements[0].id;
-        }
-        if (selectedVersementId) {
-          GoldShopApp.showToast(`Dossier sélectionné: VRS-${String(selectedVersementId).padStart(5, '0')}`, "info");
-        } else {
-          GoldShopApp.showToast("Veuillez sélectionner un dossier dans le tableau.", "error");
-        }
-      });
-    }
-
-    if (btnPdf) {
-      btnPdf.addEventListener("click", () => {
-        GoldShopApp.showToast("Aperçu du Bon PDF disponible via l'application de caisse.", "info");
-      });
-    }
-
-    if (btnGlobalPay) {
-      btnGlobalPay.addEventListener("click", () => {
-        GoldShopApp.showToast("Pour enregistrer un paiement global, utilisez le terminal de caisse.", "info");
-      });
-    }
-
-    if (btnClose) {
-      btnClose.addEventListener("click", () => {
-        GoldShopApp.showToast("La clôture d'un dossier s'effectue après acquittement total du solde.", "info");
-      });
     }
 
     viewModePills.forEach(pill => {

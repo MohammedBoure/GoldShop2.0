@@ -1,7 +1,7 @@
 /**
  * GoldShop 2.0 - Excel Journal View Controller (journal.js)
  * Implements the daily sales and cash sessions journal matching excel_journal_view.py:
- * - Row 1: Année, Mois, Jour, [Afficher le Journal], [Fc (Caisse)], [+ Nouvelle Vente]
+ * - Row 1: Année, Mois, Jour, [Afficher le Journal] (Consultation lecture seule)
  * - Row 2: Recherche Client, Vendeur
  * - Full 9-column Excel Table: Désignation, P.S, Recette, O.C, TPE, Euro, Dollar, Vendeur, Observation
  * - Intelligent active month fallback to display live data immediately
@@ -14,8 +14,6 @@
   const sellerSelect = document.getElementById("journalSellerSelect");
   const searchInput = document.getElementById("journalSearchInput");
   const btnSearch = document.getElementById("btnJournalSearch");
-  const btnFc = document.getElementById("btnJournalFc");
-  const btnNewSale = document.getElementById("btnJournalNewSale");
   const viewModePills = document.querySelectorAll("[data-journal-view]");
   const noticeBanner = document.getElementById("journalActiveMonthNotice");
   const noticeText = document.getElementById("journalActiveMonthText");
@@ -391,18 +389,6 @@
 
     if (btnSearch) {
       btnSearch.addEventListener("click", fetchJournalData);
-    }
-
-    if (btnFc) {
-      btnFc.addEventListener("click", () => {
-        GoldShopApp.showToast("Fc (Fond de Caisse) : Consultez les lignes d'entête quotidiennes dans le tableau.", "info");
-      });
-    }
-
-    if (btnNewSale) {
-      btnNewSale.addEventListener("click", () => {
-        GoldShopApp.showToast("Pour enregistrer une nouvelle vente, utilisez l'interface tactile du logiciel de caisse.", "info");
-      });
     }
 
     if (searchInput) {
