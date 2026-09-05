@@ -3,7 +3,8 @@ import json
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QHeaderView, QPushButton, QGroupBox, QMessageBox, QLabel, QFrame
+    QHeaderView, QPushButton, QGroupBox, QMessageBox, QLabel, QFrame,
+    QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
@@ -12,23 +13,27 @@ import qtawesome as qta
 from ui.touch_design import apply_touch_button_defaults, apply_touch_table_defaults
 
 # ============================================================
-# SessionTableSection — جدول الجلسة المحسَّن والمضغوط
+# SessionTableSection — جدول الجلسة المحسَّن والمرن
 # ============================================================
 class SessionTableSection(QGroupBox):
     """
-    يعرض المنتجات المضافة خلال الجلسة الحالية بتصميم مدمج وسريع الاستجابة.
-    - ارتفاع أسطر مصمم بعناية (36px) لتوفير أقصى مساحة رؤية.
-    - أزرار إجراءات مدمجة ومريحة للمس والفأرة.
-    - شريط إحصائيات واضح مع زر لتصفير عرض الجلسة.
+    لوحة جدول الجلسة الحالية بتوزيع أعمدة مرن وذاتي التكيف (Elastic Auto-Fit):
+    - عمود التسمية (Article) يتمدد لاستيعاب المساحة الزائدة مع دعم Tooltip للنصوص الطويلة.
+    - الأعمدة الثابتة تعتمد على ResizeToContents مع حدود دنيا آمنة لمنع الاقتصاص.
+    - أزرار الإجراءات (طباعة، تعديل، حذف) بمقاس 28x28px داخل عمود مخصص (102px) لمنع أي التفاف.
+    - حد أدنى كلي مضمون (440px) لمنع ظهور شريط التمرير الأفقي المشوّه.
     """
 
     item_edited  = Signal(dict)
     item_deleted = Signal(dict)
+    toggle_collapse_requested = Signal()
 
     def __init__(self, manager, parent=None):
         super().__init__("📦 Articles ajoutés lors de cette session", parent)
         self.manager = manager
         self._items = []
+        self.setMinimumWidth(440)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setStyleSheet("""
             QGroupBox {
                 font-weight: 700;
@@ -45,14 +50,14 @@ class SessionTableSection(QGroupBox):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 14, 8, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(8, 12, 8, 8)
+        layout.setSpacing(6)
 
         # ------------------------------------------------------
-        # 1. شريط الإحصائيات + زر مسح الجلسة
+        # 1. شريط الإحصائيات + زر مسح الجلسة + زر الطي
         # ------------------------------------------------------
         info_row = QHBoxLayout()
-        info_row.setSpacing(8)
+        info_row.setSpacing(6)
 
         self.lbl_stats = QLabel("⚖️ Poids : <b>0.00 g</b>  |  📦 Articles : <b>0</b>")
         self.lbl_stats.setFixedHeight(32)
@@ -110,20 +115,25 @@ class SessionTableSection(QGroupBox):
         self.table.setHorizontalHeaderLabels(cols)
 
         hdr = self.table.horizontalHeader()
-        hdr.setSectionResizeMode(QHeaderView.Interactive)
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(1, QHeaderView.Stretch)
-        hdr.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(5, QHeaderView.Fixed)
-        self.table.setColumnWidth(5, 105)
+        hdr.setMinimumSectionSize(48)
+        hdr.setStretchLastSection(False)
+        hdr.setCascadingSectionResizes(True)
+
+        # Precise column sizing strategies
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents) # Code
+        hdr.setSectionResizeMode(1, QHeaderView.Stretch)          # Article (elastic)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeToContents) # Type
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents) # Poids/Qté
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents) # P.Vente
+        hdr.setSectionResizeMode(5, QHeaderView.Fixed)             # Actions
+        self.table.setColumnWidth(5, 102)
 
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(36)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         apply_touch_table_defaults(self.table)
         self.table.verticalHeader().setDefaultSectionSize(36)
 
@@ -155,7 +165,7 @@ class SessionTableSection(QGroupBox):
             }
         """)
 
-        # أزرار التمرير الجانبية
+        # أزرار التمرير الجانبية المدمجة
         scroll_col = QVBoxLayout()
         scroll_col.setSpacing(6)
 
@@ -267,8 +277,10 @@ class SessionTableSection(QGroupBox):
             bc_cell.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, 0, bc_cell)
 
-            # 1. Article Name
-            name_cell = QTableWidgetItem(str(item.get("name") or ""))
+            # 1. Article Name with tooltip for long descriptions
+            name_str = str(item.get("name") or "")
+            name_cell = QTableWidgetItem(name_str)
+            name_cell.setToolTip(name_str)
             name_cell.setData(Qt.UserRole, item)
             name_cell.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             self.table.setItem(row, 1, name_cell)
@@ -302,7 +314,7 @@ class SessionTableSection(QGroupBox):
             price_cell.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table.setItem(row, 4, price_cell)
 
-            # 5. Action buttons
+            # 5. Action buttons (Fixed width 102px)
             self.table.setCellWidget(row, 5, self._action_buttons(item))
 
         self.lbl_stats.setText(
@@ -319,7 +331,7 @@ class SessionTableSection(QGroupBox):
         container = QWidget()
         lay = QHBoxLayout(container)
         lay.setContentsMargins(2, 2, 2, 2)
-        lay.setSpacing(4)
+        lay.setSpacing(3)
 
         def btn(icon_name, color, bg, border, tooltip):
             b = QPushButton()

@@ -18,11 +18,11 @@ from ui.widgets.inventory.touch_product_entry import wrap_with_numpad
 # ============================================================
 class FormInputSection(QWidget):
     """
-    نموذج إدخال سريع عالي الإنتاجية لمتاجر الذهب والمجوهرات.
-    - شبكة كثيفة ومحاذاة مضغوطة لتفادي التمرير العمودي (Micro-density).
-    - تنقل Tab صارم بدون توقف عند الأزرار المساعدة (NoFocus).
-    - دعم الإدخال الفوري بالماسح الضوئي وزر Enter السريع.
-    - بطاقات تمييز بصرية للحسابات التلقائية (Coût Total / Prix Vente).
+    نموذج إدخال سريع عالي الإنتاجية وشديد المرونة والتجاوب (Fully Fluid Subgrid):
+    - سياسات حجم توسعية (QSizePolicy.Expanding) لجميع الحقول لمنع اقتصاص النصوص.
+    - أبعاد ثابتة وصغيرة (34px) للأزرار المساعدة بدون حجز تركيز (Qt.NoFocus).
+    - توزيع أعمدة متوازن بنسب متساوية (Column Stretch) يمتد بسلاسة مع الشاشة.
+    - بطاقات حسابات مميزة بصرياً مع دعم الإدخال السريع عبر ماسح الباركود وزر Enter.
     """
 
     recalculate_requested = Signal()
@@ -30,23 +30,23 @@ class FormInputSection(QWidget):
 
     _INPUT_STYLE = (
         "QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox {"
-        "  font-size: 13px; font-weight: 600; color: #1e293b;"
+        "  font-size: 13px; font-weight: 600; color: #111827;"
         "  background-color: #ffffff; border: 1.5px solid #cbd5e1;"
-        "  border-radius: 6px; padding: 2px 8px; min-height: 34px; max-height: 36px;"
+        "  border-radius: 6px; padding: 2px 6px; min-height: 32px; max-height: 36px;"
         "}"
         "QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus, QSpinBox:focus {"
         "  border: 2px solid #2563eb; background-color: #ffffff;"
         "}"
         "QComboBox::drop-down {"
         "  subcontrol-origin: padding; subcontrol-position: top right;"
-        "  width: 22px; border-left: 1px solid #e2e8f0;"
+        "  width: 20px; border-left: 1px solid #e2e8f0;"
         "}"
     )
 
     _BUTTON_HELPER_STYLE = (
         "QPushButton {"
         "  background-color: #f1f5f9; border: 1.5px solid #cbd5e1;"
-        "  border-radius: 6px; min-height: 34px; max-height: 36px;"
+        "  border-radius: 6px; min-height: 32px; max-height: 34px;"
         "}"
         "QPushButton:hover {"
         "  background-color: #e2e8f0; border-color: #94a3b8;"
@@ -59,6 +59,7 @@ class FormInputSection(QWidget):
     def __init__(self, manager, parent=None):
         super().__init__(parent)
         self.manager = manager
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._build_ui()
 
     # ----------------------------------------------------------
@@ -83,16 +84,23 @@ class FormInputSection(QWidget):
         grid.setHorizontalSpacing(10)
         grid.setContentsMargins(4, 4, 4, 4)
 
+        # Equal column stretching for fluid resizing
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(2, 1)
+
         # ------------------------------------------------------
         # 1. Barcode
         # ------------------------------------------------------
         self.inp_barcode = QLineEdit()
+        self.inp_barcode.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.inp_barcode.setPlaceholderText("Scanner ou générer...")
         self.inp_barcode.returnPressed.connect(self._on_barcode_return)
 
         btn_gen = QPushButton()
         btn_gen.setIcon(qta.icon("fa5s.magic", color="#d97706"))
-        btn_gen.setFixedSize(36, 36)
+        btn_gen.setFixedSize(34, 34)
+        btn_gen.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         btn_gen.setCursor(Qt.PointingHandCursor)
         btn_gen.setToolTip("Générer un code-barres aléatoire sécurisé")
         btn_gen.setFocusPolicy(Qt.NoFocus)
@@ -105,12 +113,14 @@ class FormInputSection(QWidget):
         # 2. Designation (Name)
         # ------------------------------------------------------
         self.inp_name = QLineEdit()
+        self.inp_name.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.inp_name.setPlaceholderText("Désignation du bijou...")
         self.inp_name.returnPressed.connect(self._on_name_return)
 
         btn_name = QPushButton()
         btn_name.setIcon(qta.icon("fa5s.list-ul", color="#2563eb"))
-        btn_name.setFixedSize(36, 36)
+        btn_name.setFixedSize(34, 34)
+        btn_name.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         btn_name.setCursor(Qt.PointingHandCursor)
         btn_name.setToolTip("Sélectionner un nom prédéfini")
         btn_name.setFocusPolicy(Qt.NoFocus)
@@ -123,6 +133,7 @@ class FormInputSection(QWidget):
         # 3. Type d'article
         # ------------------------------------------------------
         self.combo_item_type = QComboBox()
+        self.combo_item_type.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.combo_item_type.addItem("Au Poids (Or/Argent)", "WEIGHT")
         self.combo_item_type.addItem("À la Pièce (Montres, Accessoires)", "PIECE")
 
@@ -130,10 +141,12 @@ class FormInputSection(QWidget):
         # 4. Catégorie
         # ------------------------------------------------------
         self.combo_category = QComboBox()
+        self.combo_category.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         btn_cat = QPushButton()
         btn_cat.setIcon(qta.icon("fa5s.th-list", color="#2563eb"))
-        btn_cat.setFixedSize(36, 36)
+        btn_cat.setFixedSize(34, 34)
+        btn_cat.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         btn_cat.setCursor(Qt.PointingHandCursor)
         btn_cat.setToolTip("Choisir la catégorie")
         btn_cat.setFocusPolicy(Qt.NoFocus)
@@ -146,16 +159,21 @@ class FormInputSection(QWidget):
         # 5. Métal & Emplacement
         # ------------------------------------------------------
         self.combo_metal = QComboBox()
+        self.combo_metal.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
         self.combo_location = QComboBox()
+        self.combo_location.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         # ------------------------------------------------------
         # 6. Fournisseur & Réception
         # ------------------------------------------------------
         self.combo_supplier = QComboBox()
+        self.combo_supplier.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         btn_supp = QPushButton()
         btn_supp.setIcon(qta.icon("fa5s.user-tag", color="#2563eb"))
-        btn_supp.setFixedSize(36, 36)
+        btn_supp.setFixedSize(34, 34)
+        btn_supp.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         btn_supp.setCursor(Qt.PointingHandCursor)
         btn_supp.setToolTip("Choisir le fournisseur")
         btn_supp.setFocusPolicy(Qt.NoFocus)
@@ -165,10 +183,12 @@ class FormInputSection(QWidget):
         supp_widget = self._hbox(self.combo_supplier, btn_supp)
 
         self.combo_receipt_mode = QComboBox()
+        self.combo_receipt_mode.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.combo_receipt_mode.addItem("Stock uniquement (Sans dette)", "INVENTORY_ONLY")
         self.combo_receipt_mode.addItem("Réception à crédit (Bon Fournisseur)", "SUPPLIER_RECEIPT")
 
         self.combo_supplier_account = QComboBox()
+        self.combo_supplier_account.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.combo_supplier_account.setEnabled(False)
 
         # ------------------------------------------------------
@@ -194,20 +214,23 @@ class FormInputSection(QWidget):
         self.combo_margin_type = QComboBox()
         self.combo_margin_type.addItem("Fixe (DA)", "FIXED")
         self.combo_margin_type.addItem("Pourcentage (%)", "PERCENTAGE")
-        self.combo_margin_type.setFixedWidth(130)
+        self.combo_margin_type.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.combo_margin_type.setMinimumWidth(90)
+        self.combo_margin_type.setMaximumWidth(125)
 
         self.spin_profit_margin = self._dspin(suffix=" DA/g", max_val=100_000_000)
         self.spin_profit_margin.installEventFilter(self)
 
         margin_row = QHBoxLayout()
-        margin_row.setSpacing(6)
+        margin_row.setSpacing(4)
         margin_row.setContentsMargins(0, 0, 0, 0)
-        margin_row.addWidget(self.combo_margin_type)
+        margin_row.addWidget(self.combo_margin_type, 1)
         margin_row.addWidget(
             wrap_with_numpad(self, self.spin_profit_margin, "Marge bénéfice", allow_decimal=True),
-            1
+            2
         )
         margin_widget = QWidget()
+        margin_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         margin_widget.setLayout(margin_row)
 
         # ------------------------------------------------------
@@ -293,6 +316,7 @@ class FormInputSection(QWidget):
         badges_row.addWidget(self.card_cost, 1)
         badges_row.addWidget(self.card_price, 1)
         badges_container = QWidget()
+        badges_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         badges_container.setLayout(badges_row)
         grid.addWidget(badges_container, 5, 0, 1, 3)
 
@@ -370,32 +394,35 @@ class FormInputSection(QWidget):
     @staticmethod
     def _field(label_text: str, widget: QWidget) -> QWidget:
         container = QWidget()
+        container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         lay = QVBoxLayout(container)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(2)
 
         lbl = QLabel(label_text)
         lbl.setStyleSheet(
-            "font-size: 11px; font-weight: 700; color: #475569; margin: 0px; padding: 0px;"
+            "font-size: 12px; font-weight: 600; color: #1f2937; margin: 0px; padding: 0px 2px;"
         )
         lay.addWidget(lbl)
         lay.addWidget(widget)
         return container
 
     @staticmethod
-    def _hbox(*widgets) -> QWidget:
+    def _hbox(main_widget: QWidget, helper_btn: QWidget) -> QWidget:
         lay = QHBoxLayout()
         lay.setSpacing(4)
         lay.setContentsMargins(0, 0, 0, 0)
-        for w in widgets:
-            lay.addWidget(w)
+        lay.addWidget(main_widget, 1)
+        lay.addWidget(helper_btn, 0)
         container = QWidget()
+        container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         container.setLayout(lay)
         return container
 
     def _build_calc_badge(self, title: str, spin_widget: QWidget, is_emerald: bool = False) -> tuple[QFrame, QLabel]:
         card = QFrame()
         card.setObjectName("card_emerald" if is_emerald else "card_neutral")
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         lay = QVBoxLayout(card)
         lay.setContentsMargins(10, 6, 10, 6)
         lay.setSpacing(2)
@@ -422,6 +449,7 @@ class FormInputSection(QWidget):
 
     def _dspin(self, suffix="", max_val=10000, decimals=2):
         sp = QDoubleSpinBox()
+        sp.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         sp.setRange(0, max_val)
         sp.setDecimals(decimals)
         sp.setSuffix(suffix)
@@ -430,6 +458,7 @@ class FormInputSection(QWidget):
 
     def _spin(self, suffix="", max_val=10000, default=0):
         sp = QSpinBox()
+        sp.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         sp.setRange(0, max_val)
         sp.setValue(default)
         sp.setSuffix(suffix)

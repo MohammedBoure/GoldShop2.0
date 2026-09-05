@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QWidget,
+    QSizePolicy,
 )
 
 from ui.touch_design import apply_touch_button_defaults
@@ -41,10 +42,26 @@ def make_numpad_button(
 ) -> QPushButton:
     button = QPushButton("123")
     button.setObjectName("btn_touch_numpad")
-    button.setToolTip("Pave numerique")
-    button.setFixedWidth(44)
+    button.setToolTip("Pavé numérique")
+    button.setFixedSize(34, 34)
+    button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
     button.setFocusPolicy(Qt.NoFocus)
     apply_touch_button_defaults(button)
+    button.setStyleSheet("""
+        QPushButton#btn_touch_numpad {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 0px;
+            background-color: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            border-radius: 5px;
+            color: #334155;
+        }
+        QPushButton#btn_touch_numpad:hover {
+            background-color: #e2e8f0;
+            border-color: #94a3b8;
+        }
+    """)
     button.clicked.connect(
         lambda _checked=False: open_numpad_for(
             parent,
@@ -65,7 +82,7 @@ def wrap_with_numpad(
 ) -> QWidget:
     row = QHBoxLayout()
     row.setContentsMargins(0, 0, 0, 0)
-    row.setSpacing(6)
+    row.setSpacing(4)
     row.addWidget(target_widget, 1)
     row.addWidget(
         make_numpad_button(
@@ -77,6 +94,7 @@ def wrap_with_numpad(
     )
 
     container = QWidget()
+    container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
     container.setLayout(row)
     return container
 

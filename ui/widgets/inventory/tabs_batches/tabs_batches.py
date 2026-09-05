@@ -20,22 +20,26 @@ from .price_calculator import PriceCalculator
 
 
 # ============================================================
-# InventoryFormTab — الواجهة الرئيسية لإضافة المنتجات بنمط تقسيم أفقي
+# InventoryFormTab — واجهة الإدخال السريع المتكيفة والمتجاوبة
 # ============================================================
 class InventoryFormTab(QWidget):
     """
-    الواجهة الرئيسية لإضافة المنتجات بنظام الشاشة المنقسمة أفقياً (Side-by-Side):
-    - الجانب الأيسر (60-65%): نموذج الإدخال السريع وشريط الإجراءات الموحد.
-    - الجانب الأيمن (35-40%): جدول الجلسة المباشر مع ملخص الإحصائيات.
-    - انسيابية تامة في إدخال الباركود والتنقل بزر Tab وزر Enter للإرسال السريع.
+    واجهة إدخال المنتجات بنظام تجاوب ذكي (Smart Responsive Dual-Mode):
+    - وضع الشاشة العريضة (Width >= 1120px): تقسيم أفقي يخصص كامل التمدد للنموذج (Stretch 1)
+      ويقفل جدول الجلسة عند العرض المثالي للقراءة (450px, Stretch 0) مع فرض setMinimumWidth(440).
+    - وضع الشاشة المدمجة (Width < 1120px): تحويل فوري لتقسيم رأسي (Vertical Drawer) يمنح
+      النموذج 100% من العرض الأفقي لمنع أي اقتصاص للحقول نهائياً.
+    - دعم طي/فتح درج جدول الجلسة بنقرة واحدة (Drawer Toggle).
     """
 
     item_saved = Signal()
+    BREAKPOINT_WIDTH = 1120
 
     def __init__(self, manager):
         super().__init__()
         self.manager = manager
         self._vkb = None
+        self._is_drawer_collapsed = False
         self._init_ui()
 
     # ----------------------------------------------------------
@@ -46,24 +50,33 @@ class InventoryFormTab(QWidget):
         main_layout.setContentsMargins(8, 8, 8, 8)
         main_layout.setSpacing(0)
 
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.setStyleSheet("""
-            QSplitter::handle:horizontal {
+        self._splitter = QSplitter(Qt.Horizontal)
+        self._splitter.setChildrenCollapsible(False)
+        self._splitter.setStyleSheet("""
+            QSplitter::handle {
                 background-color: #e2e8f0;
-                width: 5px;
-                margin: 4px 1px;
                 border-radius: 2px;
             }
-            QSplitter::handle:horizontal:hover {
+            QSplitter::handle:horizontal {
+                width: 5px;
+                margin: 4px 1px;
+            }
+            QSplitter::handle:vertical {
+                height: 5px;
+                margin: 1px 4px;
+            }
+            QSplitter::handle:hover {
                 background-color: #3b82f6;
             }
         """)
 
-        # --- الجانب الأيسر: بطاقة نموذج الإدخال وشريط العمليات ---
-        form_box = QGroupBox("📝 Ajouter un Nouvel Article — Saisie Rapide")
-        form_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        form_box.setMinimumWidth(460)
-        form_box.setStyleSheet("""
+        # ------------------------------------------------------
+        # الجانب الأيسر: بطاقة نموذج الإدخال السريع
+        # ------------------------------------------------------
+        self.form_box = QGroupBox("📝 Ajouter un Nouvel Article — Saisie Rapide")
+        self.form_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.form_box.setMinimumWidth(520)
+        self.form_box.setStyleSheet("""
             QGroupBox {
                 font-weight: 700;
                 font-size: 13px;
@@ -75,7 +88,7 @@ class InventoryFormTab(QWidget):
                 background-color: #ffffff;
             }
         """)
-        form_layout = QVBoxLayout(form_box)
+        form_layout = QVBoxLayout(self.form_box)
         form_layout.setContentsMargins(8, 8, 8, 8)
         form_layout.setSpacing(8)
 
@@ -103,24 +116,26 @@ class InventoryFormTab(QWidget):
         """)
         form_layout.addWidget(self.lbl_after_save_hint)
 
-        # --- الجانب الأيمن: جدول الجلسة ---
+        # ------------------------------------------------------
+        # الجانب الأيمن / السفلي: جدول الجلسة
+        # ------------------------------------------------------
         self.session_table = SessionTableSection(self.manager)
-        self.session_table.setMinimumWidth(320)
+        self.session_table.setMinimumWidth(440)
         self.session_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.session_table._items = []
         self.session_table.item_edited.connect(lambda _: self.item_saved.emit())
         self.session_table.item_deleted.connect(lambda _: self.item_saved.emit())
 
-        # إضافة العناصر للـ Splitter مع تحديد أوزان التمدد
-        splitter.addWidget(form_box)
-        splitter.addWidget(self.session_table)
-        splitter.setStretchFactor(0, 62)
-        splitter.setStretchFactor(1, 38)
-        splitter.setSizes([620, 380])
-        splitter.setChildrenCollapsible(False)
+        # تركيب العناصر داخل الـ Splitter
+        self._splitter.addWidget(self.form_box)
+        self._splitter.addWidget(self.session_table)
 
-        main_layout.addWidget(splitter)
-        self._splitter = splitter
+        # تخصيص التمدد: النموذج يمتص كامل التمدد الإضافي
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 0)
+        self._splitter.setSizes([650, 450])
+
+        main_layout.addWidget(self._splitter)
 
         # ربط تسلسل Tab عبر النموذج وأزرار الحفظ
         self.form.setup_tab_order(self.btn_save)
@@ -213,7 +228,30 @@ class InventoryFormTab(QWidget):
         apply_touch_button_defaults(self.btn_kb)
         self.btn_kb.clicked.connect(self._show_virtual_keyboard)
 
-        # 4. زر الإضافة الرئيسي
+        # 4. زر تبديل عرض جدول الجلسة (Drawer Toggle)
+        self.btn_toggle_drawer = QPushButton(" 📦 Session")
+        self.btn_toggle_drawer.setFixedHeight(44)
+        self.btn_toggle_drawer.setToolTip("Afficher / Masquer le tableau de la session")
+        self.btn_toggle_drawer.setCursor(Qt.PointingHandCursor)
+        self.btn_toggle_drawer.setFocusPolicy(Qt.NoFocus)
+        self.btn_toggle_drawer.setStyleSheet("""
+            QPushButton {
+                background-color: #f8fafc;
+                color: #475569;
+                font-size: 12px;
+                font-weight: 700;
+                border: 1.5px solid #cbd5e1;
+                border-radius: 6px;
+                padding: 0 10px;
+            }
+            QPushButton:hover {
+                background-color: #e2e8f0;
+            }
+        """)
+        apply_touch_button_defaults(self.btn_toggle_drawer)
+        self.btn_toggle_drawer.clicked.connect(self._toggle_session_drawer)
+
+        # 5. زر الإضافة الرئيسي
         self.btn_save = QPushButton(" Ajouter le Produit")
         self.btn_save.setIcon(qta.icon("fa5s.plus-circle", color="white"))
         self.btn_save.setFixedHeight(44)
@@ -241,8 +279,73 @@ class InventoryFormTab(QWidget):
         box.addWidget(self.btn_clear)
         box.addWidget(self.btn_price)
         box.addWidget(self.btn_kb)
+        box.addWidget(self.btn_toggle_drawer)
         box.addWidget(self.btn_save, stretch=2)
         return box
+
+    # ----------------------------------------------------------
+    # التجاوب الذكي وتبديل الأنماط حسب دقة الشاشة
+    # ----------------------------------------------------------
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        w = self.width()
+        if w < self.BREAKPOINT_WIDTH:
+            if self._splitter.orientation() != Qt.Vertical:
+                self._apply_compact_vertical_mode()
+        else:
+            if self._splitter.orientation() != Qt.Horizontal:
+                self._apply_standard_horizontal_mode()
+
+    def _apply_compact_vertical_mode(self):
+        """التبديل إلى الوضع الرأسي المدمج لمنح النموذج 100% من العرض."""
+        self.form_box.setMinimumWidth(0)
+        self.session_table.setMinimumWidth(0)
+        self._splitter.setOrientation(Qt.Vertical)
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 0)
+        h = self.height()
+        drawer_h = min(240, max(180, int(h * 0.35)))
+        self._splitter.setSizes([h - drawer_h, drawer_h])
+
+    def _apply_standard_horizontal_mode(self):
+        """التبديل إلى الوضع الأفقي الجانبي مع تثبيت عرض الجدول عند 450px."""
+        self.form_box.setMinimumWidth(520)
+        self.session_table.setMinimumWidth(440)
+        self._splitter.setOrientation(Qt.Horizontal)
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 0)
+        table_w = 450
+        form_w = max(520, self.width() - table_w - 20)
+        self._splitter.setSizes([form_w, table_w])
+
+    def _toggle_session_drawer(self):
+        """إظهار أو إخفاء جدول الجلسة يدوياً لمنح كامل الشاشة للنموذج."""
+        is_visible = self.session_table.isVisible()
+        self.session_table.setVisible(not is_visible)
+        if not is_visible:
+            self.btn_toggle_drawer.setStyleSheet("""
+                QPushButton {
+                    background-color: #f8fafc;
+                    color: #475569;
+                    font-size: 12px;
+                    font-weight: 700;
+                    border: 1.5px solid #cbd5e1;
+                    border-radius: 6px;
+                    padding: 0 10px;
+                }
+            """)
+        else:
+            self.btn_toggle_drawer.setStyleSheet("""
+                QPushButton {
+                    background-color: #eff6ff;
+                    color: #2563eb;
+                    font-size: 12px;
+                    font-weight: 700;
+                    border: 1.5px solid #93c5fd;
+                    border-radius: 6px;
+                    padding: 0 10px;
+                }
+            """)
 
     # ----------------------------------------------------------
     # Slots
