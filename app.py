@@ -12,14 +12,14 @@ from werkzeug.exceptions import HTTPException
 
 from database.base import Database
 from database.client_manager import ClientManager
-# تمت إزالة استدعاء ClientPaymentManager من هنا
 from database.inventory_manager import InventoryManager
-from database.repair_manager import RepairManager
 from database.reports_manager import ReportsManager
-from database.sales_manager.sale_reader import SaleReader
+from database.sales_manager import SalesManager
 from database.statistics_manager import StatisticsManager
 from database.supplier_manager import SupplierManager
-from database.treasury_manager import TreasuryManager
+from database.versement.versement_manager import VersementManager
+from database.artisan_work_manager import ArtisanWorkManager
+from database.coffre_manager import CoffreManager
 from web.security import (
     clear_failed_logins,
     login_is_rate_limited,
@@ -27,9 +27,15 @@ from web.security import (
     verify_web_password,
     web_password_configured,
 )
-from web.routes.core import register_core_routes
-from web.routes.operations import register_operation_routes
-from web.routes.partners import register_partner_routes
+from web.routes import (
+    register_core_routes,
+    register_reports_routes,
+    register_versements_routes,
+    register_artisan_work_routes,
+    register_suppliers_routes,
+    register_operation_routes,
+    register_partner_routes,
+)
 from services.runtime_control import (
     DEFAULT_FORCE_LOGOUT_URL,
     create_force_logout_command,
@@ -42,14 +48,14 @@ flask_app = Flask(__name__)
 flask_app.url_map.strict_slashes = False
 
 db = Database()
-sale_reader = SaleReader(db)
-# payment_manager = ClientPaymentManager(db) # تم التعطيل مؤقتاً
+sales_manager = SalesManager(db)
 inventory_manager = InventoryManager(db)
-client_manager = ClientManager(db)
+versement_manager = VersementManager(db)
+artisan_work_manager = ArtisanWorkManager(db)
 supplier_manager = SupplierManager(db)
+client_manager = ClientManager(db)
+coffre_manager = CoffreManager(db)
 stats_manager = StatisticsManager(db)
-repair_manager = RepairManager(db)
-treasury_manager = TreasuryManager(db)
 reports_manager = ReportsManager(db)
 
 READ_ONLY_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -402,7 +408,14 @@ def handle_unexpected_exception(error):
     raise error
 
 _route_context = sys.modules[__name__]
-for _register_routes in (register_core_routes, register_partner_routes, register_operation_routes):
+for _register_routes in (
+    register_core_routes,
+    register_reports_routes,
+    register_versements_routes,
+    register_artisan_work_routes,
+    register_suppliers_routes,
+    register_operation_routes,
+):
     globals().update(_register_routes(flask_app, _route_context))
 
 if __name__ == "__main__":

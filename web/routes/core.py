@@ -1,150 +1,176 @@
+# web/routes/core.py
+
+import logging
+
+logger = logging.getLogger("JEWELLERY_SYS")
+
+
+def get_api_catalog():
+    """Return an extensive map of all available REST endpoints in the system."""
+    return {
+        "version": "2.0",
+        "system": "GoldShop 2.0 Web API",
+        "status": "active",
+        "documentation": {
+            "reports": {
+                "journal": {
+                    "url": "/api/v1/reports/journal",
+                    "method": "GET",
+                    "description": "Daily Sales & Receipts Journal matching ui/widgets/reports/excel_journal_view.py.",
+                    "params": ["year", "month", "day", "search", "seller_id", "seller_name"],
+                },
+                "journal_sellers": {
+                    "url": "/api/v1/reports/journal/sellers",
+                    "method": "GET",
+                    "description": "List of sellers for filtering the journal table.",
+                },
+                "monthly_summary": {
+                    "url": "/api/v1/reports/monthly-summary",
+                    "method": "GET",
+                    "description": "Monthly revenue, sales weights, cash, TPE, scrap metal, and profit synthesis matching ui/widgets/reports/monthly_summary_view.py.",
+                    "params": ["year", "month"],
+                },
+            },
+            "versements": {
+                "list": {
+                    "url": "/api/v1/versements",
+                    "method": "GET",
+                    "description": "Customer reservations / layaway dossiers with items, deducted/remaining weights, notes, and payments matching ui/widgets/versements/versements_view.py.",
+                    "params": ["status", "search", "client_id", "page", "per_page"],
+                },
+                "detail": {
+                    "url": "/api/v1/versements/<id>",
+                    "method": "GET",
+                    "description": "Full details for a single layaway dossier.",
+                },
+                "stats": {
+                    "url": "/api/v1/versements/stats",
+                    "method": "GET",
+                    "description": "KPI summary statistics for layaways.",
+                },
+            },
+            "artisan_work": {
+                "orders": {
+                    "url": "/api/v1/artisan-work/orders",
+                    "method": "GET",
+                    "description": "Atelier Production Orders matching ui/widgets/artisan_work/artisan_work_view.py.",
+                    "params": ["status", "days", "date_from", "date_to", "artisan_id", "search", "page", "per_page"],
+                },
+                "order_detail": {
+                    "url": "/api/v1/artisan-work/orders/<id>",
+                    "method": "GET",
+                    "description": "Single workshop/repair order details with payment information.",
+                },
+                "artisans": {
+                    "url": "/api/v1/artisan-work/artisans",
+                    "method": "GET",
+                    "description": "Artisans directory with pure gold and labor balances.",
+                },
+                "artisan_ledger": {
+                    "url": "/api/v1/artisan-work/artisans/<id>/ledger",
+                    "method": "GET",
+                    "description": "Account movement ledger and statement for an artisan.",
+                },
+            },
+            "suppliers": {
+                "list": {
+                    "url": "/api/v1/suppliers",
+                    "method": "GET",
+                    "description": "Suppliers directory with Poids Net (g) and Solde (DA) balances matching ui/widgets/suppliers/suppliers_view.py.",
+                    "params": ["search", "include_inactive", "page", "per_page"],
+                },
+                "detail": {
+                    "url": "/api/v1/suppliers/<id>",
+                    "method": "GET",
+                    "description": "Supplier profile and header card KPI summary data.",
+                },
+                "ledger": {
+                    "url": "/api/v1/suppliers/<id>/ledger",
+                    "method": "GET",
+                    "description": "100% French Suppliers Ledger matching the Excel spreadsheet (Date, Poids, Afaçon, Montant, Obs).",
+                    "params": ["search", "start_date", "end_date", "page", "per_page"],
+                },
+            },
+            "core_and_operations": {
+                "sales": "/api/v1/sales",
+                "inventory": "/api/v1/inventory",
+                "clients": "/api/v1/clients",
+                "treasury": "/api/v1/treasury/balances",
+                "coffre": "/api/v1/coffre/operations",
+                "expenses": "/api/v1/expenses",
+                "references": "/api/v1/references",
+                "search": "/api/v1/search",
+                "gold_price_update": "/api/v1/market-price/gold (POST)",
+            },
+        },
+    }
+
+
 def register_core_routes(flask_app, api):
-    """Register HTML pages and the central sales and inventory API routes."""
+    """Register core utility, authentication, catalog, dashboard, and gold price routes."""
 
     @flask_app.route("/")
-    def index():
-        return sales_page()
-
-    @flask_app.route("/sales")
-    def sales_page():
-        return api.render_template("sales.html")
-
-    @flask_app.route("/versements")
-    def versements():
-        return api.render_template("versements.html")
-
-    @flask_app.route("/inventory")
-    def inventory_page():
-        return api.render_template("inventory.html")
-
-    @flask_app.route("/finance")
-    def finance_page():
-        return api.render_template("finance.html")
-
     @flask_app.route("/api")
     @flask_app.route("/api/v1")
     def api_catalog():
-        return api._ok(api._catalog_payload())
+        """Return the API catalog and documentation overview."""
+        return api._ok(get_api_catalog())
 
     @flask_app.route("/api/v1/auth/check")
     def api_v1_auth_check():
-        return api._ok({"authenticated": True})
+        """Verify that the provided X-GoldShop-Password header is valid."""
+        return api._ok({"authenticated": True, "message": "Authentication successful"})
 
     @flask_app.route("/api/health")
     @flask_app.route("/api/v1/health")
     def api_health():
-        api._fetch_one("SELECT 1 AS ok")
+        """System health and database connectivity check."""
+        try:
+            api._fetch_one("SELECT 1 AS ok")
+            db_status = "connected"
+        except Exception as e:
+            logger.error("Health check DB error: %s", e)
+            db_status = f"error: {e}"
+
         return api._ok(
             {
-                "status": "ok",
+                "status": "ok" if db_status == "connected" else "degraded",
                 "api_mode": "password-protected-api",
-                "database": "connected",
+                "database": db_status,
             }
         )
 
-    @flask_app.route("/api/sales")
-    def api_sales():
-        page = api._int_arg("page", 1, min_value=1)
-        per_page = api._int_arg("per_page", 30, min_value=1, max_value=api.MAX_PAGE_SIZE)
-        offset = (page - 1) * per_page
-        start_date, end_date = api._date_range_args()
-
-        sales_data = api.sale_reader.get_excel_style_transactions_paginated(
-            search_text=api._str_arg("search"),
-            debt_status=api._str_arg("debt_status", "ALL") or "ALL",
-            payment_type=api._str_arg("payment_type", "ALL") or "ALL",
-            start_date=start_date,
-            end_date=end_date,
-            limit=per_page,
-            offset=offset,
-            source_filter=api._str_arg("source_filter", "ALL") or "ALL",
-        )
-        return api._json_response(sales_data)
-
     @flask_app.route("/api/v1/dashboard")
     def api_dashboard():
+        """Get high-level dashboard metrics, sales trends, and active alerts."""
         days = api._int_arg("days", 30, min_value=1, max_value=365)
+        metrics = {}
+        sales_trend = []
+        purchases_trend = []
+        alerts = []
+
+        if hasattr(api, "stats_manager"):
+            try:
+                metrics = api.stats_manager.get_dashboard_metrics()
+                sales_trend = api.stats_manager.get_sales_trend(days=days)
+                purchases_trend = api.stats_manager.get_purchases_trend(days=days)
+                alerts = api.stats_manager.get_active_alerts()
+            except Exception as e:
+                logger.warning("Error fetching dashboard metrics: %s", e)
+
         return api._ok(
             {
-                "metrics": api.stats_manager.get_dashboard_metrics(),
-                "sales_trend": api.stats_manager.get_sales_trend(days=days),
-                "purchases_trend": api.stats_manager.get_purchases_trend(days=days),
-                "alerts": api.stats_manager.get_active_alerts(),
+                "metrics": metrics,
+                "sales_trend": sales_trend,
+                "purchases_trend": purchases_trend,
+                "alerts": alerts,
             },
             days=days,
         )
 
-    @flask_app.route("/api/v1/sales")
-    def api_v1_sales():
-        page, per_page, offset = api._page_args(default_per_page=30)
-        start_date, end_date = api._date_range_args()
-        data = api.sale_reader.get_excel_style_transactions_paginated(
-            search_text=api._str_arg("search"),
-            debt_status=api._str_arg("debt_status", "ALL") or "ALL",
-            payment_type=api._str_arg("payment_type", "ALL") or "ALL",
-            start_date=start_date,
-            end_date=end_date,
-            limit=per_page,
-            offset=offset,
-            source_filter=api._str_arg("source_filter", "ALL") or "ALL",
-        )
-        return api._ok(
-            data,
-            page=page,
-            per_page=per_page,
-            returned=len(data),
-            has_more=len(data) == per_page,
-        )
-
-    @flask_app.route("/api/v1/sales/<int:sale_id>")
-    def api_v1_sale_details(sale_id):
-        sale = api.sale_reader.get_sale_details(sale_id)
-        if not sale:
-            return api._not_found("Sale")
-        return api._ok(sale)
-
-    @flask_app.route("/api/v1/inventory")
-    def api_v1_inventory():
-        page, per_page, offset = api._page_args()
-        items, total_count, total_weight = api.inventory_manager.get_inventory_paginated(
-            limit=per_page,
-            offset=offset,
-            search_text=api._str_arg("search") or None,
-            show_zero_stock=api._bool_arg("show_zero_stock", False),
-            category_id=api._int_arg("category_id"),
-            metal_type_id=api._int_arg("metal_type_id"),
-            location_id=api._int_arg("location_id"),
-            sort_col=api._int_arg("sort_col", 0, min_value=0),
-            sort_dir=api._str_arg("sort_dir", "DESC") or "DESC",
-            status_filter=api._str_arg("status", "ALL") or "ALL",
-            min_weight=api._float_arg("min_weight"),
-            max_weight=api._float_arg("max_weight"),
-        )
-        return api._ok(
-            items,
-            page=page,
-            per_page=per_page,
-            total=total_count,
-            total_weight=total_weight,
-            has_more=(page * per_page) < int(total_count or 0),
-        )
-
-    @flask_app.route("/api/v1/inventory/<int:item_id>")
-    def api_v1_inventory_item(item_id):
-        item = api.inventory_manager.get_item_by_id(item_id)
-        if not item:
-            return api._not_found("Inventory item")
-        return api._ok(item)
-
-    @flask_app.route("/api/v1/inventory/barcode/<path:barcode>")
-    def api_v1_inventory_barcode(barcode):
-        item = api.inventory_manager.get_item_by_barcode(barcode)
-        if not item:
-            return api._not_found("Inventory item")
-        return api._ok(item)
-
     @flask_app.route("/api/v1/market-price/gold", methods=["POST"])
     def api_v1_gold_price_update():
+        """Update market gold price by reference metal and recalculate inventory items."""
         payload = api.request.get_json(silent=True)
         if not isinstance(payload, dict):
             return api._json_error(api._translate_key("api.errors.invalid_payload"), status=400)
@@ -217,21 +243,10 @@ def register_core_routes(flask_app, api):
     return {
         function.__name__: function
         for function in (
-            index,
-            sales_page,
-            versements,
-            inventory_page,
-            finance_page,
             api_catalog,
             api_v1_auth_check,
             api_health,
-            api_sales,
             api_dashboard,
-            api_v1_sales,
-            api_v1_sale_details,
-            api_v1_inventory,
-            api_v1_inventory_item,
-            api_v1_inventory_barcode,
             api_v1_gold_price_update,
         )
     }
