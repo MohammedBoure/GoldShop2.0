@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QMessageBox,
@@ -41,7 +42,8 @@ def make_numpad_button(
     button = QPushButton("123")
     button.setObjectName("btn_touch_numpad")
     button.setToolTip("Pave numerique")
-    button.setFixedWidth(58)
+    button.setFixedWidth(44)
+    button.setFocusPolicy(Qt.NoFocus)
     apply_touch_button_defaults(button)
     button.clicked.connect(
         lambda _checked=False: open_numpad_for(
