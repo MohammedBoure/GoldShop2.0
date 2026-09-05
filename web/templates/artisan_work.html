@@ -10,44 +10,74 @@
   </div>
   <div class="section-desc">
     {% if current_lang == 'ar' %}
-      مطابقة لواجهة artisan_work_view.py: جدول أوامر الإنتاج، أجور الصياغة، وحسابات الذهب الخالص.
+      مطابقة دقيقة لواجهة artisan_work_view.py: جدول أوامر الإنتاج بنموذج إكسل، أجور الصياغة، وحسابات الذهب الخالص.
     {% else %}
-      Conforme à artisan_work_view.py: tableau de production, façon, marges et grand livre artisan.
+      Conforme à artisan_work_view.py: tableau de production Excel, façon, marges et grand livre artisan.
     {% endif %}
   </div>
 </div>
 
-<!-- Sub-Navigation Switcher -->
+<!-- Main Title Banner Matching Desktop artisan_work_view.py -->
+<div class="page-main-title" style="background-color: var(--primary); color: white; padding: 10px 16px; border-radius: 6px; font-size: 18px; font-weight: 900; letter-spacing: 1px; text-align: center; margin: 10px 0 14px 0;">
+  SUIVI DE L'ATELIER & GESTION DES ARTISANS
+</div>
+
+<!-- Sub-Navigation Switcher Matching QTabWidget -->
 <div class="filter-card" style="padding: 6px; margin-bottom: 12px;">
   <div class="filter-pills" style="padding-bottom: 0; justify-content: space-around;">
-    <button class="pill-btn active" data-artisan-subnav="orders" style="flex: 1; text-align: center;">
-      📋 {% if current_lang == 'ar' %}أوامر الإنتاج (Tableau){% else %}Ordres de Production{% endif %}
+    <button class="pill-btn active" data-artisan-subnav="orders" style="flex: 1; text-align: center; font-size: 13px;">
+      📋 {% if current_lang == 'ar' %}لوحة الإنتاج والتصليحات{% else %}Réparations (Production Excel){% endif %}
     </button>
-    <button class="pill-btn" data-artisan-subnav="artisans" style="flex: 1; text-align: center;">
-      👤 {% if current_lang == 'ar' %}الحرفيين والأرصدة{% else %}Artisans & Soldes{% endif %}
+    <button class="pill-btn" data-artisan-subnav="artisans" style="flex: 1; text-align: center; font-size: 13px;">
+      👨‍🔧 {% if current_lang == 'ar' %}دليل الحرفيين والأرصدة{% else %}Artisans & Soldes{% endif %}
     </button>
   </div>
 </div>
 
-<!-- Order Filters (Hidden when on Artisans tab) -->
+<!-- Order Controls (Matching setup_atelier_tab) -->
 <div id="artisanOrderFilters" class="filter-card">
-  <div class="filter-row">
-    <input type="text" id="artisanSearchInput" class="form-control" placeholder="{% if current_lang == 'ar' %}بحث بالزبون، الهاتف، الحرفي أو رقم الطلب...{% else %}Rechercher ordre, client, téléphone...{% endif %}">
-    <select id="artisanDaysSelect" class="form-control" style="max-width: 110px;" title="Période">
-      <option value="7">7 j / أيام</option>
-      <option value="30" selected>30 j / يوماً</option>
-      <option value="90">90 j / يوماً</option>
-      <option value="365">1 an / سنة</option>
-      <option value="0">Tout / الكل</option>
-    </select>
+  <!-- Row 1: Search, Date Filter, Status Filter & Desktop Add Button -->
+  <div class="filter-row" style="flex-wrap: wrap; gap: 10px; align-items: center;">
+    <div style="flex: 1; min-width: 220px;">
+      <input type="text" id="artisanSearchInput" class="form-control" placeholder="🔍 Rechercher par N°, client, téléphone, travail...">
+    </div>
+
+    <div style="min-width: 170px;">
+      <select id="artisanDateFilter" class="form-control" style="font-weight: 700; color: #004D40; background-color: #e0f2f1; border-color: #00796B;">
+        <option value="ALL" selected>🌐 Historique complet (Tout)</option>
+        <option value="30">📅 30 derniers jours</option>
+        <option value="7">📅 7 derniers jours</option>
+        <option value="90">📅 3 derniers mois</option>
+        <option value="180">📅 6 derniers mois</option>
+        <option value="365">📅 Cette année</option>
+      </select>
+    </div>
+
+    <div style="min-width: 190px;">
+      <select id="artisanStatusFilter" class="form-control" style="font-weight: 700; color: #2980b9; background-color: #ebf5fb; border-color: #2980b9;">
+        <option value="ALL" selected>📋 Tous les statuts</option>
+        <option value="RECEPTION">🟢 Au Réceptionniste (لدى المستقبل)</option>
+        <option value="CHEZ_ARTISAN">🟡 Chez l'Artisan (عند الصانع)</option>
+        <option value="RETOUR_ARTISAN">🔵 Retourné au Magasin (عاد للمستقبل)</option>
+        <option value="LIVRE">✅ Livré au Client (تم تسليمه)</option>
+      </select>
+    </div>
+
+    <button id="btnNewAtelierOrder" class="btn-green-sale" title="Nouveau Dépôt Atelier">
+      <span>➕</span>
+      <span>Nouveau Dépôt Atelier</span>
+    </button>
   </div>
 
-  <div class="filter-pills">
-    <button class="pill-btn active" data-order-status="ALL">{% if current_lang == 'ar' %}الكل{% else %}Tous{% endif %}</button>
-    <button class="pill-btn" data-order-status="EN_ATTENTE">⏳ {% if current_lang == 'ar' %}انتظار{% else %}Attente{% endif %}</button>
-    <button class="pill-btn" data-order-status="EN_COURS">⚙️ {% if current_lang == 'ar' %}قيد العمل{% else %}En cours{% endif %}</button>
-    <button class="pill-btn" data-order-status="TERMINE">✅ {% if current_lang == 'ar' %}جاهز{% else %}Terminé{% endif %}</button>
-    <button class="pill-btn" data-order-status="LIVRE">📦 {% if current_lang == 'ar' %}مسلّم{% else %}Livré{% endif %}</button>
+  <!-- Row 2: Mode Switcher -->
+  <div class="filter-row" style="justify-content: space-between; align-items: center; border-top: 1px solid var(--border-subtle); padding-top: 8px;">
+    <div style="font-size: 12px; color: var(--text-muted); font-weight: 700;">
+      {% if current_lang == 'ar' %}طريقة العرض:{% else %}Mode d'affichage:{% endif %}
+    </div>
+    <div class="filter-pills" style="padding-bottom: 0;">
+      <button class="pill-btn active" data-artisan-view="table">📑 {% if current_lang == 'ar' %}جدول الإنتاج (14 عمود){% else %}Tableau Excel (14 colonnes){% endif %}</button>
+      <button class="pill-btn" data-artisan-view="cards">📱 {% if current_lang == 'ar' %}بطاقات الهاتف{% else %}Cartes Mobile{% endif %}</button>
+    </div>
   </div>
 </div>
 
@@ -56,7 +86,7 @@
 
 <!-- Modal Sheet for Artisan Ledger Movements -->
 <div id="artisanLedgerModal" class="modal-backdrop">
-  <div class="modal-sheet">
+  <div class="modal-sheet" style="max-height: 85vh; overflow-y: auto;">
     <div class="modal-header">
       <h3 id="artisanLedgerTitle" class="modal-title">Grand Livre Artisan</h3>
       <button class="btn-close" onclick="closeArtisanLedgerModal()">✕</button>

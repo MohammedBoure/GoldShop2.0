@@ -10,51 +10,85 @@
   </div>
   <div class="section-desc">
     {% if current_lang == 'ar' %}
-      مطابقة لواجهة suppliers_view.py: رصيد الوزن والنقد، وجدول إكسل الفرنسي بأعمدته الخمسة.
+      مطابقة دقيقة لواجهة suppliers_view.py: رصيد الوزن والنقد، وجدول إكسل الفرنسي بأعمدته الخمسة.
     {% else %}
       Conforme à suppliers_view.py: soldes poids net/espèces et grand livre au format tableur français.
     {% endif %}
   </div>
 </div>
 
-<!-- SECTION 1: Suppliers Directory List -->
-<div id="suppliersSection">
-  <div class="filter-card">
-    <div class="filter-row">
-      <input type="text" id="suppliersSearchInput" class="form-control" placeholder="{% if current_lang == 'ar' %}بحث باسم المورد أو رقم الهاتف...{% else %}Rechercher un fournisseur...{% endif %}">
+<!-- 1. Top Bar: Supplier Selection & Controls Matching suppliers_view.py -->
+<div class="filter-card">
+  <div class="filter-row" style="flex-wrap: wrap; gap: 10px; align-items: center;">
+    <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 260px;">
+      <label for="supplierSelectCombo" style="font-weight: 800; font-size: 14px; color: var(--text-heading); white-space: nowrap;">Fournisseur :</label>
+      <select id="supplierSelectCombo" class="form-control" style="font-size: 14px; font-weight: 700; flex: 1;">
+        <option value="">Chargement des fournisseurs...</option>
+      </select>
     </div>
-  </div>
 
-  <div id="suppliersListView"></div>
+    <button id="btnRefreshSupplier" class="btn-secondary-light" title="Actualiser">
+      <span>🔄</span>
+      <span>Actualiser</span>
+    </button>
+  </div>
 </div>
 
-<!-- SECTION 2: French Excel Ledger View (Hidden by default, shown on supplier click) -->
-<div id="supplierLedgerView" style="display: none;">
-  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-    <button id="btnBackToSuppliers" class="pill-btn active" style="font-size: 13px; display: inline-flex; align-items: center; gap: 6px;">
-      <span>⬅</span>
-      <span>{% if current_lang == 'ar' %}العودة لدليل الموردين{% else %}Retour aux Fournisseurs{% endif %}</span>
+<!-- 2. Prominent Header Card Matching desktop QFrame#supplierHeaderCard -->
+<div class="header-card" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px;">
+  <div id="supplierHeaderCardTitle" style="font-size: 18px; font-weight: 900; color: #0f172a;">
+    Sélectionnez un fournisseur
+  </div>
+
+  <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+    <span id="supplierHeaderPoidsNet" class="card-badge badge-gold" style="font-size: 14px; font-weight: 800; padding: 6px 12px; border-radius: 6px;">
+      Poids Net: 0.00 g
+    </span>
+    <span id="supplierHeaderSoldeDa" class="card-badge badge-info" style="font-size: 14px; font-weight: 800; padding: 6px 12px; border-radius: 6px;">
+      Solde: 0 DA
+    </span>
+  </div>
+</div>
+
+<!-- 3. Action Toolbar Matching desktop toolbar in suppliers_view.py -->
+<div class="filter-card" style="padding: 8px 12px; margin-bottom: 12px;">
+  <div class="filter-row" style="flex-wrap: wrap; gap: 8px; align-items: center;">
+    <button id="btnAddSupplierOp" class="btn-green-sale" title="Nouvelle Opération">
+      <span>➕</span>
+      <span>Nouvelle Opération</span>
     </button>
-    <div id="supplierLedgerHeaderName" style="font-weight: 700; font-size: 16px; color: var(--gold-500);"></div>
-  </div>
+    <button id="btnEditSupplierOp" class="btn-blue-action" title="Modifier">
+      <span>✏️</span>
+      <span>Modifier</span>
+    </button>
+    <button id="btnDeleteSupplierOp" class="btn-red-danger" title="Supprimer">
+      <span>🗑️</span>
+      <span>Supprimer</span>
+    </button>
+    <button id="btnToggleColorOp" class="btn-secondary-light" title="Changer Couleur (Rouge/Normal)">
+      <span>🎨</span>
+      <span>Changer Couleur</span>
+    </button>
 
-  <!-- Supplier KPI Cards -->
-  <div class="kpi-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 12px;">
-    <div class="kpi-card">
-      <div class="kpi-label">Solde Poids Net (g)</div>
-      <div id="kpiLedgerPoidsNet" class="kpi-value gold">0.00 g</div>
-      <div class="kpi-subtext">{% if current_lang == 'ar' %}رصيد الذهب الصافي{% else %}Poids dû / en compte{% endif %}</div>
+    <!-- View Mode Switcher -->
+    <div class="filter-pills" style="margin-left: auto; padding-bottom: 0;">
+      <button class="pill-btn active" data-supplier-view="ledger">📑 {% if current_lang == 'ar' %}دفتر الأستاذ (Grand Livre){% else %}Grand Livre Excel{% endif %}</button>
+      <button class="pill-btn" data-supplier-view="directory">👥 {% if current_lang == 'ar' %}دليل الموردين{% else %}Répertoire{% endif %}</button>
     </div>
-
-    <div class="kpi-card danger">
-      <div class="kpi-label">Solde Compte (DA)</div>
-      <div id="kpiLedgerSoldeDa" class="kpi-value" style="color: var(--danger);">0.00 DA</div>
-      <div class="kpi-subtext">{% if current_lang == 'ar' %}رصيد الحساب المالي{% else %}Créance / Dette en DA{% endif %}</div>
-    </div>
   </div>
+</div>
 
-  <!-- French Ledger Table (Date | Poids | Afaçon | Montant | Obs / Libellé) -->
+<!-- Section A: French Excel Ledger Container -->
+<div id="supplierLedgerSection">
   <div id="supplierLedgerContainer"></div>
+</div>
+
+<!-- Section B: Directory Cards Container (When directory mode selected) -->
+<div id="supplierDirectorySection" style="display: none;">
+  <div style="margin-bottom: 10px;">
+    <input type="text" id="suppliersSearchInput" class="form-control" placeholder="{% if current_lang == 'ar' %}بحث في دليل الموردين...{% else %}Rechercher dans le répertoire...{% endif %}">
+  </div>
+  <div id="suppliersListView"></div>
 </div>
 {% endblock %}
 

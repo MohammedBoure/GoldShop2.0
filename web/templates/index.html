@@ -18,19 +18,19 @@
 </div>
 
 <!-- Gold Market Price Card -->
-<div class="mobile-card" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(17, 24, 39, 0.9)); border-color: var(--gold-500); margin-bottom: 14px;">
+<div class="mobile-card" style="background: linear-gradient(135deg, #e8f7f4, #ffffff); border: 1px solid var(--border-color); border-top: 4px solid var(--primary); margin-bottom: 14px;">
   <div class="card-top">
     <div class="card-title-group">
-      <span class="card-badge badge-gold">✨ {% if current_lang == 'ar' %}سعر الذهب الحالي{% else %}Cours de l'Or Actuel{% endif %}</span>
+      <span class="card-badge badge-gold">✨ {% if current_lang == 'ar' %}سعر الذهب المرجعي{% else %}Cours de l'Or Actuel{% endif %}</span>
     </div>
     <span style="font-size: 11px; color: var(--text-dim);">{{ today_date }}</span>
   </div>
   <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px;">
     <div>
-      <div style="font-size: 11px; color: var(--text-muted);">{% if current_lang == 'ar' %}الذهب المرجعي{% else %}Or de Référence (18K / 24K){% endif %}</div>
-      <div id="homeGoldPriceText" style="font-size: 22px; font-weight: 800; color: var(--gold-400);">-- DA/g</div>
+      <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">{% if current_lang == 'ar' %}الذهب المرجعي{% else %}Or de Référence (18K / 24K){% endif %}</div>
+      <div id="homeGoldPriceText" style="font-size: 24px; font-weight: 900; color: #d88a21;">-- DA/g</div>
     </div>
-    <a href="{{ url_for('view_journal') }}" class="pill-btn active" style="text-decoration: none;">
+    <a href="{{ url_for('view_journal') }}" class="btn-primary-teal" style="text-decoration: none; padding: 6px 14px; font-size: 12px;">
       {% if current_lang == 'ar' %}اليومية ➔{% else %}Journal ➔{% endif %}
     </a>
   </div>

@@ -17,30 +17,95 @@
   </div>
 </div>
 
-<!-- Filter & Search Controls -->
+<!-- Filter & Search Controls Matching excel_journal_view.py -->
 <div class="filter-card">
-  <div class="filter-row">
-    <input type="date" id="journalDateInput" class="form-control" value="{{ today_date }}" title="Date du journal">
-    <select id="journalSellerSelect" class="form-control" title="Filtrer par vendeur">
-      <option value="">-- {% if current_lang == 'ar' %}كل البائعين{% else %}Tous les vendeurs{% endif %} --</option>
-    </select>
+  <!-- Row 1: Date Selectors & Desktop Action Buttons -->
+  <div class="filter-row" style="flex-wrap: wrap; gap: 8px; align-items: center;">
+    <div style="display: flex; align-items: center; gap: 4px;">
+      <label for="journalYearSelect" style="font-weight: 700; font-size: 13px; color: var(--text-heading); white-space: nowrap;">📅 Année :</label>
+      <select id="journalYearSelect" class="form-control" style="width: auto; min-width: 90px; font-weight: 700;">
+        <option value="{{ current_year }}">{{ current_year }}</option>
+        <option value="{{ current_year - 1 }}">{{ current_year - 1 }}</option>
+        <option value="{{ current_year - 2 }}">{{ current_year - 2 }}</option>
+      </select>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 4px;">
+      <label for="journalMonthSelect" style="font-weight: 700; font-size: 13px; color: var(--text-heading); white-space: nowrap;">Mois :</label>
+      <select id="journalMonthSelect" class="form-control" style="width: auto; min-width: 120px; font-weight: 700;">
+        <option value="1">Janvier</option>
+        <option value="2">Février</option>
+        <option value="3">Mars</option>
+        <option value="4">Avril</option>
+        <option value="5">Mai</option>
+        <option value="6">Juin</option>
+        <option value="7">Juillet</option>
+        <option value="8">Août</option>
+        <option value="9">Septembre</option>
+        <option value="10">Octobre</option>
+        <option value="11">Novembre</option>
+        <option value="12">Décembre</option>
+      </select>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 4px;">
+      <label for="journalDaySelect" style="font-weight: 700; font-size: 13px; color: var(--text-heading); white-space: nowrap;">Jour :</label>
+      <select id="journalDaySelect" class="form-control" style="width: auto; min-width: 130px; font-weight: 700;">
+        <option value="0">Tous les jours</option>
+      </select>
+    </div>
+
+    <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto;">
+      <button id="btnJournalSearch" class="btn-primary-teal" title="Afficher le Journal">
+        <span>🔍</span>
+        <span>Afficher le Journal</span>
+      </button>
+      <button id="btnJournalFc" class="btn-orange-fc" title="Fc (Caisse)">
+        <span>📠</span>
+        <span>Fc (Caisse)</span>
+      </button>
+      <button id="btnJournalNewSale" class="btn-green-sale" title="+ Nouvelle Vente">
+        <span>🛒</span>
+        <span>+ Nouvelle Vente</span>
+      </button>
+    </div>
   </div>
 
-  <div class="filter-row">
-    <input type="text" id="journalSearchInput" class="form-control" placeholder="{% if current_lang == 'ar' %}بحث في اليومية أو الملاحظات...{% else %}Rechercher dans les sessions...{% endif %}">
+  <!-- Row 2: Search Client & Seller Filter -->
+  <div class="filter-row" style="flex-wrap: wrap; gap: 10px; align-items: center;">
+    <div style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 220px;">
+      <label for="journalSearchInput" style="font-weight: 700; font-size: 13px; color: var(--text-heading); white-space: nowrap;">🔍 Recherche Client :</label>
+      <input type="text" id="journalSearchInput" class="form-control" placeholder="Nom du client ou désignation..." style="flex: 1;">
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 6px; min-width: 200px;">
+      <label for="journalSellerSelect" style="font-weight: 700; font-size: 13px; color: var(--text-heading); white-space: nowrap;">👨‍💼 Vendeur :</label>
+      <select id="journalSellerSelect" class="form-control" style="flex: 1;">
+        <option value="0">Tous les vendeurs</option>
+      </select>
+    </div>
   </div>
 
-  <!-- View Mode Switcher -->
-  <div class="filter-row" style="justify-content: space-between;">
-    <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">
+  <!-- Row 3: Display Mode Switcher -->
+  <div class="filter-row" style="justify-content: space-between; align-items: center; border-top: 1px solid var(--border-subtle); padding-top: 8px;">
+    <div style="font-size: 12px; color: var(--text-muted); font-weight: 700;">
       {% if current_lang == 'ar' %}طريقة العرض:{% else %}Mode d'affichage:{% endif %}
     </div>
     <div class="filter-pills" style="padding-bottom: 0;">
-      <button class="pill-btn active" data-journal-view="cards">📱 {% if current_lang == 'ar' %}بطاقات الهاتف{% else %}Cartes Mobile{% endif %}</button>
-      <button class="pill-btn" data-journal-view="table">📑 {% if current_lang == 'ar' %}جدول إكسل{% else %}Tableau Excel{% endif %}</button>
+      <button class="pill-btn active" data-journal-view="table">📑 {% if current_lang == 'ar' %}جدول إكسل{% else %}Tableau Excel{% endif %}</button>
+      <button class="pill-btn" data-journal-view="cards">📱 {% if current_lang == 'ar' %}بطاقات الهاتف{% else %}Cartes Mobile{% endif %}</button>
     </div>
   </div>
 </div>
+
+<!-- Active Month Auto-Detection Banner -->
+<div id="journalActiveMonthNotice" style="display: none; background: #e8f7f4; color: #007572; border: 1px solid #bfe7df; padding: 8px 14px; border-radius: 6px; margin-bottom: 12px; font-weight: 700; font-size: 12px; align-items: center; gap: 8px;">
+  <span>ℹ️</span>
+  <span id="journalActiveMonthText"></span>
+</div>
+
+<!-- Main Section Title Matching Desktop -->
+<div class="page-main-title" id="journalMainTitle">États De Recettes Du Mois</div>
 
 <!-- 8 Summary KPI Cards Grid -->
 <div class="kpi-grid">

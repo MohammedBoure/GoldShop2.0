@@ -13,6 +13,13 @@ FRENCH_MONTHS = [
 ]
 
 
+def safe_float(val):
+    try:
+        return float(str(val).replace(" ", "").replace(",", "."))
+    except (ValueError, TypeError):
+        return 0.0
+
+
 def format_french_date(date_obj) -> str:
     """Format a date object into a French date string: e.g. 'Lundi 25 Mai 2026'."""
     if not date_obj:
@@ -291,12 +298,38 @@ def register_reports_routes(flask_app, api):
                     "sessions_count": len(result_sessions),
                     "sessions": result_sessions,
                     "grand_totals": {
+                        "fc": round(sum(safe_float(s.get("fc", s.get("fc_da", 0))) for s in result_sessions), 2),
+                        "fc_da": round(sum(safe_float(s.get("fc", s.get("fc_da", 0))) for s in result_sessions), 2),
                         "ps_gold": round(g_ps_gold, 3),
+                        "ps_gold_g": round(g_ps_gold, 3),
                         "ps_silver": round(g_ps_silver, 3),
+                        "ps_silver_g": round(g_ps_silver, 3),
                         "recette": round(g_rec, 2),
+                        "recette_da": round(g_rec, 2),
                         "oc_gold": round(g_oc_gold, 3),
+                        "oc_gold_g": round(g_oc_gold, 3),
                         "oc_silver": round(g_oc_silver, 3),
+                        "oc_silver_g": round(g_oc_silver, 3),
                         "tpe": round(g_tpe, 2),
+                        "tpe_da": round(g_tpe, 2),
+                        "euro": round(g_euro, 2),
+                        "dollar": round(g_dollar, 2),
+                    },
+                    "totals": {
+                        "fc": round(sum(safe_float(s.get("fc", s.get("fc_da", 0))) for s in result_sessions), 2),
+                        "fc_da": round(sum(safe_float(s.get("fc", s.get("fc_da", 0))) for s in result_sessions), 2),
+                        "ps_gold": round(g_ps_gold, 3),
+                        "ps_gold_g": round(g_ps_gold, 3),
+                        "ps_silver": round(g_ps_silver, 3),
+                        "ps_silver_g": round(g_ps_silver, 3),
+                        "recette": round(g_rec, 2),
+                        "recette_da": round(g_rec, 2),
+                        "oc_gold": round(g_oc_gold, 3),
+                        "oc_gold_g": round(g_oc_gold, 3),
+                        "oc_silver": round(g_oc_silver, 3),
+                        "oc_silver_g": round(g_oc_silver, 3),
+                        "tpe": round(g_tpe, 2),
+                        "tpe_da": round(g_tpe, 2),
                         "euro": round(g_euro, 2),
                         "dollar": round(g_dollar, 2),
                     },

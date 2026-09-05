@@ -10,11 +10,16 @@
   </div>
   <div class="section-desc">
     {% if current_lang == 'ar' %}
-      مطابقة لواجهة versements_view.py: حساب دقيق للأوزان المحجوزة والمقتناة، وسجل الدفعات.
+      مطابقة دقيقة لواجهة versements_view.py: حساب الأوزان المحجوزة والمقتناة، وسجل الدفعات والوصولات.
     {% else %}
-      Conforme à versements_view.py: suivi des articles réservés, poids déduits et historique des acomptes.
+      Conforme à versements_view.py: suivi des articles réservés, poids déduits, paiements et bons PDF.
     {% endif %}
   </div>
+</div>
+
+<!-- Main Title Banner Matching Desktop versements_view.py -->
+<div class="page-main-title" style="background-color: var(--primary); color: white; padding: 10px 16px; border-radius: 6px; font-size: 18px; font-weight: 900; letter-spacing: 1px; text-align: center; margin: 10px 0 14px 0;">
+  SUIVI DES VERSEMENTS & ACOMPTES CLIENTS
 </div>
 
 <!-- Stats Row -->
@@ -38,21 +43,57 @@
   </div>
 </div>
 
-<!-- Search & Status Filter -->
+<!-- Filter & Desktop Action Controls Matching versements_view.py -->
 <div class="filter-card">
-  <div class="filter-row">
-    <input type="text" id="versementsSearchInput" class="form-control" placeholder="{% if current_lang == 'ar' %}بحث باسم الزبون، الهاتف أو رقم الملف...{% else %}Recherche client, téléphone ou N° dossier...{% endif %}">
+  <!-- Row 1: Search & Status Combo + New Versement Button -->
+  <div class="filter-row" style="flex-wrap: wrap; gap: 10px; align-items: center;">
+    <div style="flex: 1; min-width: 240px;">
+      <input type="text" id="versementsSearchInput" class="form-control" placeholder="🔍 Rechercher par article, code-barres, client, tél, N° VRS...">
+    </div>
+
+    <div style="min-width: 140px;">
+      <select id="versementsStatusSelect" class="form-control" style="font-weight: 700;">
+        <option value="ALL">Tous les statuts</option>
+        <option value="EN_COURS" selected>🟢 En Cours</option>
+        <option value="CLOTURE">🔵 Clôturé</option>
+        <option value="ANNULE">🔴 Annulé</option>
+      </select>
+    </div>
+
+    <button id="btnNewVersement" class="btn-green-sale" title="+ Nouveau Versement">
+      <span>➕</span>
+      <span>+ Nouveau Versement</span>
+    </button>
   </div>
 
-  <div class="filter-pills">
-    <button class="pill-btn active" data-versement-status="EN_COURS">🟢 {% if current_lang == 'ar' %}قيد التنفيذ{% else %}En Cours{% endif %}</button>
-    <button class="pill-btn" data-versement-status="LIVRE">🔵 {% if current_lang == 'ar' %}مسلّم{% else %}Livré{% endif %}</button>
-    <button class="pill-btn" data-versement-status="ANNULE">🔴 {% if current_lang == 'ar' %}ملغى{% else %}Annulé{% endif %}</button>
-    <button class="pill-btn" data-versement-status="ALL">{% if current_lang == 'ar' %}الكل{% else %}Tous{% endif %}</button>
+  <!-- Row 2: Desktop Context Toolbar Actions -->
+  <div class="filter-row" style="flex-wrap: wrap; gap: 8px; align-items: center; border-top: 1px solid var(--border-subtle); padding-top: 8px;">
+    <button id="btnVersementDetails" class="btn-blue-action" title="Détails Complets">
+      <span>ℹ️</span>
+      <span>Détails Articles</span>
+    </button>
+    <button id="btnVersementPdf" class="btn-secondary-light" title="Télécharger Bon PDF">
+      <span>📄</span>
+      <span>Bon (PDF)</span>
+    </button>
+    <button id="btnVersementGlobalPay" class="btn-orange-fc" title="Paiement Global">
+      <span>💵</span>
+      <span>Paiement Global</span>
+    </button>
+    <button id="btnVersementClose" class="btn-primary-teal" title="Clôturer Dossier">
+      <span>✅</span>
+      <span>Clôturer</span>
+    </button>
+
+    <!-- Mode Switcher -->
+    <div class="filter-pills" style="margin-left: auto; padding-bottom: 0;">
+      <button class="pill-btn active" data-versement-view="table">📑 {% if current_lang == 'ar' %}جدول الحسابات{% else %}Tableau (9 col){% endif %}</button>
+      <button class="pill-btn" data-versement-view="cards">📱 {% if current_lang == 'ar' %}بطاقات الهاتف{% else %}Cartes Dossiers{% endif %}</button>
+    </div>
   </div>
 </div>
 
-<!-- Versements Cards Container -->
+<!-- Versements Content Area -->
 <div id="versementsContentArea"></div>
 {% endblock %}
 

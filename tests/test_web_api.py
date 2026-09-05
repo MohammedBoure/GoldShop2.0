@@ -132,7 +132,7 @@ class TestWebApiEndpoints(unittest.TestCase):
             orders = payload.get("data", [])
             self.assertIsInstance(orders, list)
 
-            totals = payload.get("meta", {}).get("totals", {})
+            totals = payload.get("totals") or payload.get("meta", {}).get("totals", {})
             self.assertIn("total_cout_artisan_da", totals)
             self.assertIn("total_prix_client_da", totals)
             self.assertIn("total_diff_da", totals)
@@ -204,7 +204,7 @@ class TestWebApiEndpoints(unittest.TestCase):
         # 2. Test Excel Journal Page
         res_journal = self.client.get("/journal")
         self.assertEqual(res_journal.status_code, 200)
-        self.assertIn(b"journalDateInput", res_journal.data)
+        self.assertIn(b"journalYearSelect", res_journal.data)
         self.assertIn(b"kpiJournalFc", res_journal.data)
 
         # 3. Test Monthly Summary Page
@@ -223,7 +223,7 @@ class TestWebApiEndpoints(unittest.TestCase):
         res_artisan = self.client.get("/artisan-work")
         self.assertEqual(res_artisan.status_code, 200)
         self.assertIn(b"artisanSearchInput", res_artisan.data)
-        self.assertIn(b"artisanDaysSelect", res_artisan.data)
+        self.assertIn(b"artisanDateFilter", res_artisan.data)
 
         # 6. Test Suppliers Page
         res_suppliers = self.client.get("/suppliers")

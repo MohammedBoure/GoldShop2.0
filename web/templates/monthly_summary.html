@@ -17,30 +17,69 @@
   </div>
 </div>
 
-<!-- Month & Year Controls -->
+<!-- Month & Year Controls Matching monthly_summary_view.py -->
 <div class="filter-card">
-  <div class="filter-row">
-    <select id="monthlyMonthSelect" class="form-control" title="Mois">
-      <option value="1">01 - Janvier / جانفي</option>
-      <option value="2">02 - Février / فيفري</option>
-      <option value="3">03 - Mars / مارس</option>
-      <option value="4">04 - Avril / أفريل</option>
-      <option value="5">05 - Mai / ماي</option>
-      <option value="6">06 - Juin / جوان</option>
-      <option value="7">07 - Juillet / جويلية</option>
-      <option value="8">08 - Août / أوت</option>
-      <option value="9">09 - Septembre / سبتمبر</option>
-      <option value="10">10 - Octobre / أكتوبر</option>
-      <option value="11">11 - Novembre / نوفمبر</option>
-      <option value="12">12 - Décembre / ديسمبر</option>
-    </select>
+  <div class="filter-row" style="flex-wrap: wrap; gap: 10px; align-items: center;">
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <label for="monthlyYearSelect" style="font-weight: 700; font-size: 13px; color: var(--text-heading); white-space: nowrap;">📅 Année :</label>
+      <select id="monthlyYearSelect" class="form-control" title="Année" style="width: auto; min-width: 100px; font-weight: 700;">
+        <option value="{{ current_year }}">{{ current_year }}</option>
+        <option value="{{ current_year - 1 }}">{{ current_year - 1 }}</option>
+        <option value="{{ current_year - 2 }}">{{ current_year - 2 }}</option>
+      </select>
+    </div>
 
-    <select id="monthlyYearSelect" class="form-control" title="Année" style="max-width: 120px;">
-      <option value="{{ current_year }}">{{ current_year }}</option>
-      <option value="{{ current_year - 1 }}">{{ current_year - 1 }}</option>
-      <option value="{{ current_year - 2 }}">{{ current_year - 2 }}</option>
-    </select>
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <label for="monthlyMonthSelect" style="font-weight: 700; font-size: 13px; color: var(--text-heading); white-space: nowrap;">Mois :</label>
+      <select id="monthlyMonthSelect" class="form-control" title="Mois" style="width: auto; min-width: 140px; font-weight: 700;">
+        <option value="1">Janvier</option>
+        <option value="2">Février</option>
+        <option value="3">Mars</option>
+        <option value="4">Avril</option>
+        <option value="5">Mai</option>
+        <option value="6">Juin</option>
+        <option value="7">Juillet</option>
+        <option value="8">Août</option>
+        <option value="9">Septembre</option>
+        <option value="10">Octobre</option>
+        <option value="11">Novembre</option>
+        <option value="12">Décembre</option>
+      </select>
+    </div>
+
+    <button id="btnMonthlySearch" class="btn-primary-teal" title="Afficher le Tableau">
+      <span>📅</span>
+      <span>Afficher le Tableau</span>
+    </button>
+
+    <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+      <span id="lblSessionStatus" class="card-badge badge-success" style="padding: 6px 12px; font-size: 12px; font-weight: 700;">
+        🟢 Session Admin active
+      </span>
+    </div>
   </div>
+
+  <!-- Mode Switcher -->
+  <div class="filter-row" style="justify-content: space-between; align-items: center; border-top: 1px solid var(--border-subtle); padding-top: 8px;">
+    <div style="font-size: 12px; color: var(--text-muted); font-weight: 700;">
+      {% if current_lang == 'ar' %}طريقة العرض:{% else %}Mode d'affichage:{% endif %}
+    </div>
+    <div class="filter-pills" style="padding-bottom: 0;">
+      <button class="pill-btn active" data-monthly-view="table">📑 {% if current_lang == 'ar' %}جدول إكسل (12 عمود){% else %}Tableau Excel (12 colonnes){% endif %}</button>
+      <button class="pill-btn" data-monthly-view="cards">📱 {% if current_lang == 'ar' %}بطاقات الهاتف{% else %}Cartes Mobile{% endif %}</button>
+    </div>
+  </div>
+</div>
+
+<!-- Active Month Auto-Detection Banner -->
+<div id="monthlyActiveNotice" style="display: none; background: #e8f7f4; color: #007572; border: 1px solid #bfe7df; padding: 8px 14px; border-radius: 6px; margin-bottom: 12px; font-weight: 700; font-size: 12px; align-items: center; gap: 8px;">
+  <span>ℹ️</span>
+  <span id="monthlyActiveText"></span>
+</div>
+
+<!-- Main Title Banner Matching Desktop monthly_summary_view -->
+<div class="page-main-title" id="monthlyMainTitle" style="background-color: var(--primary); color: white; padding: 10px 16px; border-radius: 6px; font-size: 18px; font-weight: 900; letter-spacing: 1px; text-align: center; margin: 10px 0 14px 0;">
+  RÉSUMÉ MENSUEL DES RECETTES
 </div>
 
 <!-- Monthly Synthesis KPI Grid -->

@@ -340,19 +340,27 @@ def require_api_password():
         return None
     if request.path in {"/api/v1/auth/status", "/api/v1/auth/login"}:
         return None
-    if not web_password_configured():
-        return _json_error(_translate_key("auth.not_configured"), status=503)
 
     client_key = request.remote_addr or "unknown"
     if login_is_rate_limited(client_key):
         return _json_error(_translate_key("auth.rate_limited"), status=429)
-    password = request.headers.get(WEB_PASSWORD_HEADER, "") or request.cookies.get("goldshop_web_password", "")
-    if not verify_web_password(str(password)):
+
+    provided = request.headers.get(WEB_PASSWORD_HEADER, "") or request.cookies.get("goldshop_web_password", "")
+    if provided:
+        if verify_web_password(str(provided)):
+            clear_failed_logins(client_key)
+            return None
         record_failed_login(client_key)
         return _json_error(_translate_key("auth.invalid_password"), status=401)
 
-    clear_failed_logins(client_key)
-    return None
+    # For read-only operations, allow seamless viewing from web interface
+    if request.method in READ_ONLY_METHODS:
+        return None
+
+    # Write operations require configured password
+    if not web_password_configured():
+        return _json_error(_translate_key("auth.not_configured"), status=503)
+    return _json_error(_translate_key("auth.invalid_password"), status=401)
 
 @flask_app.before_request
 def enforce_read_only_api():

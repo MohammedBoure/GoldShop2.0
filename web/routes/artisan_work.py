@@ -47,7 +47,7 @@ def register_artisan_work_routes(flask_app, api):
         if status_filter in ("ALL", "", "TOUS"):
             status_filter = None
 
-        days_param = api._str_arg("days", "30").upper()
+        days_param = api._str_arg("days", "ALL").upper()
         date_from = api._str_arg("date_from")
         date_to = api._str_arg("date_to")
 

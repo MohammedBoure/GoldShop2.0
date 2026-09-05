@@ -1,27 +1,35 @@
 /**
  * GoldShop 2.0 - Workshop & Repairs View Controller (artisan.js)
- * Implements Tableau de Production and Artisans Accounts matching artisan_work_view.py
+ * Implements Tableau de Production (14 columns) and Artisans Directory matching artisan_work_view.py:
+ * - Tab 1: Tableau de Production (14 colonnes: numero, Nom, Tel, date remis, Obj, Poids, Poids R., Date Reçue, Date Sortie, Prix Façon, Prix Client, Diff, Statut, Artisan)
+ * - Tab 2: Répertoire Artisans & Soldes
  */
 
 (function() {
   const subNavPills = document.querySelectorAll("[data-artisan-subnav]");
   const searchInput = document.getElementById("artisanSearchInput");
-  const statusPills = document.querySelectorAll("[data-order-status]");
-  const daysSelect = document.getElementById("artisanDaysSelect");
+  const dateFilter = document.getElementById("artisanDateFilter");
+  const statusFilter = document.getElementById("artisanStatusFilter");
+  const btnNewOrder = document.getElementById("btnNewAtelierOrder");
+  const viewModePills = document.querySelectorAll("[data-artisan-view]");
+  const filterCard = document.getElementById("artisanOrderFilters");
 
   let activeSubNav = "orders"; // 'orders' or 'artisans'
-  let currentStatus = "ALL";
+  let currentViewMode = "table"; // Default to 14-column Excel table
+  let cachedOrders = [];
+  let cachedTotals = {};
 
   async function fetchProductionOrders() {
     const container = document.getElementById("artisanContentArea");
     if (!container) return;
 
     const search = searchInput ? searchInput.value.trim() : "";
-    const days = daysSelect ? daysSelect.value : "30";
+    const days = dateFilter ? dateFilter.value : "ALL";
+    const status = statusFilter ? statusFilter.value : "ALL";
 
     const params = new URLSearchParams();
-    if (currentStatus && currentStatus !== "ALL") params.append("status", currentStatus);
-    if (days) params.append("days", days);
+    if (status && status !== "ALL") params.append("status", status);
+    if (days && days !== "ALL") params.append("days", days);
     if (search) params.append("search", search);
 
     container.innerHTML = `
@@ -34,7 +42,9 @@
     try {
       const res = await GoldShopApp.apiFetch(`/api/v1/artisan-work/orders?${params.toString()}`);
       if (res && res.data) {
-        renderOrdersCards(res.data.orders || [], res.data.totals || {});
+        cachedOrders = Array.isArray(res.data) ? res.data : (res.data.orders || []);
+        cachedTotals = res.totals || (res.data && res.data.totals) || {};
+        renderOrders(cachedOrders, cachedTotals);
       }
     } catch (err) {
       if (err.message !== "AUTH_REQUIRED") {
@@ -42,14 +52,14 @@
           <div class="empty-state">
             <div class="empty-icon">⚠️</div>
             <div>Erreur lors du chargement des ordres d'atelier.</div>
-            <button class="btn-secondary" onclick="window.refreshCurrentPageData()">Réessayer</button>
+            <button class="btn-secondary-light" onclick="window.refreshCurrentPageData()">Réessayer</button>
           </div>
         `;
       }
     }
   }
 
-  function renderOrdersCards(orders, totals) {
+  function renderOrders(orders, totals) {
     const container = document.getElementById("artisanContentArea");
     if (!container) return;
 
@@ -57,118 +67,204 @@
       container.innerHTML = `
         <div class="empty-state">
           <div class="empty-icon">⚒️</div>
-          <div>Aucun ordre de fabrication ou réparation trouvé.</div>
-          <div style="font-size: 11px; color: var(--text-dim);">لا توجد طلبيات تطابق الفلتر الحالي.</div>
+          <div style="font-size: 15px; font-weight: 700;">Aucun ordre de fabrication ou réparation trouvé.</div>
+          <div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">لا توجد طلبيات تطابق الفلتر الحالي.</div>
         </div>
       `;
       return;
     }
 
+    if (currentViewMode === "cards") {
+      renderOrdersCards(container, orders, totals);
+    } else {
+      renderOrdersTable(container, orders, totals);
+    }
+  }
+
+  function renderOrdersTable(container, orders, totals) {
+    // 14 Columns matching desktop setup_atelier_tab in artisan_work_view.py:
+    // "numero", "Nom", "Tel :", "date remis", "Obj", "Poids", "Poids R.",
+    // "Date Reçue", "Date Sortie", "Prix (Façon)", "Prix (Client)", "Diff", "Statut", "Artisan"
+    let html = `
+      <div class="table-responsive-container">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="min-width: 60px;">N°</th>
+              <th style="min-width: 140px;">Nom</th>
+              <th style="min-width: 110px;">Tel :</th>
+              <th style="min-width: 95px;">Date Remis</th>
+              <th style="min-width: 140px;">Obj</th>
+              <th style="min-width: 85px;">Poids</th>
+              <th style="min-width: 85px;">Poids R.</th>
+              <th style="min-width: 95px;">Date Reçue</th>
+              <th style="min-width: 95px;">Date Sortie</th>
+              <th style="min-width: 110px;">Prix (Façon)</th>
+              <th style="min-width: 110px;">Prix (Client)</th>
+              <th style="min-width: 100px;">Diff</th>
+              <th style="min-width: 140px;">Statut</th>
+              <th style="min-width: 120px;">Artisan</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    orders.forEach(ord => {
+      const num = ord.numero || ord.id || "";
+      const clientName = ord.client_name || "Passager";
+      const phone = ord.client_phone || "";
+      const dateRemis = GoldShopApp.formatDate(ord.date_remis);
+      const obj = ord.obj || ord.object_description || "Bijou";
+      const pEntre = Number(ord.poids_entre_g || ord.poid || ord.weight_g || 0);
+      const pRetour = Number(ord.poids_retour_g || 0);
+      const dateRecue = ord.date_recue ? GoldShopApp.formatDate(ord.date_recue) : "-";
+      const dateSortie = ord.date_sortie ? GoldShopApp.formatDate(ord.date_sortie) : "-";
+      const coutArtisan = Number(ord.cout_artisan_da || ord.prix || 0);
+      const prixClient = Number(ord.prix_vente_da || ord.vente || 0);
+      const diff = Number(ord.diff || (prixClient - coutArtisan));
+      const statusLabel = ord.status_label || ord.status || "RECEPTION";
+      const statusColor = ord.status_color || "#27ae60";
+      const statusBg = ord.status_bg || "#d5f5e3";
+      const artisanName = ord.artisan_name || "Non assigné";
+
+      html += `
+        <tr>
+          <td style="font-weight: 800; text-align: center;">${num}</td>
+          <td style="font-weight: 700; text-align: left;">${clientName}</td>
+          <td style="text-align: center; font-size: 11px;">${phone ? `<a href="tel:${phone}" style="text-decoration:none; color:inherit;">${phone}</a>` : "-"}</td>
+          <td style="text-align: center;">${dateRemis}</td>
+          <td style="text-align: left;">${obj}</td>
+          <td style="text-align: center; color: var(--gold-500); font-weight: 700;">${pEntre > 0 ? GoldShopApp.formatWeight(pEntre) : "-"}</td>
+          <td style="text-align: center;">${pRetour > 0 ? GoldShopApp.formatWeight(pRetour) : "-"}</td>
+          <td style="text-align: center;">${dateRecue}</td>
+          <td style="text-align: center;">${dateSortie}</td>
+          <td style="text-align: right;">${coutArtisan > 0 ? GoldShopApp.formatMoney(coutArtisan) : "-"}</td>
+          <td style="text-align: right; font-weight: 700; color: var(--success);">${prixClient > 0 ? GoldShopApp.formatMoney(prixClient) : "-"}</td>
+          <td style="text-align: right; font-weight: 800; color: ${diff >= 0 ? "var(--gold-500)" : "var(--danger)"};">${GoldShopApp.formatMoney(diff)}</td>
+          <td style="text-align: center;">
+            <span style="display: inline-block; padding: 3px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; background: ${statusBg}; color: ${statusColor}; border: 1px solid ${statusColor};">
+              ${statusLabel}
+            </span>
+          </td>
+          <td style="text-align: center; font-weight: 600;">${artisanName}</td>
+        </tr>
+      `;
+    });
+
+    html += `
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="9" style="text-align: center; font-weight: 800; font-size: 13px;">
+                TOTAL (${orders.length} ordres)
+              </td>
+              <td style="text-align: right; font-weight: 900;">${GoldShopApp.formatMoney(totals.total_cout_artisan_da || 0)}</td>
+              <td style="text-align: right; font-weight: 900;">${GoldShopApp.formatMoney(totals.total_prix_client_da || 0)}</td>
+              <td style="text-align: right; font-weight: 900; font-size: 14px;">${GoldShopApp.formatMoney(totals.total_diff_da || 0)}</td>
+              <td colspan="2">-</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    `;
+
+    container.innerHTML = html;
+  }
+
+  function renderOrdersCards(container, orders, totals) {
     let html = `<div class="data-list">`;
 
     orders.forEach((ord, idx) => {
-      const orderId = ord.id || ord.numero;
-      const clientName = ord.client_name || ord.Nom || "Client Inconnu";
-      const phone = ord.client_phone || ord.Tel || "";
-      const artisanName = ord.artisan_name || ord.Artisan || "Atelier Interne";
-      const status = ord.status || ord.Statut || "EN_COURS";
-      const objDesc = ord.object_description || ord.Obj || "Bijou / Pièce";
-      const weight = Number(ord.weight_g || ord.Poid || 0);
+      const num = ord.numero || ord.id || "";
+      const clientName = ord.client_name || "Client Inconnu";
+      const phone = ord.client_phone || "";
+      const artisanName = ord.artisan_name || "Non assigné";
+      const objDesc = ord.obj || ord.object_description || "Bijou / Pièce";
+      const weight = Number(ord.poids_entre_g || ord.poid || 0);
 
       const dateRemis = GoldShopApp.formatDate(ord.date_remis);
-      const dateRecue = GoldShopApp.formatDate(ord.date_recue);
-      const dateSortie = GoldShopApp.formatDate(ord.date_sortie);
+      const dateRecue = ord.date_recue ? GoldShopApp.formatDate(ord.date_recue) : "-";
+      const dateSortie = ord.date_sortie ? GoldShopApp.formatDate(ord.date_sortie) : "-";
 
-      const prixFacon = Number(ord.prix_facon_da || ord["Prix Façon"] || 0);
-      const prixClient = Number(ord.prix_client_da || ord["Prix Client"] || 0);
-      const diffProfit = Number(ord.diff_da || ord.Diff || (prixClient - prixFacon));
+      const coutArtisan = Number(ord.cout_artisan_da || ord.prix || 0);
+      const prixClient = Number(ord.prix_vente_da || ord.vente || 0);
+      const diffProfit = Number(ord.diff || (prixClient - coutArtisan));
 
-      let badgeClass = "badge-info";
-      if (status === "EN_ATTENTE") badgeClass = "badge-purple";
-      else if (status === "EN_COURS") badgeClass = "badge-gold";
-      else if (status === "TERMINE") badgeClass = "badge-success";
-      else if (status === "LIVRE") badgeClass = "badge-info";
-      else if (status === "ANNULE") badgeClass = "badge-danger";
+      const statusLabel = ord.status_label || ord.status || "RECEPTION";
+      const statusColor = ord.status_color || "#27ae60";
+      const statusBg = ord.status_bg || "#d5f5e3";
 
-      const collapseId = `orderCollapse_${orderId}_${idx}`;
+      const collapseId = `orderCollapse_${idx}`;
 
       html += `
         <div class="mobile-card">
           <div class="card-top">
             <div class="card-title-group">
-              <span class="card-badge ${badgeClass}">${status}</span>
-              <span style="font-weight: 700; font-size: 14px;">Ordre N° ${orderId}</span>
+              <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; background: ${statusBg}; color: ${statusColor}; border: 1px solid ${statusColor};">
+                ${statusLabel}
+              </span>
+              <span style="font-weight: 800; font-size: 14px;">N° ${num}</span>
             </div>
-            <span class="card-badge badge-gold">⚒️ ${artisanName}</span>
+            <span style="font-size: 11px; color: var(--text-dim);">${dateRemis}</span>
           </div>
 
           <div class="card-rows">
             <div class="card-row">
               <span class="card-row-label">Client:</span>
-              <span class="card-row-value">${clientName}</span>
+              <span class="card-row-value" style="font-weight: 700;">${clientName}</span>
             </div>
             ${phone ? `
               <div class="card-row">
                 <span class="card-row-label">Téléphone:</span>
-                <a href="tel:${phone}" style="color: var(--gold-500); text-decoration: none; font-weight: 600;">
+                <a href="tel:${phone}" style="color: var(--primary); text-decoration: none; font-weight: 700;">
                   📞 ${phone}
                 </a>
               </div>
             ` : ""}
             <div class="card-row">
-              <span class="card-row-label">Objet / Poids:</span>
-              <span class="card-row-value">${objDesc} (<b class="gold">${GoldShopApp.formatWeight(weight)}</b>)</span>
+              <span class="card-row-label">Travail / Pièce:</span>
+              <span class="card-row-value">${objDesc}</span>
+            </div>
+            <div class="card-row">
+              <span class="card-row-label">Poids Entrée:</span>
+              <span class="card-row-value gold">${GoldShopApp.formatWeight(weight)}</span>
             </div>
             <div class="card-row">
               <span class="card-row-label">Prix Client / Marge:</span>
-              <span class="card-row-value">
-                <b>${GoldShopApp.formatMoney(prixClient)}</b>
-                <span style="color: var(--success); font-size: 12px; margin-left: 6px;">(Diff: +${GoldShopApp.formatMoney(diffProfit)})</span>
+              <span class="card-row-value success">
+                ${GoldShopApp.formatMoney(prixClient)}
+                <span style="color: var(--gold-500); font-weight: 700; margin-left: 6px;">(Diff: +${GoldShopApp.formatMoney(diffProfit)})</span>
               </span>
             </div>
           </div>
 
           <button class="expand-btn" onclick="toggleAccordion('${collapseId}', this)">
-            <span>Dates, Façon & Règlements / تواريخ وأجور الصياغة</span>
+            <span>Dates de sortie & Détails Façon / تفاصيل الورشة</span>
             <span class="chevron">▼</span>
           </button>
 
           <div id="${collapseId}" class="card-collapse">
             <div class="card-rows">
               <div class="card-row">
-                <span class="card-row-label">Date remis:</span>
-                <span class="card-row-value">${dateRemis}</span>
+                <span class="card-row-label">Artisan Assigné:</span>
+                <span class="card-row-value" style="font-weight: 700;">👨‍🔧 ${artisanName}</span>
               </div>
               <div class="card-row">
-                <span class="card-row-label">Date prévue (Reçue):</span>
+                <span class="card-row-label">Date Reçue de l'Artisan:</span>
                 <span class="card-row-value">${dateRecue}</span>
               </div>
-              ${dateSortie !== "-" ? `
-                <div class="card-row">
-                  <span class="card-row-label">Date sortie:</span>
-                  <span class="card-row-value">${dateSortie}</span>
-                </div>
-              ` : ""}
-              <div class="card-row" style="border-top: 1px solid var(--border-subtle); padding-top: 6px;">
-                <span class="card-row-label">Prix Façon Artisan:</span>
-                <span class="card-row-value danger">${GoldShopApp.formatMoney(prixFacon)}</span>
+              <div class="card-row">
+                <span class="card-row-label">Date Sortie au Client:</span>
+                <span class="card-row-value">${dateSortie}</span>
               </div>
               <div class="card-row">
-                <span class="card-row-label">Paiement Espèces (Cash):</span>
-                <span class="card-row-value">${GoldShopApp.formatMoney(ord.pay_cash_da || 0)}</span>
+                <span class="card-row-label">Coût Façon Artisan:</span>
+                <span class="card-row-value">${GoldShopApp.formatMoney(coutArtisan)}</span>
               </div>
-              ${Number(ord.pay_tpe_da || 0) > 0 ? `
-                <div class="card-row">
-                  <span class="card-row-label">Paiement TPE:</span>
-                  <span class="card-row-value info">${GoldShopApp.formatMoney(ord.pay_tpe_da)}</span>
-                </div>
-              ` : ""}
-              ${Number(ord.pay_oc_g || 0) > 0 ? `
-                <div class="card-row">
-                  <span class="card-row-label">Paiement Or Cassé:</span>
-                  <span class="card-row-value gold">${GoldShopApp.formatWeight(ord.pay_oc_g)}</span>
-                </div>
-              ` : ""}
+              <div class="card-row" style="border-top: 1px solid var(--border-subtle); padding-top: 6px;">
+                <span class="card-row-label"><b>Bénéfice Net Magasin:</b></span>
+                <span class="card-row-value gold"><b>${GoldShopApp.formatMoney(diffProfit)}</b></span>
+              </div>
             </div>
           </div>
         </div>
@@ -186,36 +282,30 @@
     container.innerHTML = `
       <div class="loading-box">
         <div class="spinner"></div>
-        <div>Chargement des artisans... / جاري تحميل حسابات الحرفيين...</div>
+        <div>Chargement du répertoire des artisans... / جاري تحميل الحرفيين...</div>
       </div>
     `;
 
     try {
       const res = await GoldShopApp.apiFetch("/api/v1/artisan-work/artisans");
-      if (res && res.data) {
-        renderArtisansCards(res.data.artisans || []);
-      }
+      const list = Array.isArray(res.data) ? res.data : [];
+      renderArtisansDirectory(container, list);
     } catch (err) {
-      if (err.message !== "AUTH_REQUIRED") {
-        container.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-icon">⚠️</div>
-            <div>Erreur lors du chargement des artisans.</div>
-          </div>
-        `;
-      }
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">⚠️</div>
+          <div>Erreur de chargement des artisans.</div>
+        </div>
+      `;
     }
   }
 
-  function renderArtisansCards(artisans) {
-    const container = document.getElementById("artisanContentArea");
-    if (!container) return;
-
+  function renderArtisansDirectory(container, artisans) {
     if (!artisans || artisans.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
-          <div class="empty-icon">👥</div>
-          <div>Aucun artisan répertorié.</div>
+          <div class="empty-icon">👨‍🔧</div>
+          <div>Aucun artisan enregistré.</div>
         </div>
       `;
       return;
@@ -224,39 +314,39 @@
     let html = `<div class="data-list">`;
 
     artisans.forEach(art => {
-      const artId = art.id;
-      const name = art.name || "Artisan";
-      const phone = art.phone || "";
-      const specialty = art.specialty || "Fabrication & Réparation";
-      const goldBalance = Number(art.pure_gold_balance_g || art.gold_balance_g || 0);
-      const moneyBalance = Number(art.labor_money_balance_da || art.money_balance_da || 0);
+      const goldBal = Number(art.gold_balance_g || 0);
+      const faconBal = Number(art.facon_balance_da || 0);
 
       html += `
-        <div class="mobile-card">
+        <div class="mobile-card" onclick="openArtisanLedger(${art.id}, '${art.name.replace(/'/g, "\\'")}')" style="cursor: pointer;">
           <div class="card-top">
             <div class="card-title-group">
-              <span class="card-badge badge-gold">⚒️ Artisan</span>
-              <span style="font-weight: 700; font-size: 15px;">${name}</span>
+              <span class="card-badge badge-purple">👨‍🔧 Artisan</span>
+              <span style="font-weight: 800; font-size: 15px;">${art.name}</span>
             </div>
-            ${phone ? `<a href="tel:${phone}" style="font-size: 12px; color: var(--gold-500); text-decoration: none;">📞 ${phone}</a>` : ""}
+            <span class="chevron" style="color: var(--primary); font-size: 16px;">➔</span>
           </div>
 
-          <div style="font-size: 11px; color: var(--text-dim);">${specialty}</div>
-
-          <div class="card-rows" style="margin-top: 6px;">
+          <div class="card-rows">
             <div class="card-row">
-              <span class="card-row-label">Solde Or Pur (24K):</span>
-              <span class="card-row-value ${goldBalance >= 0 ? "gold" : "danger"}">${GoldShopApp.formatWeight(goldBalance)}</span>
+              <span class="card-row-label">Solde Or Pur 24K:</span>
+              <span class="card-row-value gold" style="font-weight: 800;">${GoldShopApp.formatWeight(goldBal)}</span>
             </div>
             <div class="card-row">
               <span class="card-row-label">Solde Façon (DA):</span>
-              <span class="card-row-value ${moneyBalance >= 0 ? "success" : "danger"}">${GoldShopApp.formatMoney(moneyBalance)}</span>
+              <span class="card-row-value ${faconBal > 0 ? "danger" : "success"}">${GoldShopApp.formatMoney(faconBal)}</span>
+            </div>
+            ${art.phone ? `
+              <div class="card-row">
+                <span class="card-row-label">Téléphone:</span>
+                <span style="color: var(--primary); font-weight: 700;">📞 ${art.phone}</span>
+              </div>
+            ` : ""}
+            <div class="card-row">
+              <span class="card-row-label">Ordres attribués:</span>
+              <span class="card-row-value">${art.orders_count || 0}</span>
             </div>
           </div>
-
-          <button class="btn-secondary" style="margin-top: 8px; width: 100%;" onclick="openArtisanLedgerModal(${artId}, '${name}')">
-            📖 Voir Grand Livre / كشف الحساب
-          </button>
         </div>
       `;
     });
@@ -265,17 +355,17 @@
     container.innerHTML = html;
   }
 
-  window.openArtisanLedgerModal = async function(artisanId, artisanName) {
+  window.openArtisanLedger = async function(artisanId, artisanName) {
     const modal = document.getElementById("artisanLedgerModal");
     const title = document.getElementById("artisanLedgerTitle");
     const body = document.getElementById("artisanLedgerBody");
     if (!modal || !body) return;
 
-    if (title) title.textContent = `Grand Livre: ${artisanName}`;
+    if (title) title.textContent = `Grand Livre Artisan — ${artisanName}`;
     body.innerHTML = `
       <div class="loading-box">
         <div class="spinner"></div>
-        <div>Chargement des mouvements...</div>
+        <div>Chargement du relevé des mouvements...</div>
       </div>
     `;
     modal.classList.add("show");
@@ -283,29 +373,54 @@
     try {
       const res = await GoldShopApp.apiFetch(`/api/v1/artisan-work/artisans/${artisanId}/ledger`);
       if (res && res.data) {
-        const moves = res.data.movements || [];
-        if (moves.length === 0) {
-          body.innerHTML = `<div class="empty-state">Aucun mouvement pour cet artisan.</div>`;
-          return;
-        }
-        let mHtml = `<div class="data-list">`;
-        moves.forEach(m => {
-          mHtml += `
-            <div style="background: var(--bg-surface-elevated); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; font-size: 12px;">
-              <div style="display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 4px;">
-                <span>${GoldShopApp.formatDate(m.date || m.created_at)}</span>
-                <span class="card-badge badge-gold">${m.type || "Mouvement"}</span>
-              </div>
-              <div style="display: flex; justify-content: space-between; color: var(--text-muted);">
-                <span>Poids: <b style="color: var(--text-main);">${GoldShopApp.formatWeight(m.gold_weight_g || 0)}</b></span>
-                <span>Façon: <b style="color: var(--text-main);">${GoldShopApp.formatMoney(m.labor_cost_da || 0)}</b></span>
-              </div>
-              ${m.notes ? `<div style="margin-top: 4px; font-size: 11px; color: var(--text-dim);">${m.notes}</div>` : ""}
+        const movements = res.data.ledger || [];
+        const bal = res.data.balance || {};
+
+        let ledgerHtml = `
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <div class="kpi-card" style="flex: 1;">
+              <div class="kpi-label">Solde Or Fin</div>
+              <div class="kpi-value gold">${GoldShopApp.formatWeight(bal.solde_or_fin_g || 0)}</div>
             </div>
+            <div class="kpi-card" style="flex: 1;">
+              <div class="kpi-label">Solde Façon</div>
+              <div class="kpi-value">${GoldShopApp.formatMoney(bal.solde_facon_da || 0)}</div>
+            </div>
+          </div>
+        `;
+
+        if (movements.length === 0) {
+          ledgerHtml += `<div class="empty-state"><div>Aucun mouvement enregistré.</div></div>`;
+        } else {
+          ledgerHtml += `
+            <div class="table-responsive-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Poids Or Fin</th>
+                    <th>Façon (DA)</th>
+                    <th>Libellé</th>
+                  </tr>
+                </thead>
+                <tbody>
           `;
-        });
-        mHtml += `</div>`;
-        body.innerHTML = mHtml;
+          movements.forEach(m => {
+            ledgerHtml += `
+              <tr>
+                <td>${GoldShopApp.formatDate(m.date || m.created_at)}</td>
+                <td><span class="card-badge ${m.type === 'DON_OR' ? 'badge-gold' : 'badge-info'}">${m.type || "-"}</span></td>
+                <td style="text-align: center; color: var(--gold-500); font-weight: 700;">${m.or_fin_g ? GoldShopApp.formatWeight(m.or_fin_g) : "-"}</td>
+                <td style="text-align: right;">${m.facon_da ? GoldShopApp.formatMoney(m.facon_da) : "-"}</td>
+                <td>${m.libelle || m.notes || "-"}</td>
+              </tr>
+            `;
+          });
+          ledgerHtml += `</tbody></table></div>`;
+        }
+
+        body.innerHTML = ledgerHtml;
       }
     } catch (e) {
       body.innerHTML = `<div class="empty-state">Erreur de chargement.</div>`;
@@ -317,6 +432,19 @@
     if (modal) modal.classList.remove("show");
   };
 
+  window.toggleAccordion = function(id, btn) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const isOpen = el.classList.contains("open");
+    if (isOpen) {
+      el.classList.remove("open");
+      if (btn) btn.querySelector(".chevron").textContent = "▼";
+    } else {
+      el.classList.add("open");
+      if (btn) btn.querySelector(".chevron").textContent = "▲";
+    }
+  };
+
   document.addEventListener("DOMContentLoaded", () => {
     subNavPills.forEach(pill => {
       pill.addEventListener("click", () => {
@@ -324,45 +452,48 @@
         pill.classList.add("active");
         activeSubNav = pill.getAttribute("data-artisan-subnav");
 
-        const orderFilters = document.getElementById("artisanOrderFilters");
-        if (orderFilters) {
-          orderFilters.style.display = activeSubNav === "orders" ? "flex" : "none";
-        }
-
         if (activeSubNav === "orders") {
+          if (filterCard) filterCard.style.display = "block";
           fetchProductionOrders();
         } else {
+          if (filterCard) filterCard.style.display = "none";
           fetchArtisansList();
         }
       });
     });
 
+    if (dateFilter) dateFilter.addEventListener("change", fetchProductionOrders);
+    if (statusFilter) statusFilter.addEventListener("change", fetchProductionOrders);
+
     if (searchInput) {
       let debounce;
       searchInput.addEventListener("input", () => {
         clearTimeout(debounce);
-        debounce = setTimeout(() => {
-          if (activeSubNav === "orders") fetchProductionOrders();
-        }, 350);
+        debounce = setTimeout(fetchProductionOrders, 300);
       });
     }
 
-    statusPills.forEach(pill => {
+    if (btnNewOrder) {
+      btnNewOrder.addEventListener("click", () => {
+        GoldShopApp.showToast("Pour créer un nouveau dépôt d'atelier, utilisez le module atelier de l'application de caisse.", "info");
+      });
+    }
+
+    viewModePills.forEach(pill => {
       pill.addEventListener("click", () => {
-        statusPills.forEach(p => p.classList.remove("active"));
+        viewModePills.forEach(p => p.classList.remove("active"));
         pill.classList.add("active");
-        currentStatus = pill.getAttribute("data-order-status");
-        fetchProductionOrders();
+        currentViewMode = pill.getAttribute("data-artisan-view");
+        renderOrders(cachedOrders, cachedTotals);
       });
     });
 
-    if (daysSelect) {
-      daysSelect.addEventListener("change", fetchProductionOrders);
-    }
-
     window.refreshCurrentPageData = function() {
-      if (activeSubNav === "orders") fetchProductionOrders();
-      else fetchArtisansList();
+      if (activeSubNav === "orders") {
+        fetchProductionOrders();
+      } else {
+        fetchArtisansList();
+      }
     };
 
     fetchProductionOrders();

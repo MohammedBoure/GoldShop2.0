@@ -194,11 +194,12 @@ const GoldShopApp = (function() {
       });
     }
 
-    // Auto-check auth status silently
+    // Auto-check auth status silently without blocking user interface
     apiFetch("/api/v1/auth/status")
       .then(res => {
-        if (res && res.data && res.data.password_required && !res.data.authenticated) {
-          showAuthModal();
+        if (res && res.data && res.data.authenticated) {
+          const btnLock = document.getElementById("btnAuthPrompt");
+          if (btnLock) btnLock.title = "Connecté / متصل";
         }
       })
       .catch(() => {});
