@@ -211,8 +211,7 @@ class InventoryQueryMixin:
                     9: "i.margin_type",
                     10: "i.profit_margin",
                     11: "i.selling_price",
-                    12: "cl.name",
-                    13: "i.status"
+                    12: "i.status"
                 }
                 order_by_clause = sort_mapping.get(sort_col, "i.id")
                 direction = "ASC" if sort_dir.upper() == "ASC" else "DESC"

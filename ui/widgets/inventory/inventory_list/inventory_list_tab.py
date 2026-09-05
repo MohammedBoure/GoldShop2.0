@@ -34,14 +34,13 @@ class InventoryListTab(QWidget):
     COL_MTYPE     = 9
     COL_MARGIN    = 10
     COL_PRICE     = 11
-    COL_RESERVED  = 12
-    COL_STATUS    = 13
-    COL_ACTIONS   = 14
+    COL_STATUS    = 12
+    COL_ACTIONS   = 13
 
     COLUMNS = [
         "ID", "Code-barres", "Article", "Catégorie", "Métal",
         "Poids U.", "Pds Reste", "Coût Façon", "Type Marge", "Marge",
-        "P.Vente", "Réservé", "Statut", "Actions"
+        "P.Vente", "Statut", "Actions"
     ]
 
     COLUMNS = [""] + COLUMNS
@@ -231,7 +230,6 @@ class InventoryListTab(QWidget):
             self.COL_MTYPE: 95,
             self.COL_MARGIN: 105,
             self.COL_PRICE: 125,
-            self.COL_RESERVED: 130,
             self.COL_STATUS: 120,
         }
         for col, width in widths.items():
@@ -441,15 +439,6 @@ class InventoryListTab(QWidget):
             p_item = SortableTableWidgetItem(f"{price_val:,.2f}", price_val)
             p_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table.setItem(row, self.COL_PRICE, p_item)
-
-            # Réservé
-            reserved = str(item.get('reserved_client_name') or '-')
-            res_item = QTableWidgetItem(reserved)
-            res_item.setTextAlignment(Qt.AlignCenter)
-            if reserved != '-':
-                res_item.setForeground(QColor("#8e44ad"))
-                res_item.setFont(QFont("Arial", 10, QFont.Bold))
-            self.table.setItem(row, self.COL_RESERVED, res_item)
 
             # Statut
             status = str(item.get('status') or 'Available')
