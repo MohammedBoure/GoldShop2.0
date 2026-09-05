@@ -86,12 +86,6 @@ class MainWindowPagesMixin:
                     return tab
                 self._add_lazy_scoped_tab(tabs, make_inventory_form, "tab_inv_form", "Ajouter Produit", qta.icon("fa5s.plus-circle"))
 
-            if self.has_permission("tab_inv_form"):
-                def make_achat_oc():
-                    from ui.widgets.inventory.achat_oc_view import AchatOCView
-                    return AchatOCView(self.data_manager)
-                self._add_lazy_scoped_tab(tabs, make_achat_oc, "tab_inv_form", "Registre Achat OC", qta.icon("fa5s.balance-scale"))
-
             widget = tabs if tabs.count() > 0 else None
 
         elif page_id == 2:

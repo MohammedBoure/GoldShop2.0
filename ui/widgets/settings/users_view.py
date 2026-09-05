@@ -68,7 +68,7 @@ PERMISSIONS_CATALOG = [
         "label": "Onglets Stock", "icon": "fa5s.boxes",
         "children": [
             {"key": "tab_inv_list", "label": "Liste du Stock"},
-            {"key": "tab_inv_form", "label": "Ajouter Produit / Achat OC"},
+            {"key": "tab_inv_form", "label": "Ajouter Produit"},
         ]
     },
     {
