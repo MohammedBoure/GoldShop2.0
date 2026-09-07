@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QDialog, QTableWidgetItem
+from PySide6.QtWidgets import QApplication, QDialog, QTableWidgetItem, QLineEdit
 from PySide6.QtCore import Qt
 
 from ui.widgets.reports.excel_journal_view import (
@@ -129,6 +129,103 @@ class TestExcelJournalFeatures(unittest.TestCase):
         self.assertEqual(items[0]["sale_id"], "REP_30")
         self.assertEqual(items[1]["sale_id"], "VRS_20")
         self.assertEqual(items[2]["sale_id"], 10)
+
+
+    def test_edit_sale_dialog_negative_values(self):
+        from ui.widgets.reports.excel_journal_view import EditSaleDialog
+        dlg = EditSaleDialog(cash=-500, tpe=250, oc=-2.5, euro=-50, dollar=0, impos=0, oc_silver=0)
+        c, t, o, e, d, i, os_val = dlg.get_values()
+        self.assertEqual(c, -500.0)
+        self.assertEqual(t, 250.0)
+        self.assertEqual(o, -2.5)
+        self.assertEqual(e, -50.0)
+
+        # Test typing directly with keyboard in line edits
+        dlg.inp_cash.setText("-750.50")
+        dlg.inp_tpe.setText("-100")
+        c, t, o, e, d, i, os_val = dlg.get_values()
+        self.assertEqual(c, -750.50)
+        self.assertEqual(t, -100.0)
+
+    def test_virtual_numpad_negative_display_and_keyboard(self):
+        from ui.tools.virtual_numpad import VirtualNumpad
+        from PySide6.QtGui import QKeyEvent
+        from PySide6.QtCore import QEvent
+
+        # 1. Negative initial value shows minus on display immediately
+        w = QLineEdit("-1200")
+        pad = VirtualNumpad(mode="direct", target_widget=w, allow_negative=True, allow_decimal=True)
+        self.assertTrue(pad.is_negative)
+        self.assertEqual(pad.display.text(), "-1200")
+        self.assertEqual(w.text(), "-1200")
+
+        # 2. Keyboard minus key toggles sign
+        ev_minus = QKeyEvent(QEvent.KeyPress, Qt.Key_Minus, Qt.NoModifier, "-")
+        pad.keyPressEvent(ev_minus)
+        self.assertFalse(pad.is_negative)
+        self.assertEqual(pad.display.text(), "1200")
+        self.assertEqual(w.text(), "1200")
+
+        # Toggle back
+        pad.keyPressEvent(ev_minus)
+        self.assertTrue(pad.is_negative)
+        self.assertEqual(pad.display.text(), "-1200")
+
+        # 3. Fresh typing resets is_negative unless explicitly set
+        pad.append_char("3")
+        self.assertFalse(pad.is_negative)
+        self.assertEqual(pad.display.text(), "3")
+        self.assertEqual(pad.get_value(), "3")
+
+        # 4. Toggle sign button
+        pad.toggle_sign()
+        self.assertTrue(pad.is_negative)
+        self.assertEqual(pad.display.text(), "-3")
+        self.assertEqual(pad.get_value(), "-3")
+
+    def test_on_cell_double_clicked_routes_properly(self):
+        mock_sales = SimpleNamespace(get_bulk_sales_for_excel=Mock(return_value={}))
+        mock_manager = SimpleNamespace(
+            sales=mock_sales,
+            cash_box=SimpleNamespace(get_all_sessions=Mock(return_value=[])),
+            db=SimpleNamespace(get_db_connection=Mock()),
+        )
+        view = ExcelJournalView(mock_manager)
+        view.table.setRowCount(1)
+        item0 = QTableWidgetItem("Collier Or")
+        item0.setData(Qt.UserRole, 555)  # sale_id
+        item0.setData(Qt.UserRole + 1, 666)  # item_id
+        item0.setData(Qt.UserRole + 2, 1000.0)  # cash
+        item0.setData(Qt.UserRole + 3, 500.0)  # tpe
+        item0.setData(Qt.UserRole + 4, 10.0)  # oc
+        item0.setData(Qt.UserRole + 5, 0.0)  # euro
+        item0.setData(Qt.UserRole + 6, 0.0)  # dollar
+        item0.setData(Qt.UserRole + 7, 0.0)  # impos
+        item0.setData(Qt.UserRole + 8, 1)  # seller_id
+        item0.setData(Qt.UserRole + 9, "Note test")  # raw_obs
+        item0.setData(Qt.UserRole + 14, 0.0)  # oc_silver
+        view.table.setItem(0, 0, item0)
+
+        with patch.object(view, "edit_sale") as mock_edit_sale, \
+             patch.object(view, "edit_p_s") as mock_edit_ps, \
+             patch.object(view, "edit_seller") as mock_edit_seller, \
+             patch.object(view, "edit_observation") as mock_edit_obs:
+
+            # Double click col 0 or col 2 (amounts) calls edit_sale directly
+            view.on_cell_double_clicked(0, 2)
+            mock_edit_sale.assert_called_once_with(555, 1000.0, 500.0, 10.0, 0.0, 0.0, 0.0, 0.0)
+
+            # Double click col 1 (weight) calls edit_p_s
+            view.on_cell_double_clicked(0, 1)
+            mock_edit_ps.assert_called_once_with(0)
+
+            # Double click col 7 (seller) calls edit_seller
+            view.on_cell_double_clicked(0, 7)
+            mock_edit_seller.assert_called_once_with(555, 1)
+
+            # Double click col 8 (obs) calls edit_observation
+            view.on_cell_double_clicked(0, 8)
+            mock_edit_obs.assert_called_once_with(555, 666, "Note test")
 
 
 if __name__ == "__main__":

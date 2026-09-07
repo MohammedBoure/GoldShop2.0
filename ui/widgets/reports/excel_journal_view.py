@@ -417,72 +417,185 @@ class EditSaleDialog(QDialog):
     def __init__(self, cash, tpe, oc, euro=0, dollar=0, impos=0, oc_silver=0, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Modifier les montants de la vente")
-        self.setFixedSize(450, 400)
+        self.setMinimumWidth(500)
+        self.setStyleSheet("""
+            QDialog { background-color: #f8fafc; }
+            QLabel { font-size: 13px; color: #1e293b; font-weight: bold; }
+        """)
         
         layout = QVBoxLayout(self)
+        layout.setSpacing(14)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        header = QLabel("✏️ Modification des règlements et montants")
+        header.setStyleSheet("font-size: 16px; font-weight: bold; color: #0f8f83; padding-bottom: 5px;")
+        layout.addWidget(header)
+        
         form = QFormLayout()
+        form.setSpacing(10)
         
-        self.inp_cash = QLineEdit(str(cash))
-        self.inp_tpe = QLineEdit(str(tpe))
-        self.inp_oc = QLineEdit(str(oc))
-        self.inp_oc_silver = QLineEdit(str(oc_silver))
-        self.inp_euro = QLineEdit(str(euro))
-        self.inp_dollar = QLineEdit(str(dollar))
-        self.inp_impos = QLineEdit(str(impos))
+        def _fmt(val):
+            if val is None or val == "":
+                return "0"
+            try:
+                f = float(val)
+                if f == 0:
+                    return "0"
+                if f.is_integer():
+                    return str(int(f))
+                return f"{f:g}"
+            except Exception:
+                return str(val)
+
+        self.inp_cash = QLineEdit(_fmt(cash))
+        self.inp_tpe = QLineEdit(_fmt(tpe))
+        self.inp_oc = QLineEdit(_fmt(oc))
+        self.inp_oc_silver = QLineEdit(_fmt(oc_silver))
+        self.inp_euro = QLineEdit(_fmt(euro))
+        self.inp_dollar = QLineEdit(_fmt(dollar))
+        self.inp_impos = QLineEdit(_fmt(impos))
         
-        from ui.tools.virtual_numpad import VirtualNumpad
-        
-        def show_pad(inp):
-            VirtualNumpad(mode="direct", target_widget=inp, allow_decimal=True, allow_negative=(inp == self.inp_cash), parent=self).show()
-        
+        field_style = """
+            QLineEdit {
+                font-size: 16px;
+                padding: 6px 10px;
+                font-weight: bold;
+                color: #1e293b;
+                background-color: white;
+                border: 1.5px solid #cbd5e1;
+                border-radius: 6px;
+            }
+            QLineEdit:focus {
+                border-color: #0f8f83;
+                background-color: #f0fdf4;
+            }
+        """
+
         for inp in [self.inp_cash, self.inp_tpe, self.inp_oc, self.inp_oc_silver, self.inp_euro, self.inp_dollar, self.inp_impos]:
-            inp.setStyleSheet("font-size: 18px; padding: 5px; font-weight: bold;")
-            inp.setFocusPolicy(Qt.ClickFocus) 
-            inp.mousePressEvent = lambda e, i=inp: show_pad(i)
+            inp.setStyleSheet(field_style)
+            inp.setFocusPolicy(Qt.StrongFocus)
             
-        form.addRow("💰 Cash (DA) :", self.inp_cash)
-        form.addRow("💳 TPE (DA) :", self.inp_tpe)
-        form.addRow("⚖️ Or Cassé (g) :", self.inp_oc)
-        form.addRow("🥈 Argent Cassé (g) :", self.inp_oc_silver)
-        form.addRow("💶 Euro (€) :", self.inp_euro)
-        form.addRow("💵 Dollar ($) :", self.inp_dollar)
-        form.addRow("📑 Impos (g) :", self.inp_impos)
+        form.addRow("💰 Cash (DA) :", self._wrap_num(self.inp_cash, allow_negative=True))
+        form.addRow("💳 TPE (DA) :", self._wrap_num(self.inp_tpe, allow_negative=True))
+        form.addRow("⚖️ Or Cassé (g) :", self._wrap_num(self.inp_oc, allow_negative=True))
+        form.addRow("🥈 Argent Cassé (g) :", self._wrap_num(self.inp_oc_silver, allow_negative=True))
+        form.addRow("💶 Euro (€) :", self._wrap_num(self.inp_euro, allow_negative=True))
+        form.addRow("💵 Dollar ($) :", self._wrap_num(self.inp_dollar, allow_negative=True))
+        form.addRow("📑 Impos (g) :", self._wrap_num(self.inp_impos, allow_negative=True))
         layout.addLayout(form)
         
         btn_lay = QHBoxLayout()
-        btn_save = QPushButton("Enregistrer les modifications")
-        btn_save.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; font-size: 14px; padding: 10px;")
+        btn_lay.setSpacing(10)
+
+        btn_cancel = QPushButton("Annuler")
+        btn_cancel.setCursor(Qt.PointingHandCursor)
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: #94a3b8;
+                color: white;
+                font-weight: bold;
+                font-size: 14px;
+                padding: 9px 20px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton:hover { background-color: #64748b; }
+        """)
+        btn_cancel.clicked.connect(self.reject)
+
+        btn_save = QPushButton("💾 Enregistrer les modifications")
+        btn_save.setCursor(Qt.PointingHandCursor)
+        btn_save.setStyleSheet("""
+            QPushButton {
+                background-color: #27ae60;
+                color: white;
+                font-weight: bold;
+                font-size: 14px;
+                padding: 9px 22px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton:hover { background-color: #219150; }
+        """)
         btn_save.clicked.connect(self.accept)
+
+        btn_lay.addStretch()
+        btn_lay.addWidget(btn_cancel)
         btn_lay.addWidget(btn_save)
         layout.addLayout(btn_lay)
 
+    def _wrap_num(self, widget, allow_negative=True, allow_decimal=True):
+        container = QWidget()
+        lay = QHBoxLayout(container)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        lay.addWidget(widget, stretch=1)
+
+        btn = QPushButton("🔢")
+        btn.setToolTip("Ouvrir le pavé numérique tactile")
+        btn.setFocusPolicy(Qt.NoFocus)
+        btn.setFixedSize(38, 36)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0f8f83;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #0c756b; }
+            QPushButton:pressed { background-color: #095c54; }
+        """)
+        btn.clicked.connect(lambda: self._open_numpad(widget, allow_negative=allow_negative, allow_decimal=allow_decimal))
+        lay.addWidget(btn)
+        return container
+
+    def _open_numpad(self, widget, allow_negative=True, allow_decimal=True):
+        from ui.tools.virtual_numpad import VirtualNumpad
+        widget.setFocus()
+        pad = VirtualNumpad(
+            title="Saisie Montant",
+            mode="direct",
+            target_widget=widget,
+            allow_decimal=allow_decimal,
+            allow_leading_zero=True,
+            allow_negative=allow_negative,
+            parent=self
+        )
+        pad.show()
+        pad.raise_()
+
+    def _parse_val(self, text):
+        if not text:
+            return 0.0
+        cleaned = str(text).strip().replace(' ', '').replace(',', '.')
+        try:
+            return float(cleaned)
+        except ValueError:
+            return 0.0
+
     def get_values(self):
-        try: c = float(self.inp_cash.text() or 0)
-        except: c = 0.0
-        try: t = float(self.inp_tpe.text() or 0)
-        except: t = 0.0
-        try: o = float(self.inp_oc.text() or 0)
-        except: o = 0.0
-        try: os = float(self.inp_oc_silver.text() or 0)
-        except: os = 0.0
-        try: e = float(self.inp_euro.text() or 0)
-        except: e = 0.0
-        try: d = float(self.inp_dollar.text() or 0)
-        except: d = 0.0
-        try: i = float(self.inp_impos.text() or 0)
-        except: i = 0.0
+        c = self._parse_val(self.inp_cash.text())
+        t = self._parse_val(self.inp_tpe.text())
+        o = self._parse_val(self.inp_oc.text())
+        os = self._parse_val(self.inp_oc_silver.text())
+        e = self._parse_val(self.inp_euro.text())
+        d = self._parse_val(self.inp_dollar.text())
+        i = self._parse_val(self.inp_impos.text())
         return c, t, o, e, d, i, os
 
     def accept(self):
         try:
             if self.focusWidget(): self.focusWidget().clearFocus()
-        except: pass
+        except Exception: pass
         super().accept()
 
     def reject(self):
         try:
             if self.focusWidget(): self.focusWidget().clearFocus()
-        except: pass
+        except Exception: pass
         super().reject()
 
     def showEvent(self, event):
@@ -490,8 +603,8 @@ class EditSaleDialog(QDialog):
         from PySide6.QtWidgets import QApplication
         screen = QApplication.primaryScreen().availableGeometry()
         x = (screen.width() - self.width()) // 2
-        y = 10
-        self.move(x, y)
+        y = (screen.height() - self.height()) // 2
+        self.move(x, max(20, y))
 
 
 class EditObservationDialog(QDialog):
@@ -586,7 +699,11 @@ class EditWeightDialog(QDialog):
     def __init__(self, current_weight, designation="", parent=None):
         super().__init__(parent)
         self.setWindowTitle("Modifier le Poids Sorti (P.S)")
-        self.setFixedSize(480, 240)
+        self.setMinimumWidth(480)
+        self.setStyleSheet("""
+            QDialog { background-color: #f8fafc; }
+            QLabel { font-size: 13px; color: #1e293b; font-weight: bold; }
+        """)
         
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
@@ -595,28 +712,72 @@ class EditWeightDialog(QDialog):
         if designation:
             lbl_des = QLabel(f"<b>Article / Ligne :</b> {designation}")
             lbl_des.setWordWrap(True)
-            lbl_des.setStyleSheet("font-size: 14px; color: #2c3e50;")
+            lbl_des.setStyleSheet("font-size: 14px; color: #0f8f83;")
             layout.addWidget(lbl_des)
         
         form = QFormLayout()
-        self.inp_weight = QLineEdit(f"{float(current_weight or 0):.2f}")
-        self.inp_weight.setStyleSheet("font-size: 20px; padding: 8px; font-weight: bold; color: #2c3e50; border: 2px solid #3498db; border-radius: 6px;")
+        form.setSpacing(10)
+
+        try:
+            w_val = float(current_weight or 0)
+            initial_text = f"{w_val:.2f}"
+        except Exception:
+            initial_text = "0.00"
+
+        self.inp_weight = QLineEdit(initial_text)
+        self.inp_weight.setStyleSheet("""
+            QLineEdit {
+                font-size: 18px;
+                padding: 6px 10px;
+                font-weight: bold;
+                color: #1e293b;
+                background-color: white;
+                border: 1.5px solid #cbd5e1;
+                border-radius: 6px;
+            }
+            QLineEdit:focus {
+                border-color: #0f8f83;
+                background-color: #f0fdf4;
+            }
+        """)
+        self.inp_weight.setFocusPolicy(Qt.StrongFocus)
         
-        from ui.tools.virtual_numpad import VirtualNumpad
-        def show_pad(inp):
-            VirtualNumpad(mode="direct", target_widget=inp, allow_decimal=True, allow_negative=False, parent=self).show()
-        self.inp_weight.mousePressEvent = lambda e: show_pad(self.inp_weight)
-        
-        form.addRow("⚖️ <b>Poids Sorti P.S (g) :</b>", self.inp_weight)
+        form.addRow("⚖️ <b>Poids Sorti P.S (g) :</b>", self._wrap_num(self.inp_weight, allow_negative=False))
         layout.addLayout(form)
         
         btn_lay = QHBoxLayout()
+        btn_lay.setSpacing(10)
+
         btn_cancel = QPushButton("Annuler")
-        btn_cancel.setStyleSheet("padding: 8px 18px; font-size: 14px;")
+        btn_cancel.setCursor(Qt.PointingHandCursor)
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: #94a3b8;
+                color: white;
+                font-weight: bold;
+                font-size: 14px;
+                padding: 9px 20px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton:hover { background-color: #64748b; }
+        """)
         btn_cancel.clicked.connect(self.reject)
         
-        btn_save = QPushButton("Enregistrer le Poids")
-        btn_save.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; font-size: 14px; padding: 8px 22px; border-radius: 6px;")
+        btn_save = QPushButton("💾 Enregistrer le Poids")
+        btn_save.setCursor(Qt.PointingHandCursor)
+        btn_save.setStyleSheet("""
+            QPushButton {
+                background-color: #27ae60;
+                color: white;
+                font-weight: bold;
+                font-size: 14px;
+                padding: 9px 22px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton:hover { background-color: #219150; }
+        """)
         btn_save.clicked.connect(self.accept)
         
         btn_lay.addStretch()
@@ -624,9 +785,53 @@ class EditWeightDialog(QDialog):
         btn_lay.addWidget(btn_save)
         layout.addLayout(btn_lay)
 
+    def _wrap_num(self, widget, allow_negative=False, allow_decimal=True):
+        container = QWidget()
+        lay = QHBoxLayout(container)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        lay.addWidget(widget, stretch=1)
+
+        btn = QPushButton("🔢")
+        btn.setToolTip("Ouvrir le pavé numérique tactile")
+        btn.setFocusPolicy(Qt.NoFocus)
+        btn.setFixedSize(38, 36)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0f8f83;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #0c756b; }
+            QPushButton:pressed { background-color: #095c54; }
+        """)
+        btn.clicked.connect(lambda: self._open_numpad(widget, allow_negative=allow_negative, allow_decimal=allow_decimal))
+        lay.addWidget(btn)
+        return container
+
+    def _open_numpad(self, widget, allow_negative=False, allow_decimal=True):
+        from ui.tools.virtual_numpad import VirtualNumpad
+        widget.setFocus()
+        pad = VirtualNumpad(
+            title="Saisie Poids",
+            mode="direct",
+            target_widget=widget,
+            allow_decimal=allow_decimal,
+            allow_leading_zero=True,
+            allow_negative=allow_negative,
+            parent=self
+        )
+        pad.show()
+        pad.raise_()
+
     def get_weight(self):
         try:
-            return float(self.inp_weight.text().strip() or 0)
+            txt = self.inp_weight.text().strip().replace(' ', '').replace(',', '.')
+            return float(txt or 0)
         except ValueError:
             return 0.0
 
@@ -636,7 +841,7 @@ class EditWeightDialog(QDialog):
         screen = QApplication.primaryScreen().availableGeometry()
         x = (screen.width() - self.width()) // 2
         y = (screen.height() - self.height()) // 2
-        self.move(x, y)
+        self.move(x, max(20, y))
 
 
 class SaleProductsDialog(QDialog):
@@ -2096,8 +2301,51 @@ class ExcelJournalView(QWidget):
                 self.print_invoice_thermal(sale_id, invoice_note=note)
 
     def on_cell_double_clicked(self, row, col):
+        if row < 0 or row >= self.table.rowCount():
+            return
+        item0 = self.table.item(row, 0)
+        if not item0:
+            return
+
+        row_type = item0.data(Qt.UserRole)
+        if row_type == "TOTAL_JOURNEE" or (item0.text() and item0.text().strip() == "Total Journée"):
+            return
+
+        sale_id = item0.data(Qt.UserRole)
+        if not sale_id:
+            return
+
         if col == 1:
             self.edit_p_s(row)
+        elif col in (0, 2, 3, 4, 5, 6):
+            if self._is_versement_row(item0):
+                QMessageBox.information(
+                    self, "Information",
+                    "Les montants de ce versement sont gérés dans le module 'Gestion des Versements'."
+                )
+                return
+            cash = item0.data(Qt.UserRole + 2)
+            tpe = item0.data(Qt.UserRole + 3)
+            oc = item0.data(Qt.UserRole + 4)
+            euro = item0.data(Qt.UserRole + 5)
+            dollar = item0.data(Qt.UserRole + 6)
+            impos = item0.data(Qt.UserRole + 7)
+            oc_silver = float(item0.data(Qt.UserRole + 14) or 0)
+            self.edit_sale(sale_id, cash, tpe, oc, euro, dollar, impos, oc_silver)
+        elif col == 7:
+            if self._is_versement_row(item0):
+                return
+            seller_id = item0.data(Qt.UserRole + 8)
+            self.edit_seller(sale_id, seller_id)
+        elif col == 8:
+            item_id = item0.data(Qt.UserRole + 1)
+            raw_obs = item0.data(Qt.UserRole + 9)
+            item_obs = self.table.item(row, 8)
+            current_obs = str(raw_obs if raw_obs is not None else (item_obs.text() if item_obs else ""))
+            if isinstance(sale_id, str) and str(sale_id).startswith("VRS_"):
+                self.edit_versement_observation(item_id, current_obs)
+            else:
+                self.edit_observation(sale_id, item_id, current_obs)
 
     def edit_p_s(self, row):
         if row < 0 or row >= self.table.rowCount(): return

@@ -37,10 +37,11 @@ class VirtualNumpad(QDialog):
         if isinstance(initial_value, float):
             self.value = f"{initial_value:.3f}".rstrip('0').rstrip('.')
         else:
-            self.value = str(initial_value).replace(',', '.')
+            self.value = str(initial_value).replace(',', '.').strip()
 
         if self.value.startswith('-'):
-            self.is_negative = True
+            if self.allow_negative:
+                self.is_negative = True
             self.value = self.value[1:]
 
         self.is_new_entry = True if self.value else False
@@ -141,9 +142,8 @@ class VirtualNumpad(QDialog):
                 border-radius: 12px; padding: 10px;
             }
         """)
-        default_display = "" if self.allow_leading_zero else "0"
-        self.display.setText(self.value if self.value else default_display)
         content_layout.addWidget(self.display)
+        self._update_display(sync=False)
 
         # خلفية الأزرار (Card Button Pad)
         pad_container = QWidget()
@@ -232,14 +232,18 @@ class VirtualNumpad(QDialog):
         return btn
 
     def toggle_sign(self):
+        if not self.allow_negative:
+            return
         self.is_negative = not self.is_negative
+        if self.is_new_entry and not self.value:
+            self.is_new_entry = False
         self._update_display()
 
-    def _update_display(self):
-        sign = "-" if self.is_negative else ""
+    def _update_display(self, sync=True):
+        sign = "-" if (self.is_negative and self.allow_negative) else ""
         text_to_show = self.value if self.value else ("" if self.allow_leading_zero else "0")
         
-        if self.is_negative:
+        if self.is_negative and self.allow_negative:
             self.display.setStyleSheet("""
                 QLineEdit {
                     font-size: 42px; font-weight: bold; color: #c0392b;
@@ -257,7 +261,8 @@ class VirtualNumpad(QDialog):
             """)
             
         self.display.setText(f"{sign}{text_to_show}")
-        self._sync_with_target()
+        if sync:
+            self._sync_with_target()
 
     def keyPressEvent(self, event):
         key = event.key()
@@ -268,6 +273,12 @@ class VirtualNumpad(QDialog):
         elif text in ['.', ',']:
             if self.allow_decimal:
                 self.append_char('.')
+        elif text == '-' or key in (Qt.Key_Minus, Qt.Key_Underscore):
+            if self.allow_negative:
+                self.toggle_sign()
+        elif text == '+' or key == Qt.Key_Plus:
+            if self.allow_negative and self.is_negative:
+                self.toggle_sign()
         elif key == Qt.Key_Backspace:
             self.backspace()
         elif key == Qt.Key_Delete:
@@ -281,18 +292,21 @@ class VirtualNumpad(QDialog):
 
     def _sync_with_target(self):
         if self.mode == "direct" and self.target_widget:
-            sign = "-" if self.is_negative else ""
+            sign = "-" if (self.is_negative and self.allow_negative) else ""
             val_to_set = self.value
             if not val_to_set or val_to_set == '.':
                 val_to_set = "" if self.allow_leading_zero else "0"
 
-            final_text = f"{sign}{val_to_set}"
+            if not val_to_set or val_to_set == "0":
+                final_text = "0" if not self.allow_leading_zero else (f"{sign}{val_to_set}" if val_to_set else ("-" if sign else ""))
+            else:
+                final_text = f"{sign}{val_to_set}"
 
             if hasattr(self.target_widget, 'setText'):
                 self.target_widget.setText(final_text)
             elif hasattr(self.target_widget, 'setValue'):
                 try:
-                    num_val = float(final_text) if final_text and final_text != '-' else 0.0
+                    num_val = float(final_text) if final_text and final_text not in ('-', '-0') else 0.0
                     self.target_widget.setValue(num_val)
                 except ValueError:
                     pass
@@ -301,6 +315,7 @@ class VirtualNumpad(QDialog):
         if self.is_new_entry:
             self.value = ""
             self.is_new_entry = False
+            self.is_negative = False
 
         if char == '.' and '.' in self.value:
             return
@@ -324,11 +339,19 @@ class VirtualNumpad(QDialog):
     def backspace(self):
         if self.is_new_entry:
             self.is_new_entry = False
+            self.value = ""
+            self.is_negative = False
+            self._update_display()
+            return
 
         self.value = self.value[:-1]
+        if not self.value:
+            self.is_negative = False
         self._update_display()
 
     def get_value(self):
-        sign = "-" if self.is_negative else ""
         val = self.value if (self.value and self.value != '.') else ("" if self.allow_leading_zero else "0")
+        if not val or val == "0":
+            return "0"
+        sign = "-" if (self.is_negative and self.allow_negative) else ""
         return f"{sign}{val}"
