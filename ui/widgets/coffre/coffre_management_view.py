@@ -649,6 +649,64 @@ class CoffreMagasinView(QWidget):
         self.btn_refresh.clicked.connect(self.load_data)
         filter_layout.addWidget(self.btn_refresh)
 
+        # Bouton Modifier
+        self.btn_edit = QPushButton(" Modifier")
+        self.btn_edit.setIcon(qta.icon("fa5s.edit", color=BRAND_TEAL, color_disabled="#94a3b8"))
+        self.btn_edit.setCursor(Qt.PointingHandCursor)
+        self.btn_edit.setToolTip("Modifier l'opération sélectionnée dans le tableau")
+        self.btn_edit.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #ffffff;
+                border: 1px solid {BRAND_TEAL};
+                border-radius: 6px;
+                color: {BRAND_TEAL};
+                font-weight: bold;
+                font-size: 13px;
+                padding: 6px 14px;
+            }}
+            QPushButton:hover {{
+                background-color: {BRAND_TEAL_LIGHT};
+                border-color: {BRAND_TEAL_DARK};
+            }}
+            QPushButton:disabled {{
+                background-color: #f1f5f9;
+                border-color: {BORDER_LIGHT};
+                color: #94a3b8;
+            }}
+        """)
+        self.btn_edit.setEnabled(False)
+        self.btn_edit.clicked.connect(self._on_edit_selected)
+        filter_layout.addWidget(self.btn_edit)
+
+        # Bouton Supprimer
+        self.btn_delete = QPushButton(" Supprimer")
+        self.btn_delete.setIcon(qta.icon("fa5s.trash-alt", color=CASH_RED, color_disabled="#94a3b8"))
+        self.btn_delete.setCursor(Qt.PointingHandCursor)
+        self.btn_delete.setToolTip("Supprimer l'opération sélectionnée dans le tableau")
+        self.btn_delete.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #ffffff;
+                border: 1px solid {CASH_RED};
+                border-radius: 6px;
+                color: {CASH_RED};
+                font-weight: bold;
+                font-size: 13px;
+                padding: 6px 14px;
+            }}
+            QPushButton:hover {{
+                background-color: #fdf2f2;
+                border-color: #c0392b;
+            }}
+            QPushButton:disabled {{
+                background-color: #f1f5f9;
+                border-color: {BORDER_LIGHT};
+                color: #94a3b8;
+            }}
+        """)
+        self.btn_delete.setEnabled(False)
+        self.btn_delete.clicked.connect(self._on_delete_selected)
+        filter_layout.addWidget(self.btn_delete)
+
         # Bouton Action Principale : + Nouvelle Opération
         self.btn_add = QPushButton(" + Nouvelle Opération")
         self.btn_add.setIcon(qta.icon("fa5s.plus", color="white"))
@@ -711,9 +769,11 @@ class CoffreMagasinView(QWidget):
 
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_context_menu)
         self.table.cellDoubleClicked.connect(self._on_table_double_clicked)
+        self.table.itemSelectionChanged.connect(self._update_action_buttons_state)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(36)
 
@@ -742,9 +802,43 @@ class CoffreMagasinView(QWidget):
         except Exception:
             pass
 
+    def _get_selected_record(self):
+        """Récupère le dictionnaire de données de la ligne sélectionnée (hors ligne TOTAUX)."""
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            row = self.table.currentRow()
+            if row < 0 or row >= self.table.rowCount():
+                return None
+            item = self.table.item(row, 0)
+        else:
+            item = self.table.item(selected_items[0].row(), 0)
+
+        if not item or item.text() == "TOTAUX :":
+            return None
+        return item.data(Qt.UserRole)
+
+    def _update_action_buttons_state(self):
+        """Active ou désactive les boutons Modifier et Supprimer selon la sélection."""
+        record = self._get_selected_record()
+        has_selection = (record is not None)
+        self.btn_edit.setEnabled(has_selection)
+        self.btn_delete.setEnabled(has_selection)
+
+    def _on_edit_selected(self):
+        """Ouvre le dialogue de modification pour la ligne sélectionnée."""
+        record = self._get_selected_record()
+        if record:
+            self.open_edit_dialog(record)
+
+    def _on_delete_selected(self):
+        """Supprime l'opération sélectionnée après confirmation."""
+        record = self._get_selected_record()
+        if record and "id" in record:
+            self.delete_record(record["id"])
+
     def _on_table_double_clicked(self, row, col):
         """Permet l'édition directe d'une opération par double clic."""
-        if row < 0 or row >= len(self.full_data):
+        if row < 0 or row >= self.table.rowCount():
             return
         item = self.table.item(row, 0)
         if item and item.text() == "TOTAUX :":
@@ -997,6 +1091,7 @@ class CoffreMagasinView(QWidget):
 
         self.table.blockSignals(False)
         self.table.setUpdatesEnabled(True)
+        self._update_action_buttons_state()
 
     def load_data(self):
         self.full_data = self.manager.coffre.get_all_operations()

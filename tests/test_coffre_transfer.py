@@ -315,6 +315,80 @@ class TestCoffreTransferAndStructure(unittest.TestCase):
             has_old_disabled = any("Déjà transféré au Coffre" in txt for txt in actions_added)
             self.assertFalse(has_old_disabled, f"Old disabled action still found in: {actions_added}")
 
+    def test_coffre_top_bar_edit_and_delete_buttons_selection_behavior(self):
+        """اختبار أزرار التعديل والحذف في الشريط العلوي وتفاعلها مع تحديد الأسطر في جدول الخزينة"""
+        record_1 = {
+            "id": 101,
+            "date_operation": "01/09/2026",
+            "montant_da": "100000",
+            "oc_or": "10.00",
+            "oc_argent": "20.00",
+            "tpe": "5000",
+            "ccp": "0",
+            "euro": "50",
+            "dollar": "0",
+            "designation": "Op 1"
+        }
+        record_2 = {
+            "id": 102,
+            "date_operation": "02/09/2026",
+            "montant_da": "200000",
+            "oc_or": "5.50",
+            "oc_argent": "15.00",
+            "tpe": "10000",
+            "ccp": "0",
+            "euro": "0",
+            "dollar": "100",
+            "designation": "Op 2"
+        }
+        mock_manager = SimpleNamespace(
+            coffre=SimpleNamespace(
+                get_all_operations=Mock(return_value=[record_1, record_2]),
+                update_operation=Mock(return_value=True),
+                delete_operation=Mock(return_value=True)
+            )
+        )
+        view = CoffreMagasinView(mock_manager)
+        view.load_data()
+
+        # 1. Verify buttons exist
+        self.assertTrue(hasattr(view, "btn_edit"))
+        self.assertTrue(hasattr(view, "btn_delete"))
+
+        # 2. Initially with no selection, both buttons must be disabled
+        view.table.clearSelection()
+        view._update_action_buttons_state()
+        self.assertFalse(view.btn_edit.isEnabled())
+        self.assertFalse(view.btn_delete.isEnabled())
+
+        # 3. Select first data row (row 0) -> Both buttons must be enabled
+        view.table.selectRow(0)
+        self.assertTrue(view.btn_edit.isEnabled())
+        self.assertTrue(view.btn_delete.isEnabled())
+        self.assertEqual(view._get_selected_record()["id"], 101)
+
+        # 4. Select total row (row 2: "TOTAUX :") -> Both buttons must be disabled
+        view.table.selectRow(2)
+        self.assertFalse(view.btn_edit.isEnabled())
+        self.assertFalse(view.btn_delete.isEnabled())
+        self.assertIsNone(view._get_selected_record())
+
+        # 5. Select second data row (row 1) -> Both buttons enabled
+        view.table.selectRow(1)
+        self.assertTrue(view.btn_edit.isEnabled())
+        self.assertTrue(view.btn_delete.isEnabled())
+        self.assertEqual(view._get_selected_record()["id"], 102)
+
+        # 6. Test clicking edit button triggers open_edit_dialog with the selected record
+        with patch.object(view, "open_edit_dialog") as mock_edit_dlg:
+            view.btn_edit.click()
+            mock_edit_dlg.assert_called_once_with(record_2)
+
+        # 7. Test clicking delete button triggers delete_record with the record's id
+        with patch.object(view, "delete_record") as mock_del_rec:
+            view.btn_delete.click()
+            mock_del_rec.assert_called_once_with(102)
+
 
 if __name__ == "__main__":
     unittest.main()
