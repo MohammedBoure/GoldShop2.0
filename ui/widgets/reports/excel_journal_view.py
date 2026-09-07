@@ -852,15 +852,18 @@ class SaleProductsDialog(QDialog):
 class TransferToCoffreDialog(QDialog):
     """
     نافذة مخصصة لتأكيد ومراجعة تحويل الإيراد اليومي والذهب والفضة الكسر (O.C)
-    من شريط الإجمالي باليومية إلى الخزينة المركزية (Coffre Magasin).
+    من شريط الإجمالي باليومية إلى الخزينة المركزية (Coffre Magasin)، مع دعم 
+    استبدال وتحديث السجلات الموجودة مسبقاً لمنع التكرار غير المرغوب.
     """
     def __init__(self, manager, date_str, recette=0.0, oc_gold=0.0, oc_silver=0.0, 
-                 tpe=0.0, euro=0.0, dollar=0.0, journee_id=None, parent=None):
+                 tpe=0.0, euro=0.0, dollar=0.0, journee_id=None, is_replacement=False, parent=None):
         super().__init__(parent)
         self.manager = manager
         self.date_str = date_str
         self.journee_id = journee_id
-        self.setWindowTitle("Transférer la recette et l'O.C vers le Coffre Magasin")
+        self.is_replacement = is_replacement
+        title = "Remplacer le transfert dans le Coffre Magasin" if self.is_replacement else "Transférer la recette et l'O.C vers le Coffre Magasin"
+        self.setWindowTitle(title)
         self.setFixedSize(580, 580)
         self.setStyleSheet("""
             QDialog { background-color: #f8fafc; border-radius: 8px; }
@@ -916,13 +919,17 @@ class TransferToCoffreDialog(QDialog):
         layout.setSpacing(10)
 
         header_frame = QFrame()
-        header_frame.setStyleSheet("background-color: #0f8f83; border-radius: 6px; padding: 10px;")
+        bg_header = "#d35400" if self.is_replacement else "#0f8f83"
+        header_frame.setStyleSheet(f"background-color: {bg_header}; border-radius: 6px; padding: 10px;")
         h_layout = QVBoxLayout(header_frame)
-        lbl_head = QLabel("🏦 Transfert vers le Coffre Magasin")
+        head_text = "🔄 Remplacer la ligne transférée au Coffre" if self.is_replacement else "🏦 Transfert vers le Coffre Magasin"
+        lbl_head = QLabel(head_text)
         lbl_head.setStyleSheet("color: white; font-size: 16px; font-weight: bold;")
         lbl_head.setAlignment(Qt.AlignCenter)
-        lbl_sub = QLabel(f"Journée du : {self.date_str}")
-        lbl_sub.setStyleSheet("color: #e6fffa; font-size: 13px; font-weight: bold;")
+        sub_text = f"Journée du : {self.date_str} (Mise à jour et remplacement)" if self.is_replacement else f"Journée du : {self.date_str}"
+        lbl_sub = QLabel(sub_text)
+        sub_color = "#fdebd0" if self.is_replacement else "#e6fffa"
+        lbl_sub.setStyleSheet(f"color: {sub_color}; font-size: 13px; font-weight: bold;")
         lbl_sub.setAlignment(Qt.AlignCenter)
         h_layout.addWidget(lbl_head)
         h_layout.addWidget(lbl_sub)
@@ -981,8 +988,10 @@ class TransferToCoffreDialog(QDialog):
         btn_cancel.setStyleSheet("background-color: #94a3b8; color: white; font-weight: bold; font-size: 14px; padding: 10px 18px; border-radius: 6px; border: none;")
         btn_cancel.clicked.connect(self.reject)
 
-        btn_confirm = QPushButton("✅ Confirmer le Transfert")
-        btn_confirm.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; font-size: 14px; padding: 10px 22px; border-radius: 6px; border: none;")
+        btn_confirm_text = "🔄 Confirmer le Remplacement" if self.is_replacement else "✅ Confirmer le Transfert"
+        btn_confirm_bg = "#d35400" if self.is_replacement else "#27ae60"
+        btn_confirm = QPushButton(btn_confirm_text)
+        btn_confirm.setStyleSheet(f"background-color: {btn_confirm_bg}; color: white; font-weight: bold; font-size: 14px; padding: 10px 22px; border-radius: 6px; border: none;")
         btn_confirm.clicked.connect(self._do_transfer)
 
         btn_box.addWidget(btn_cancel)
@@ -999,45 +1008,146 @@ class TransferToCoffreDialog(QDialog):
         dollar = self.inp_dollar.text().strip() or "0"
         designation = self.inp_designation.text().strip()
 
-        # Check existing transfer
+        # 1. Mode Remplacement direct demandé
+        if self.is_replacement:
+            try:
+                if hasattr(self.manager, 'coffre') and hasattr(self.manager.coffre, 'replace_daily_transfer'):
+                    res = self.manager.coffre.replace_daily_transfer(
+                        date_operation=date_op,
+                        montant_da=montant,
+                        tpe=tpe,
+                        ccp="0",
+                        euro=euro,
+                        dollar=dollar,
+                        designation=designation,
+                        oc_or=oc_or,
+                        oc_argent=oc_argent
+                    )
+                else:
+                    existing = self.manager.coffre.check_existing_transfer(date_op) if hasattr(self.manager, 'coffre') else []
+                    if existing:
+                        target_id = existing[0]['id']
+                        ok = self.manager.coffre.update_operation(
+                            op_id=target_id,
+                            date_operation=date_op,
+                            montant_da=montant,
+                            tpe=tpe,
+                            ccp="0",
+                            euro=euro,
+                            dollar=dollar,
+                            designation=designation,
+                            oc_or=oc_or,
+                            oc_argent=oc_argent
+                        )
+                        res = {"success": ok, "id": target_id}
+                    else:
+                        res = self.manager.coffre.add_operation(
+                            date_operation=date_op,
+                            montant_da=montant,
+                            tpe=tpe,
+                            ccp="0",
+                            euro=euro,
+                            dollar=dollar,
+                            designation=designation,
+                            oc_or=oc_or,
+                            oc_argent=oc_argent
+                        )
+
+                if res.get("success"):
+                    QMessageBox.information(
+                        self,
+                        "Remplacement Réussi",
+                        f"✅ La ligne du Coffre Magasin pour la date {date_op} a été remplacée avec succès.\n\n"
+                        f"• Recette : {montant} DA\n"
+                        f"• O.C Or : {oc_or} g\n"
+                        f"• O.C Argent : {oc_argent} g\n"
+                        f"• TPE : {tpe} DA"
+                    )
+                    self.accept()
+                else:
+                    QMessageBox.critical(self, "Erreur", f"Échec du remplacement : {res.get('message', 'Erreur inconnue')}")
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", f"Erreur lors du remplacement : {e}")
+            return
+
+        # 2. Mode Ajout standard : vérifier si une opération existe déjà
+        should_replace = False
         if hasattr(self.manager, 'coffre') and hasattr(self.manager.coffre, 'check_existing_transfer'):
             existing = self.manager.coffre.check_existing_transfer(date_op)
             if existing:
-                res = QMessageBox.warning(
-                    self,
-                    "Opération existante",
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("Opération existante")
+                msg_box.setIcon(QMessageBox.Question)
+                msg_box.setText(
                     f"⚠️ Attention : {len(existing)} opération(s) existe(nt) déjà dans le Coffre pour la date {date_op}.\n\n"
-                    "Voulez-vous quand même enregistrer ce nouveau transfert ?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No
+                    "Que souhaitez-vous faire ?"
                 )
-                if res != QMessageBox.Yes:
+                btn_replace = msg_box.addButton("🔄 Remplacer la ligne existante", QMessageBox.ActionRole)
+                btn_add = msg_box.addButton("➕ Ajouter en plus", QMessageBox.ActionRole)
+                btn_cancel = msg_box.addButton("Annuler", QMessageBox.RejectRole)
+                msg_box.exec_()
+                clicked = msg_box.clickedButton()
+                if clicked == btn_cancel:
                     return
+                elif clicked == btn_replace:
+                    should_replace = True
 
-        # Execute insertion in coffre
+        # Execute insertion ou remplacement
         try:
-            result = self.manager.coffre.add_operation(
-                date_operation=date_op,
-                montant_da=montant,
-                tpe=tpe,
-                ccp="0",
-                euro=euro,
-                dollar=dollar,
-                designation=designation,
-                oc_or=oc_or,
-                oc_argent=oc_argent
-            )
+            if should_replace:
+                if hasattr(self.manager.coffre, 'replace_daily_transfer'):
+                    result = self.manager.coffre.replace_daily_transfer(
+                        date_operation=date_op,
+                        montant_da=montant,
+                        tpe=tpe,
+                        ccp="0",
+                        euro=euro,
+                        dollar=dollar,
+                        designation=designation,
+                        oc_or=oc_or,
+                        oc_argent=oc_argent
+                    )
+                else:
+                    existing = self.manager.coffre.check_existing_transfer(date_op)
+                    ok = self.manager.coffre.update_operation(
+                        op_id=existing[0]['id'],
+                        date_operation=date_op,
+                        montant_da=montant,
+                        tpe=tpe,
+                        ccp="0",
+                        euro=euro,
+                        dollar=dollar,
+                        designation=designation,
+                        oc_or=oc_or,
+                        oc_argent=oc_argent
+                    )
+                    result = {"success": ok}
+                action_text = "remplacée avec succès dans"
+            else:
+                result = self.manager.coffre.add_operation(
+                    date_operation=date_op,
+                    montant_da=montant,
+                    tpe=tpe,
+                    ccp="0",
+                    euro=euro,
+                    dollar=dollar,
+                    designation=designation,
+                    oc_or=oc_or,
+                    oc_argent=oc_argent
+                )
+                action_text = "transféré avec succès vers"
+
             if result.get("success"):
                 QMessageBox.information(
                     self,
-                    "Transfert Réussi",
-                    f"✅ Le montant de {montant} DA et l'O.C ({oc_or} g Or / {oc_argent} g Ag) ont été transférés avec succès vers le Coffre Magasin."
+                    "Opération Réussie",
+                    f"✅ Le montant de {montant} DA et l'O.C ({oc_or} g Or / {oc_argent} g Ag) ont été {action_text} le Coffre Magasin."
                 )
                 self.accept()
             else:
-                QMessageBox.critical(self, "Erreur", f"Échec du transfert : {result.get('message', 'Erreur inconnue')}")
+                QMessageBox.critical(self, "Erreur", f"Échec de l'opération : {result.get('message', 'Erreur inconnue')}")
         except Exception as e:
-            QMessageBox.critical(self, "Erreur", f"Erreur lors du transfert : {e}")
+            QMessageBox.critical(self, "Erreur", f"Erreur lors de l'opération : {e}")
 
 
 class ExcelJournalView(QWidget):
@@ -1317,10 +1427,12 @@ class ExcelJournalView(QWidget):
         if hasattr(self.manager, 'coffre') and hasattr(self.manager.coffre, 'check_existing_transfer') and date_str:
             existing_transfers = self.manager.coffre.check_existing_transfer(date_str)
 
-        if existing_transfers:
-            act_info = menu.addAction(f"⚠️ Déjà transféré au Coffre ({len(existing_transfers)} opération(s))")
-            act_info.setEnabled(False)
-            menu.addSeparator()
+        icon_replace = None
+        try:
+            icon_replace = qta.icon("fa5s.sync-alt", color="#e67e22")
+        except Exception:
+            pass
+
         icon_transfer = None
         try:
             icon_transfer = qta.icon("fa5s.donate", color="#27ae60")
@@ -1333,10 +1445,31 @@ class ExcelJournalView(QWidget):
         except Exception:
             pass
 
-        if icon_transfer:
-            act_transfer = menu.addAction(icon_transfer, "📥 Transférer vers le Coffre (Recette & O.C)")
+        act_replace = None
+        act_transfer = None
+
+        if existing_transfers:
+            # Remplacement actif au lieu de la mention désactivée 'Déjà transféré au Coffre'
+            replace_label = "🔄 Remplacer la ligne transférée au Coffre"
+            if len(existing_transfers) > 1:
+                replace_label = f"🔄 Remplacer la ligne transférée au Coffre ({len(existing_transfers)} opérations)"
+
+            if icon_replace:
+                act_replace = menu.addAction(icon_replace, replace_label)
+            else:
+                act_replace = menu.addAction(replace_label)
+
+            menu.addSeparator()
+
+            if icon_transfer:
+                act_transfer = menu.addAction(icon_transfer, "➕ Ajouter un autre transfert vers le Coffre")
+            else:
+                act_transfer = menu.addAction("➕ Ajouter un autre transfert vers le Coffre")
         else:
-            act_transfer = menu.addAction("📥 Transférer vers le Coffre (Recette & O.C)")
+            if icon_transfer:
+                act_transfer = menu.addAction(icon_transfer, "📥 Transférer vers le Coffre (Recette & O.C)")
+            else:
+                act_transfer = menu.addAction("📥 Transférer vers le Coffre (Recette & O.C)")
 
         menu.addSeparator()
 
@@ -1349,7 +1482,7 @@ class ExcelJournalView(QWidget):
         if not action:
             return
 
-        if action == act_transfer:
+        if act_replace and action == act_replace:
             dlg = TransferToCoffreDialog(
                 self.manager,
                 date_str=date_str,
@@ -1360,6 +1493,22 @@ class ExcelJournalView(QWidget):
                 euro=euro,
                 dollar=dollar,
                 journee_id=journee_id,
+                is_replacement=True,
+                parent=self
+            )
+            dlg.exec()
+        elif action == act_transfer:
+            dlg = TransferToCoffreDialog(
+                self.manager,
+                date_str=date_str,
+                recette=recette,
+                oc_gold=oc_gold,
+                oc_silver=oc_silver,
+                tpe=tpe,
+                euro=euro,
+                dollar=dollar,
+                journee_id=journee_id,
+                is_replacement=False,
                 parent=self
             )
             dlg.exec()

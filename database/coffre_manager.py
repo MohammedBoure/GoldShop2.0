@@ -95,6 +95,67 @@ class CoffreManager:
             logging.error(f"Erreur update_operation: {e}")
             return False
 
+    def replace_daily_transfer(self, date_operation: str, montant_da: str = "0", 
+                               tpe: str = "0", ccp: str = "0", 
+                               euro: str = "0", dollar: str = "0", 
+                               designation: str = "",
+                               oc_or: str = "0", oc_argent: str = "0", **kwargs) -> dict:
+        """Remplacer l'opération de transfert de cette journée dans le Coffre (ou l'ajouter si absente)."""
+        if "oc_gold" in kwargs:
+            oc_or = kwargs["oc_gold"]
+        if "oc_silver" in kwargs:
+            oc_argent = kwargs["oc_silver"]
+
+        clean_date = str(date_operation).strip()
+        existing = self.check_existing_transfer(clean_date)
+
+        if existing:
+            target_id = existing[0]["id"]
+            ok = self.update_operation(
+                op_id=target_id,
+                date_operation=clean_date,
+                montant_da=montant_da,
+                tpe=tpe,
+                ccp=ccp,
+                euro=euro,
+                dollar=dollar,
+                designation=designation,
+                oc_or=oc_or,
+                oc_argent=oc_argent
+            )
+            if not ok:
+                return {"success": False, "message": "Échec de la mise à jour de l'opération existante."}
+
+            # Si plusieurs doublons existaient pour la même date, supprimer les autres
+            if len(existing) > 1:
+                other_ids = [r["id"] for r in existing[1:] if r.get("id")]
+                if other_ids:
+                    try:
+                        with self.db.get_db_connection() as conn:
+                            cursor = conn.cursor()
+                            fmt = ",".join(["%s"] * len(other_ids))
+                            cursor.execute(f"DELETE FROM CoffreMagasin WHERE id IN ({fmt})", tuple(other_ids))
+                            conn.commit()
+                    except Exception as e:
+                        logging.warning(f"Erreur nettoyage doublons coffre: {e}")
+
+            return {"success": True, "id": target_id, "action": "replaced", "count": len(existing)}
+        else:
+            res = self.add_operation(
+                date_operation=clean_date,
+                montant_da=montant_da,
+                tpe=tpe,
+                ccp=ccp,
+                euro=euro,
+                dollar=dollar,
+                designation=designation,
+                oc_or=oc_or,
+                oc_argent=oc_argent
+            )
+            if res.get("success"):
+                res["action"] = "created"
+            return res
+
     def delete_operation(self, op_id: int) -> bool:
         """Supprimer une opération"""
         try:

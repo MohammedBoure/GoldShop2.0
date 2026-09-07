@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch, MagicMock
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QDialog, QTableWidgetItem
+from PySide6.QtWidgets import QApplication, QDialog, QTableWidgetItem, QMenu
 from PySide6.QtCore import Qt, QDate
 
 from database.coffre_manager import CoffreManager
@@ -197,28 +197,123 @@ class TestCoffreTransferAndStructure(unittest.TestCase):
             oc_argent="30.00"
         )
 
-    def test_excel_journal_daily_total_row_context_menu_trigger(self):
-        """اختبار استدعاء قائمة تحويل الإجمالي اليومي عند النقر بالزر الأيمن على شريط Total Journée"""
+    def test_coffre_manager_replace_daily_transfer(self):
+        """اختبار دالة استبدال سطر تحويل اليومية في الخزينة وتنظيف التكرار"""
+        mock_cursor = MagicMock()
+        mock_cursor.lastrowid = 77
+        mock_cursor.rowcount = 1
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_conn.__enter__.return_value = mock_conn
+
+        mock_db = MagicMock()
+        mock_db.get_db_connection.return_value = mock_conn
+
+        cm = CoffreManager(mock_db)
+
+        # 1. When existing transfers exist, update primary and delete other duplicates
+        with patch.object(cm, "check_existing_transfer", return_value=[{"id": 10}, {"id": 11}]), \
+             patch.object(cm, "update_operation", return_value=True) as mock_update:
+            res = cm.replace_daily_transfer(
+                date_operation="07/09/2026",
+                montant_da="190000",
+                tpe="15000",
+                oc_or="10.50",
+                oc_argent="20.00"
+            )
+            self.assertTrue(res.get("success"))
+            self.assertEqual(res.get("action"), "replaced")
+            self.assertEqual(res.get("id"), 10)
+            mock_update.assert_called_once()
+            # Verify DELETE was called for duplicate id 11
+            del_calls = [c for c in mock_cursor.execute.call_args_list if "DELETE FROM CoffreMagasin" in str(c)]
+            self.assertEqual(len(del_calls), 1)
+
+        # 2. When no existing transfers exist, add new operation
+        with patch.object(cm, "check_existing_transfer", return_value=[]), \
+             patch.object(cm, "add_operation", return_value={"success": True, "id": 77}) as mock_add:
+            res2 = cm.replace_daily_transfer(
+                date_operation="07/09/2026",
+                montant_da="190000"
+            )
+            self.assertTrue(res2.get("success"))
+            self.assertEqual(res2.get("action"), "created")
+            mock_add.assert_called_once()
+
+    def test_transfer_to_coffre_dialog_replacement_execution(self):
+        """اختبار نافذة التحويل في وضع الاستبدال واستدعاء replace_daily_transfer"""
+        mock_coffre = SimpleNamespace(
+            replace_daily_transfer=Mock(return_value={"success": True, "id": 10}),
+            check_existing_transfer=Mock(return_value=[{"id": 10}])
+        )
+        mock_manager = SimpleNamespace(coffre=mock_coffre)
+
+        dlg = TransferToCoffreDialog(
+            manager=mock_manager,
+            date_str="07/09/2026",
+            recette=250000.0,
+            oc_gold=18.00,
+            oc_silver=10.00,
+            tpe=20000.0,
+            euro=0.0,
+            dollar=0.0,
+            is_replacement=True
+        )
+
+        self.assertTrue(dlg.is_replacement)
+        self.assertIn("Remplacer", dlg.windowTitle())
+
+        with patch("PySide6.QtWidgets.QMessageBox.information"):
+            dlg._do_transfer()
+
+        mock_coffre.replace_daily_transfer.assert_called_once_with(
+            date_operation="07/09/2026",
+            montant_da="250000",
+            tpe="20000",
+            ccp="0",
+            euro="0",
+            dollar="0",
+            designation="Recette & O.C Journal du 07/09/2026",
+            oc_or="18.00",
+            oc_argent="10.00"
+        )
+
+    def test_daily_total_context_menu_has_replace_command_when_already_transferred(self):
+        """اختبار ظهور أمر استبدال سطر الخزينة كأمر مفعل بدلاً من أمر معطل عند وجود تحويل سابق"""
         mock_manager = SimpleNamespace(
             sales=SimpleNamespace(get_bulk_sales_for_excel=Mock(return_value={})),
             cash_box=SimpleNamespace(get_all_sessions=Mock(return_value=[])),
-            coffre=SimpleNamespace(check_existing_transfer=Mock(return_value=[])),
+            coffre=SimpleNamespace(check_existing_transfer=Mock(return_value=[{"id": 10, "montant_da": "100000"}])),
             db=SimpleNamespace(get_db_connection=Mock()),
         )
         view = ExcelJournalView(mock_manager)
-        view.table.setRowCount(1)
-        item0 = QTableWidgetItem("Total Journée")
-        item0.setData(Qt.UserRole, "TOTAL_JOURNEE")
-        item0.setData(Qt.UserRole + 1, "04/09/2026")
-        item0.setData(Qt.UserRole + 2, 220000.0)
-        item0.setData(Qt.UserRole + 3, 10.50)
-        item0.setData(Qt.UserRole + 4, 18.00)
-        view.table.setItem(0, 0, item0)
+        total_item = QTableWidgetItem("Total Journée")
+        total_item.setData(Qt.UserRole, "TOTAL_JOURNEE")
+        total_item.setData(Qt.UserRole + 1, "07/09/2026")
+        total_item.setData(Qt.UserRole + 2, 250000.0)
+        total_item.setData(Qt.UserRole + 3, 18.00)
+        total_item.setData(Qt.UserRole + 4, 10.00)
 
-        with patch.object(view, "_show_daily_total_context_menu") as mock_menu:
-            from PySide6.QtCore import QPoint
-            view.show_context_menu(QPoint(5, 5))
-            mock_menu.assert_called_once_with(QPoint(5, 5), item0)
+        with patch("PySide6.QtWidgets.QMenu.exec_", return_value=None):
+            # Capture actions added to QMenu
+            actions_added = []
+            orig_add_action = QMenu.addAction
+
+            def mock_add_action(self, *args, **kwargs):
+                action = orig_add_action(self, *args, **kwargs)
+                actions_added.append(action.text())
+                return action
+
+            with patch.object(QMenu, "addAction", mock_add_action):
+                from PySide6.QtCore import QPoint
+                view._show_daily_total_context_menu(QPoint(0, 0), total_item)
+
+            # Vérifier la présence de l'action de remplacement active
+            has_replace_act = any("Remplacer la ligne transférée au Coffre" in txt for txt in actions_added)
+            self.assertTrue(has_replace_act, f"Actions found: {actions_added}")
+            # Vérifier qu'on n'a plus l'ancienne information désactivée 'Déjà transféré au Coffre'
+            has_old_disabled = any("Déjà transféré au Coffre" in txt for txt in actions_added)
+            self.assertFalse(has_old_disabled, f"Old disabled action still found in: {actions_added}")
 
 
 if __name__ == "__main__":
