@@ -479,8 +479,8 @@ class ArtisanWorkManager:
                         "observations": t.get('observations') or ""
                     })
 
-            # Sort by date
-            ledger.sort(key=lambda x: x['date_trans'], reverse=True)
+            # Sort by date safely
+            ledger.sort(key=lambda x: str(x.get('date_trans') or ''), reverse=True)
             return ledger
         except Exception as e:
             logging.error(f"Erreur get_artisan_ledger: {e}")

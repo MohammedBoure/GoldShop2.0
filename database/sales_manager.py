@@ -353,7 +353,7 @@ class SalesManager:
                         NULL as vendeur_id,
                         awo.observations as raw_notes,
                         awo.numero as repair_numero,
-                        awo.date_remis as timestamp
+                        COALESCE(awo.created_at, STR_TO_DATE(awo.date_remis, '%Y-%m-%d'), awo.date_remis) as timestamp
                     FROM ArtisanWorkOrders awo
                     LEFT JOIN Clients c ON awo.client_id = c.id
                     LEFT JOIN Artisans a ON awo.artisan_id = a.id
@@ -370,12 +370,55 @@ class SalesManager:
                 while cursor.nextset(): pass
                 
                 results_by_session = {jid: [] for jid in journee_ids}
-                from datetime import datetime
+                from datetime import datetime, date
+
+                def _parse_excel_timestamp(ts):
+                    if not ts:
+                        return datetime.min
+                    if isinstance(ts, datetime):
+                        return ts
+                    if isinstance(ts, date):
+                        return datetime.combine(ts, datetime.min.time())
+                    if isinstance(ts, str):
+                        ts_str = ts.strip()
+                        if not ts_str:
+                            return datetime.min
+                        for fmt in (
+                            "%Y-%m-%d %H:%M:%S",
+                            "%Y-%m-%d %H:%M",
+                            "%Y-%m-%d",
+                            "%d/%m/%Y %H:%M:%S",
+                            "%d/%m/%Y %H:%M",
+                            "%d/%m/%Y",
+                            "%Y/%m/%d %H:%M:%S",
+                            "%Y/%m/%d",
+                        ):
+                            try:
+                                return datetime.strptime(ts_str[:19], fmt)
+                            except (ValueError, TypeError):
+                                continue
+                        try:
+                            return datetime.fromisoformat(ts_str)
+                        except Exception:
+                            return datetime.min
+                    return datetime.min
+
+                def _safe_excel_item_id(item_id):
+                    try:
+                        return int(item_id or 0)
+                    except (ValueError, TypeError):
+                        return 0
+
                 for r in sales_results + vp_results + awo_results:
                     jid = r.get('journee_id')
                     c_name = r.get('client_name')
                     r_notes = str(r.get('raw_notes') or r.get('Observation') or '').strip()
                     sale_id_str = str(r.get('sale_id') or '')
+
+                    # Normalize timestamp object so downstream code receives consistent datetime types
+                    parsed_dt = _parse_excel_timestamp(r.get('timestamp'))
+                    if parsed_dt != datetime.min:
+                        r['timestamp'] = parsed_dt
 
                     if sale_id_str.startswith('REP_'):
                         obs_parts = []
@@ -401,7 +444,13 @@ class SalesManager:
                         results_by_session[jid].append(r)
 
                 for jid in results_by_session:
-                    results_by_session[jid].sort(key=lambda x: (x['timestamp'] if x['timestamp'] else datetime.min, str(x['sale_id']), x['item_id']))
+                    results_by_session[jid].sort(
+                        key=lambda x: (
+                            _parse_excel_timestamp(x.get('timestamp')),
+                            str(x.get('sale_id') or ''),
+                            _safe_excel_item_id(x.get('item_id'))
+                        )
+                    )
                 
                 return results_by_session
         except Exception as e:
