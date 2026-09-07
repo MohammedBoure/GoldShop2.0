@@ -66,21 +66,14 @@ class MonthlySummaryView(QWidget):
         if not self._is_authenticated and MonthlySummaryView._session_authenticated:
             self._is_authenticated = True
 
-        if not self._is_authenticated:
-            if not self._is_prompting:
-                self._is_prompting = True
-                try:
-                    if self._prompt_admin_password():
-                        self.load_data()
-                    else:
-                        self._render_locked_state()
-                finally:
-                    self._is_prompting = False
-                    self._update_auth_ui_state()
-        else:
-            self._update_auth_ui_state()
+        self._update_auth_ui_state()
+
+        if self._is_authenticated:
             if self.table.rowCount() == 0:
                 self.load_data()
+        else:
+            self._render_locked_state()
+            self.inp_password.setFocus()
 
     def hideEvent(self, event):
         super().hideEvent(event)
@@ -104,27 +97,9 @@ class MonthlySummaryView(QWidget):
 
         return {}
 
-    def _prompt_admin_password(self):
+    def _verify_admin_password(self, pwd):
         user = self._get_current_user()
         username = user.get('username') if user else None
-
-        if username:
-            prompt_label = f"Veuillez entrer le mot de passe de l'administrateur ({username}) :"
-        else:
-            prompt_label = "Veuillez entrer le mot de passe Administrateur :"
-
-        from ui.tools.virtual_keyboard import VirtualPasswordInputDialog
-        # 🟢 auto_open_keyboard=False : ouverture normale sans forcer le clavier virtuel tactile
-        pwd, ok = VirtualPasswordInputDialog.getText(
-            self,
-            "Protection Administrateur",
-            prompt_label,
-            QLineEdit.Password,
-            auto_open_keyboard=False
-        )
-
-        if not ok or not pwd:
-            return False
 
         is_valid = False
         if username and hasattr(self.manager, 'users') and hasattr(self.manager.users, 'authenticate'):
@@ -142,36 +117,85 @@ class MonthlySummaryView(QWidget):
             except Exception:
                 pass
 
-        if is_valid:
+        return is_valid
+
+    def _on_inline_unlock(self):
+        """Valide le mot de passe administrateur saisi directement dans la barre d'interface."""
+        pwd = self.inp_password.text().strip()
+        if not pwd:
+            self.lbl_auth_error.setText("⚠️ Entrez le mot de passe.")
+            self.lbl_auth_error.setVisible(True)
+            self.inp_password.setFocus()
+            return
+
+        if self._verify_admin_password(pwd):
             self._is_authenticated = True
             MonthlySummaryView._session_authenticated = True
+            self.lbl_auth_error.setVisible(False)
+            self.inp_password.clear()
+            self._update_auth_ui_state()
+            self.load_data()
+        else:
+            self.lbl_auth_error.setText("❌ Mot de passe incorrect.")
+            self.lbl_auth_error.setVisible(True)
+            self.inp_password.selectAll()
+            self.inp_password.setFocus()
+
+    def _on_unlock_clicked(self):
+        """Déclenche la validation du mot de passe lors du clic sur Déverrouiller."""
+        self._on_inline_unlock()
+
+    def _prompt_admin_password(self):
+        """Vérifie le mot de passe saisi inline sans ouvrir de dialogue modal au milieu."""
+        pwd = self.inp_password.text().strip()
+        if pwd and self._verify_admin_password(pwd):
+            self._is_authenticated = True
+            MonthlySummaryView._session_authenticated = True
+            self.lbl_auth_error.setVisible(False)
+            self.inp_password.clear()
             self._update_auth_ui_state()
             return True
+        self.inp_password.setFocus()
+        return self._is_authenticated
+
+    def _toggle_password_visibility(self):
+        """Bascule entre affichage masqué et texte clair du mot de passe."""
+        if self.inp_password.echoMode() == QLineEdit.Password:
+            self.inp_password.setEchoMode(QLineEdit.Normal)
+            try:
+                self.btn_toggle_eye.setIcon(qta.icon("fa5s.eye-slash", color="#0f8f83"))
+            except Exception:
+                self.btn_toggle_eye.setText("🙈")
         else:
-            QMessageBox.warning(self, "Accès Refusé", "Mot de passe Administrateur incorrect.")
-            self._is_authenticated = False
-            MonthlySummaryView._session_authenticated = False
-            self._update_auth_ui_state()
-            return False
+            self.inp_password.setEchoMode(QLineEdit.Password)
+            try:
+                self.btn_toggle_eye.setIcon(qta.icon("fa5s.eye", color="#64748b"))
+            except Exception:
+                self.btn_toggle_eye.setText("👁")
+
+    def _open_virtual_keyboard(self):
+        """Ouvre le clavier tactile uniquement à la demande expresse de l'utilisateur."""
+        self.inp_password.setFocus()
+        from ui.tools.virtual_keyboard import VirtualKeyboardDialog
+        kb = VirtualKeyboardDialog(self)
+        kb.show()
 
     def lock_session(self):
         """Verrouille manuellement la session administrateur."""
         self._is_authenticated = False
         MonthlySummaryView._session_authenticated = False
+        self.inp_password.clear()
+        self.lbl_auth_error.setVisible(False)
         self._render_locked_state()
         self._update_auth_ui_state()
+        self.inp_password.setFocus()
         QMessageBox.information(self, "Session Verrouillée", "La session administrateur du résumé mensuel a été verrouillée.")
-
-    def _on_unlock_clicked(self):
-        """Déclenche la demande de mot de passe lors d'un clic explicite sur Déverrouiller."""
-        if self._prompt_admin_password():
-            self.load_data()
 
     def _render_locked_state(self):
         """Affiche un état verrouillé clair dans le tableau."""
         self.table.clearSpans()
         self.table.setRowCount(1)
-        item = QTableWidgetItem("🔒 Accès Administrateur requis — Cliquez sur 'Déverrouiller' pour afficher le résumé mensuel.")
+        item = QTableWidgetItem("🔒 Accès Administrateur requis — Entrez le mot de passe dans la barre ci-dessus pour afficher le résumé mensuel.")
         item.setTextAlignment(Qt.AlignCenter)
         item.setFont(QFont("", 13, QFont.Bold))
         item.setForeground(QBrush(QColor("#64748b")))
@@ -183,6 +207,7 @@ class MonthlySummaryView(QWidget):
     def _update_auth_ui_state(self):
         """Met à jour l'apparence des contrôles et des boutons selon l'état d'authentification."""
         if self._is_authenticated:
+            self.auth_container.setVisible(False)
             self.btn_unlock.setVisible(False)
             self.btn_logout.setVisible(True)
             self.lbl_session_status.setText("🟢 Session Admin active")
@@ -200,19 +225,10 @@ class MonthlySummaryView(QWidget):
             self.combo_year.setEnabled(True)
             self.combo_month.setEnabled(True)
         else:
+            self.auth_container.setVisible(True)
             self.btn_unlock.setVisible(True)
             self.btn_logout.setVisible(False)
-            self.lbl_session_status.setText("🔒 Session verrouillée")
-            self.lbl_session_status.setStyleSheet("""
-                color: #be3528;
-                font-weight: bold;
-                font-size: 12px;
-                padding: 5px 10px;
-                background-color: #fff5f3;
-                border-radius: 6px;
-                border: 1px solid #f9d2ce;
-            """)
-            self.lbl_session_status.setVisible(True)
+            self.lbl_session_status.setVisible(False)
             self.btn_search.setEnabled(False)
 
     def init_ui(self):
@@ -286,11 +302,71 @@ class MonthlySummaryView(QWidget):
 
         row1.addStretch()
 
-        # Badge de statut de session
-        self.lbl_session_status = QLabel("")
-        row1.addWidget(self.lbl_session_status)
+        # --- Conteneur d'authentification inline (directement dans la barre d'interface) ---
+        self.auth_container = QWidget()
+        auth_lay = QHBoxLayout(self.auth_container)
+        auth_lay.setContentsMargins(0, 0, 0, 0)
+        auth_lay.setSpacing(6)
 
-        # Bouton Déverrouiller (quand verrouillé)
+        self.lbl_lock_title = QLabel("🔒 Mot de passe Admin :")
+        self.lbl_lock_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #be3528;")
+        auth_lay.addWidget(self.lbl_lock_title)
+
+        self.inp_password = QLineEdit()
+        self.inp_password.setEchoMode(QLineEdit.Password)
+        self.inp_password.setPlaceholderText("Mot de passe...")
+        self.inp_password.setFixedWidth(160)
+        self.inp_password.setFocusPolicy(Qt.StrongFocus)
+        self.inp_password.setStyleSheet("""
+            QLineEdit {
+                font-size: 13px;
+                font-weight: bold;
+                padding: 5px 8px;
+                border: 1.5px solid #cbd5df;
+                border-radius: 6px;
+                background-color: white;
+                color: #24313f;
+            }
+            QLineEdit:focus {
+                border-color: #0f8f83;
+                background-color: #f0fdf4;
+            }
+        """)
+        self.inp_password.returnPressed.connect(self._on_inline_unlock)
+        auth_lay.addWidget(self.inp_password)
+
+        self.btn_toggle_eye = QPushButton()
+        self.btn_toggle_eye.setIcon(qta.icon("fa5s.eye", color="#64748b"))
+        self.btn_toggle_eye.setToolTip("Afficher / Masquer le mot de passe")
+        self.btn_toggle_eye.setFixedSize(32, 30)
+        self.btn_toggle_eye.setCursor(Qt.PointingHandCursor)
+        self.btn_toggle_eye.setStyleSheet("""
+            QPushButton {
+                background-color: #f1f5f9;
+                border: 1px solid #cbd5df;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #e2e8f0; }
+        """)
+        self.btn_toggle_eye.clicked.connect(self._toggle_password_visibility)
+        auth_lay.addWidget(self.btn_toggle_eye)
+
+        self.btn_kb = QPushButton()
+        self.btn_kb.setIcon(qta.icon("fa5s.keyboard", color="#0f8f83"))
+        self.btn_kb.setToolTip("Ouvrir le clavier tactile (Touch)")
+        self.btn_kb.setFixedSize(32, 30)
+        self.btn_kb.setCursor(Qt.PointingHandCursor)
+        self.btn_kb.setStyleSheet("""
+            QPushButton {
+                background-color: #f1f5f9;
+                border: 1px solid #cbd5df;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #e2e8f0; }
+        """)
+        self.btn_kb.clicked.connect(self._open_virtual_keyboard)
+        auth_lay.addWidget(self.btn_kb)
+
         self.btn_unlock = QPushButton(" Déverrouiller")
         self.btn_unlock.setIcon(qta.icon("fa5s.unlock-alt", color="white"))
         self.btn_unlock.setCursor(Qt.PointingHandCursor)
@@ -308,8 +384,19 @@ class MonthlySummaryView(QWidget):
                 background-color: #0a7c72;
             }
         """)
-        self.btn_unlock.clicked.connect(self._on_unlock_clicked)
-        row1.addWidget(self.btn_unlock)
+        self.btn_unlock.clicked.connect(self._on_inline_unlock)
+        auth_lay.addWidget(self.btn_unlock)
+
+        self.lbl_auth_error = QLabel("")
+        self.lbl_auth_error.setStyleSheet("color: #be3528; font-weight: bold; font-size: 12px;")
+        self.lbl_auth_error.setVisible(False)
+        auth_lay.addWidget(self.lbl_auth_error)
+
+        row1.addWidget(self.auth_container)
+
+        # Badge de statut de session
+        self.lbl_session_status = QLabel("")
+        row1.addWidget(self.lbl_session_status)
 
         # Bouton Déconnexion / Verrouiller (quand connecté)
         self.btn_logout = QPushButton(" Déconnexion")
@@ -391,7 +478,13 @@ class MonthlySummaryView(QWidget):
         for i in range(self.table.columnCount()):
             header.setSectionResizeMode(i, QHeaderView.Stretch if i in [4, 11] else QHeaderView.ResizeToContents)
 
+        self.table.cellClicked.connect(self._on_table_cell_clicked)
         layout.addWidget(self.table)
+
+    def _on_table_cell_clicked(self, row, col):
+        if not self._is_authenticated:
+            self.inp_password.setFocus()
+            self.inp_password.selectAll()
 
     def _on_filter_changed(self):
         """Recharge automatiquement les données lors du changement de mois ou d'année si authentifié."""

@@ -69,5 +69,65 @@ class TestMonthlySummaryAuth(unittest.TestCase):
         self.assertIn("Accès Administrateur requis", view.table.item(0, 0).text())
 
 
+    def test_inline_password_unlock_success(self):
+        """التحقق من نجاح فك القفل عبر كتابة كلمة المرور مباشرة في حقل الواجهة"""
+        view = MonthlySummaryView(self.mock_manager)
+        self.assertFalse(view._is_authenticated)
+        self.assertFalse(view.auth_container.isHidden())
+        self.assertFalse(view.inp_password.isHidden())
+
+        view.inp_password.setText("secret_admin_pass")
+        with patch.object(view, "load_data") as mock_load:
+            view._on_inline_unlock()
+            mock_load.assert_called_once()
+
+        self.assertTrue(view._is_authenticated)
+        self.assertTrue(MonthlySummaryView._session_authenticated)
+        self.assertTrue(view.auth_container.isHidden())
+        self.assertFalse(view.btn_logout.isHidden())
+        self.assertEqual(view.inp_password.text(), "")
+
+    def test_inline_password_unlock_failure(self):
+        """التحقق من ظهور رسالة الخطأ المضمنة في الواجهة عند إدخال كلمة مرور خاطئة دون فتح أي دايلوج"""
+        self.mock_manager.users.authenticate.return_value = False
+        self.mock_manager.users.verify_admin_password.return_value = False
+
+        view = MonthlySummaryView(self.mock_manager)
+        view.inp_password.setText("wrong_password")
+        with patch.object(view, "load_data") as mock_load:
+            view._on_inline_unlock()
+            mock_load.assert_not_called()
+
+        self.assertFalse(view._is_authenticated)
+        self.assertFalse(MonthlySummaryView._session_authenticated)
+        self.assertFalse(view.lbl_auth_error.isHidden())
+        self.assertIn("Mot de passe incorrect", view.lbl_auth_error.text())
+
+    def test_no_modal_dialog_on_show_when_locked(self):
+        """التحقق من عدم ظهور أي دايلوج في منتصف الشاشة عند فتح الواجهة وهي مقفلة"""
+        view = MonthlySummaryView(self.mock_manager)
+        self.assertFalse(view._is_authenticated)
+
+        with patch("ui.tools.virtual_keyboard.VirtualPasswordInputDialog.getText") as mock_dialog:
+            view.show()
+            mock_dialog.assert_not_called()
+
+        # الواجهة تبقى مقفلة بدون إزعاج المستخدم بدايلوج منبثق
+        self.assertFalse(view._is_authenticated)
+        self.assertFalse(view.auth_container.isHidden())
+
+    def test_toggle_password_visibility(self):
+        """التحقق من زر إظهار وإخفاء كلمة المرور"""
+        from PySide6.QtWidgets import QLineEdit
+        view = MonthlySummaryView(self.mock_manager)
+        self.assertEqual(view.inp_password.echoMode(), QLineEdit.Password)
+
+        view._toggle_password_visibility()
+        self.assertEqual(view.inp_password.echoMode(), QLineEdit.Normal)
+
+        view._toggle_password_visibility()
+        self.assertEqual(view.inp_password.echoMode(), QLineEdit.Password)
+
+
 if __name__ == "__main__":
     unittest.main()
