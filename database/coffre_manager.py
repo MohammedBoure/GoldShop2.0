@@ -169,7 +169,7 @@ class CoffreManager:
             return False
 
     def get_all_operations(self) -> list:
-        """Récupérer toutes les opérations"""
+        """Récupérer toutes les opérations par ordre chronologique (anciennes en haut, récentes en bas)"""
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
@@ -179,7 +179,7 @@ class CoffreManager:
                            COALESCE(oc_argent, '0') as oc_argent, 
                            tpe, ccp, euro, dollar, designation 
                     FROM CoffreMagasin 
-                    ORDER BY id DESC
+                    ORDER BY id ASC
                 """)
                 return cursor.fetchall()
         except Exception as e:
@@ -187,7 +187,7 @@ class CoffreManager:
             return []
 
     def get_operations_by_month(self, year: int, month: int) -> list:
-        """Récupérer les opérations d'un mois spécifique"""
+        """Récupérer les opérations d'un mois spécifique par ordre chronologique"""
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
@@ -198,7 +198,7 @@ class CoffreManager:
                            tpe, ccp, euro, dollar, designation 
                     FROM CoffreMagasin 
                     WHERE date_operation LIKE %s
-                    ORDER BY id DESC
+                    ORDER BY id ASC
                 """
                 # Cherche au format dd/MM/yyyy
                 pattern = f"%/__/{year}"

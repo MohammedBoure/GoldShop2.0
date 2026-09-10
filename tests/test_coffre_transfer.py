@@ -389,6 +389,64 @@ class TestCoffreTransferAndStructure(unittest.TestCase):
             view.btn_delete.click()
             mock_del_rec.assert_called_once_with(102)
 
+    def test_coffre_magasin_table_chronological_sorting(self):
+        """اختبار ترتيب جدول الخزينة تصاعدياً: التاريخ القديم في الأعلى والتاريخ الجديد في الأسفل"""
+        from ui.widgets.coffre.coffre_management_view import parse_date_sort_key
+
+        rec_old = {"id": 1, "date_operation": "01/01/2025", "montant_da": "1000", "designation": "Ancien"}
+        rec_mid = {"id": 2, "date_operation": "15/06/2025", "montant_da": "2000", "designation": "Milieu"}
+        rec_new = {"id": 3, "date_operation": "10/09/2026", "montant_da": "3000", "designation": "Recent"}
+
+        # Même si la base de données retourne les données dans l'ordre inverse (ou mélangé)
+        mock_manager = SimpleNamespace(
+            coffre=SimpleNamespace(
+                get_all_operations=Mock(return_value=[rec_new, rec_old, rec_mid]),
+                update_operation=Mock(return_value=True),
+                delete_operation=Mock(return_value=True)
+            )
+        )
+        view = CoffreMagasinView(mock_manager)
+        view.load_data()
+
+        # Le tableau doit comporter 3 lignes de données + 1 ligne TOTAUX = 4 lignes
+        self.assertEqual(view.table.rowCount(), 4)
+
+        # Ligne 0 (en haut) doit être la plus ancienne (01/01/2025)
+        self.assertEqual(view.table.item(0, 0).text(), "01/01/2025")
+        self.assertEqual(view.table.item(0, 8).text(), "Ancien")
+
+        # Ligne 1 doit être la date intermédiaire (15/06/2025)
+        self.assertEqual(view.table.item(1, 0).text(), "15/06/2025")
+        self.assertEqual(view.table.item(1, 8).text(), "Milieu")
+
+        # Ligne 2 (en bas des données) doit être la plus récente (10/09/2026)
+        self.assertEqual(view.table.item(2, 0).text(), "10/09/2026")
+        self.assertEqual(view.table.item(2, 8).text(), "Recent")
+
+        # Ligne 3 est la ligne de totaux
+        self.assertEqual(view.table.item(3, 0).text(), "TOTAUX :")
+
+    def test_coffre_magasin_scroll_to_bottom_called(self):
+        """اختبار استدعاء التمرير لأسفل الجدول عند العرض أو الدخول للواجهة"""
+        mock_manager = SimpleNamespace(
+            coffre=SimpleNamespace(
+                get_all_operations=Mock(return_value=[
+                    {"id": 1, "date_operation": "01/09/2026", "montant_da": "1000", "designation": "Op 1"}
+                ])
+            )
+        )
+        view = CoffreMagasinView(mock_manager)
+
+        with patch.object(view, "_scroll_to_bottom") as mock_scroll:
+            view.load_data()
+            self.assertTrue(mock_scroll.called)
+
+        # Vérifier l'appel lors du showEvent
+        with patch.object(view, "_scroll_to_bottom") as mock_scroll_show:
+            from PySide6.QtGui import QShowEvent
+            view.showEvent(QShowEvent())
+            self.assertTrue(mock_scroll_show.called)
+
 
 if __name__ == "__main__":
     unittest.main()

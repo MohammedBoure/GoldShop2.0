@@ -118,6 +118,51 @@ def extract_month(date_str):
     return None
 
 
+def parse_date_sort_key(record):
+    """
+    Clé de tri chronologique croissante :
+    Ancienne date en haut (début du tableau) -> Nouvelle date en bas (fin du tableau).
+    En cas d'égalité de date ou format inconnu, utilise l'id comme critère secondaire.
+    """
+    if not isinstance(record, dict):
+        return (0, 0, 0, 0)
+
+    date_str = str(record.get('date_operation', '')).strip()
+    rec_id = int(record.get('id') or 0)
+
+    if not date_str:
+        return (0, 0, 0, rec_id)
+
+    date_part = date_str.split(' ')[0].strip()
+
+    if '/' in date_part:
+        parts = date_part.split('/')
+        if len(parts) == 3:
+            try:
+                day = int(parts[0])
+                month = int(parts[1])
+                year = int(parts[2])
+                if year < 100:
+                    year += 2000
+                return (year, month, day, rec_id)
+            except ValueError:
+                pass
+    elif '-' in date_part:
+        parts = date_part.split('-')
+        if len(parts) == 3:
+            try:
+                year = int(parts[0])
+                month = int(parts[1])
+                day = int(parts[2])
+                if year < 100:
+                    year += 2000
+                return (year, month, day, rec_id)
+            except ValueError:
+                pass
+
+    return (0, 0, 0, rec_id)
+
+
 def safe_float(val):
     try:
         return float(str(val).replace(' ', '').replace(',', '.'))
@@ -491,9 +536,24 @@ class CoffreMagasinView(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        # Recharger les données lors de l'accès à l'onglet
+        # Recharger les données lors de l'accès à l'onglet si vide, sinon défiler vers le bas
         if hasattr(self, "full_data") and not self.full_data:
             self.load_data()
+        else:
+            self._scroll_to_bottom()
+            QTimer.singleShot(60, self._scroll_to_bottom)
+
+    def _scroll_to_bottom(self):
+        """Fait défiler le tableau jusqu'au bas pour afficher les opérations récentes et les totaux."""
+        if hasattr(self, "table") and self.table.rowCount() > 0:
+            last_row = self.table.rowCount() - 1
+            item = self.table.item(last_row, 0)
+            if item:
+                self.table.scrollToItem(item, QAbstractItemView.PositionAtBottom)
+            self.table.scrollToBottom()
+            vsb = self.table.verticalScrollBar()
+            if vsb:
+                vsb.setValue(vsb.maximum())
 
     def refresh_data(self):
         """Méthode standard reconnue par le chargeur de pages lazy de MainWindow."""
@@ -969,6 +1029,7 @@ class CoffreMagasinView(QWidget):
             if ok:
                 filtered.append(r)
 
+        filtered.sort(key=parse_date_sort_key)
         self._render_table(filtered)
 
     def _color_for_amount(self, val_str):
@@ -1092,9 +1153,12 @@ class CoffreMagasinView(QWidget):
         self.table.blockSignals(False)
         self.table.setUpdatesEnabled(True)
         self._update_action_buttons_state()
+        self._scroll_to_bottom()
+        QTimer.singleShot(60, self._scroll_to_bottom)
 
     def load_data(self):
-        self.full_data = self.manager.coffre.get_all_operations()
+        ops = self.manager.coffre.get_all_operations()
+        self.full_data = sorted(ops, key=parse_date_sort_key)
         self._build_year_combo()
         self._update_title_and_filter()
 
