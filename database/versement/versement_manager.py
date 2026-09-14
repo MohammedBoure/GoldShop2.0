@@ -747,7 +747,8 @@ class VersementManager:
                        versement_item_id: int = None, montant_dollar: float = 0.0, 
                        taux_change_dollar: float = 0.0, remise_da: float = 0.0,
                        tpe_da: float = 0.0, argent_casse_g: float = 0.0,
-                       prix_gramme_argent_jour_da: float = 0.0) -> bool:
+                       prix_gramme_argent_jour_da: float = 0.0,
+                       prix_gramme_jour_da: float = 0.0) -> bool:
         """تحديث بيانات دفعة مالية تم إدخالها بالخطأ أو إعادة توجيهها لمنتج محدد"""
         try:
             with self.db.get_db_connection() as conn:
@@ -757,9 +758,9 @@ class VersementManager:
                     SET montant_da = %s, tpe_da = %s, montant_euro = %s, taux_change_euro = %s,
                         montant_dollar = %s, taux_change_dollar = %s, remise_da = %s,
                         or_casse_g = %s, argent_casse_g = %s, poids_deduit_g = %s,
-                        prix_gramme_argent_jour_da = %s, notes = %s, versement_item_id = %s
+                        prix_gramme_jour_da = %s, prix_gramme_argent_jour_da = %s, notes = %s, versement_item_id = %s
                     WHERE id = %s
-                """, (montant_da, tpe_da, montant_euro, taux_change_euro, montant_dollar, taux_change_dollar, remise_da, or_casse_g, argent_casse_g, poids_deduit_g, prix_gramme_argent_jour_da, notes, versement_item_id, payment_id))
+                """, (montant_da, tpe_da, montant_euro, taux_change_euro, montant_dollar, taux_change_dollar, remise_da, or_casse_g, argent_casse_g, poids_deduit_g, prix_gramme_jour_da, prix_gramme_argent_jour_da, notes, versement_item_id, payment_id))
                 conn.commit()
                 return True
         except Exception as e:

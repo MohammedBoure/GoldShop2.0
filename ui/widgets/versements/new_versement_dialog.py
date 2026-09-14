@@ -254,10 +254,10 @@ class NewVersementDialog(QDialog):
         self.inp_euro_da = QLineEdit()
         self.inp_euro_da.setPlaceholderText("Valeur en DA")
         self.inp_euro_da.setStyleSheet(inp_style + "color: white; background-color: #27ae60;")
-        self.inp_euro_da.textChanged.connect(lambda _: self.auto_calculate_poids_deduit())
         
-        self.inp_euro.textChanged.connect(self.calc_euro_eq)
-        self.inp_taux_change.textChanged.connect(self.calc_euro_eq)
+        self.inp_euro.textChanged.connect(self.on_euro_qty_changed)
+        self.inp_taux_change.textChanged.connect(self.on_euro_rate_changed)
+        self.inp_euro_da.textChanged.connect(self.on_euro_total_changed)
         
         form_euro.addRow(self._styled_lbl("Montant (€) :"), self._wrap_with_numpad(self.inp_euro))
         form_euro.addRow(self._styled_lbl("Taux (DA/€) :"), self._wrap_with_numpad(self.inp_taux_change))
@@ -277,10 +277,10 @@ class NewVersementDialog(QDialog):
         self.inp_casse_da = QLineEdit()
         self.inp_casse_da.setPlaceholderText("Valeur en DA")
         self.inp_casse_da.setStyleSheet(inp_style + "color: white; background-color: #27ae60;")
-        self.inp_casse_da.textChanged.connect(lambda _: self.auto_calculate_poids_deduit())
         
-        self.inp_oc.textChanged.connect(self.calc_casse_eq)
-        self.inp_prix_g_casse.textChanged.connect(self.calc_casse_eq)
+        self.inp_oc.textChanged.connect(self.on_casse_qty_changed)
+        self.inp_prix_g_casse.textChanged.connect(self.on_casse_rate_changed)
+        self.inp_casse_da.textChanged.connect(self.on_casse_total_changed)
         
         form_casse.addRow(self._styled_lbl("Poids Cassé :"), self._wrap_with_numpad(self.inp_oc))
         form_casse.addRow(self._styled_lbl("Prix (DA/g) :"), self._wrap_with_numpad(self.inp_prix_g_casse))
@@ -300,10 +300,10 @@ class NewVersementDialog(QDialog):
         self.inp_dollar_da = QLineEdit()
         self.inp_dollar_da.setPlaceholderText("Valeur en DA")
         self.inp_dollar_da.setStyleSheet(inp_style + "color: white; background-color: #27ae60;")
-        self.inp_dollar_da.textChanged.connect(lambda _: self.auto_calculate_poids_deduit())
         
-        self.inp_dollar.textChanged.connect(self.calc_dollar_eq)
-        self.inp_taux_change_dollar.textChanged.connect(self.calc_dollar_eq)
+        self.inp_dollar.textChanged.connect(self.on_dollar_qty_changed)
+        self.inp_taux_change_dollar.textChanged.connect(self.on_dollar_rate_changed)
+        self.inp_dollar_da.textChanged.connect(self.on_dollar_total_changed)
         
         form_dollar.addRow(self._styled_lbl("Montant ($) :"), self._wrap_with_numpad(self.inp_dollar))
         form_dollar.addRow(self._styled_lbl("Taux (DA/$) :"), self._wrap_with_numpad(self.inp_taux_change_dollar))
@@ -323,10 +323,10 @@ class NewVersementDialog(QDialog):
         self.inp_argent_casse_da = QLineEdit()
         self.inp_argent_casse_da.setPlaceholderText("Valeur en DA")
         self.inp_argent_casse_da.setStyleSheet(inp_style + "color: white; background-color: #27ae60;")
-        self.inp_argent_casse_da.textChanged.connect(lambda _: self.auto_calculate_poids_deduit())
         
-        self.inp_argent_casse.textChanged.connect(self.calc_argent_casse_eq)
-        self.inp_prix_g_argent_casse.textChanged.connect(self.calc_argent_casse_eq)
+        self.inp_argent_casse.textChanged.connect(self.on_argent_casse_qty_changed)
+        self.inp_prix_g_argent_casse.textChanged.connect(self.on_argent_casse_rate_changed)
+        self.inp_argent_casse_da.textChanged.connect(self.on_argent_casse_total_changed)
         
         form_argent_casse.addRow(self._styled_lbl("Poids Argent :"), self._wrap_with_numpad(self.inp_argent_casse))
         form_argent_casse.addRow(self._styled_lbl("Prix (DA/g) :"), self._wrap_with_numpad(self.inp_prix_g_argent_casse))
@@ -647,49 +647,124 @@ class NewVersementDialog(QDialog):
     # ========================================================
     # الحسابات الخاصة بطرق الدفع
     # ========================================================
-    def calc_euro_eq(self):
+    @staticmethod
+    def _parse_safe_float(val):
+        if not val:
+            return 0.0
+        val_str = str(val).replace(',', '.').strip()
+        if val_str in ('', '-', '.', '-.', '+'):
+            return 0.0
         try:
-            euro = float(self.inp_euro.text() or 0)
-            taux = float(self.inp_taux_change.text() or 0)
-            if euro != 0 and taux > 0:
-                self.inp_euro_da.blockSignals(True)
-                self.inp_euro_da.setText(f"{euro * taux:.2f}")
-                self.inp_euro_da.blockSignals(False)
-                self.auto_calculate_poids_deduit()
-        except: pass
+            return float(val_str)
+        except (ValueError, TypeError):
+            return 0.0
+
+    @staticmethod
+    def _set_field_text_quiet(widget, text):
+        widget.blockSignals(True)
+        widget.setText(text)
+        widget.blockSignals(False)
+
+    def _sync_currency_or_casse_calculation(self, source_field, inp_qty, inp_rate, inp_total, qty_decimals=3):
+        """
+        Calcul dynamique bidirectionnel pour le paiement en devise ou or/argent cassé.
+        - Si on modifie la quantité/poids :
+            * Si taux/prix_g > 0 -> Total = Quantité * Taux
+            * Sinon si Total != 0 -> Taux = Total / Quantité
+        - Si on modifie le taux/prix_g :
+            * Si quantité != 0 -> Total = Quantité * Taux
+            * Sinon si Total != 0 -> Quantité = Total / Taux
+        - Si on modifie le total :
+            * Si quantité != 0 -> Taux = Total / Quantité
+            * Sinon si Taux > 0 -> Quantité = Total / Taux
+        """
+        if getattr(self, '_is_calculating_eq', False):
+            return
+
+        self._is_calculating_eq = True
+        try:
+            qty = self._parse_safe_float(inp_qty.text())
+            rate = self._parse_safe_float(inp_rate.text())
+            total = self._parse_safe_float(inp_total.text())
+
+            if source_field == 'qty':
+                if qty != 0:
+                    if rate > 0:
+                        calc_total = qty * rate
+                        self._set_field_text_quiet(inp_total, f"{calc_total:.2f}")
+                    elif total != 0:
+                        calc_rate = total / qty
+                        self._set_field_text_quiet(inp_rate, f"{calc_rate:.2f}")
+            elif source_field == 'rate':
+                if rate > 0:
+                    if qty != 0:
+                        calc_total = qty * rate
+                        self._set_field_text_quiet(inp_total, f"{calc_total:.2f}")
+                    elif total != 0:
+                        calc_qty = total / rate
+                        self._set_field_text_quiet(inp_qty, f"{calc_qty:.{qty_decimals}f}")
+            elif source_field == 'total':
+                if total != 0:
+                    if qty != 0:
+                        calc_rate = total / qty
+                        self._set_field_text_quiet(inp_rate, f"{calc_rate:.2f}")
+                    elif rate > 0:
+                        calc_qty = total / rate
+                        self._set_field_text_quiet(inp_qty, f"{calc_qty:.{qty_decimals}f}")
+
+            self.auto_calculate_poids_deduit()
+        except Exception as e:
+            logging.error(f"[NewVersementDialog] Erreur calcul devise/casse: {e}")
+        finally:
+            self._is_calculating_eq = False
+
+    def on_euro_qty_changed(self):
+        self._sync_currency_or_casse_calculation('qty', self.inp_euro, self.inp_taux_change, self.inp_euro_da, qty_decimals=2)
+
+    def on_euro_rate_changed(self):
+        self._sync_currency_or_casse_calculation('rate', self.inp_euro, self.inp_taux_change, self.inp_euro_da, qty_decimals=2)
+
+    def on_euro_total_changed(self):
+        self._sync_currency_or_casse_calculation('total', self.inp_euro, self.inp_taux_change, self.inp_euro_da, qty_decimals=2)
+
+    def on_casse_qty_changed(self):
+        self._sync_currency_or_casse_calculation('qty', self.inp_oc, self.inp_prix_g_casse, self.inp_casse_da, qty_decimals=3)
+
+    def on_casse_rate_changed(self):
+        self._sync_currency_or_casse_calculation('rate', self.inp_oc, self.inp_prix_g_casse, self.inp_casse_da, qty_decimals=3)
+
+    def on_casse_total_changed(self):
+        self._sync_currency_or_casse_calculation('total', self.inp_oc, self.inp_prix_g_casse, self.inp_casse_da, qty_decimals=3)
+
+    def on_dollar_qty_changed(self):
+        self._sync_currency_or_casse_calculation('qty', self.inp_dollar, self.inp_taux_change_dollar, self.inp_dollar_da, qty_decimals=2)
+
+    def on_dollar_rate_changed(self):
+        self._sync_currency_or_casse_calculation('rate', self.inp_dollar, self.inp_taux_change_dollar, self.inp_dollar_da, qty_decimals=2)
+
+    def on_dollar_total_changed(self):
+        self._sync_currency_or_casse_calculation('total', self.inp_dollar, self.inp_taux_change_dollar, self.inp_dollar_da, qty_decimals=2)
+
+    def on_argent_casse_qty_changed(self):
+        self._sync_currency_or_casse_calculation('qty', self.inp_argent_casse, self.inp_prix_g_argent_casse, self.inp_argent_casse_da, qty_decimals=3)
+
+    def on_argent_casse_rate_changed(self):
+        self._sync_currency_or_casse_calculation('rate', self.inp_argent_casse, self.inp_prix_g_argent_casse, self.inp_argent_casse_da, qty_decimals=3)
+
+    def on_argent_casse_total_changed(self):
+        self._sync_currency_or_casse_calculation('total', self.inp_argent_casse, self.inp_prix_g_argent_casse, self.inp_argent_casse_da, qty_decimals=3)
+
+    def calc_euro_eq(self):
+        self.on_euro_rate_changed()
 
     def calc_dollar_eq(self):
-        try:
-            dollar = float(self.inp_dollar.text() or 0)
-            taux = float(self.inp_taux_change_dollar.text() or 0)
-            if dollar != 0 and taux > 0:
-                self.inp_dollar_da.blockSignals(True)
-                self.inp_dollar_da.setText(f"{dollar * taux:.2f}")
-                self.inp_dollar_da.blockSignals(False)
-                self.auto_calculate_poids_deduit()
-        except: pass
+        self.on_dollar_rate_changed()
 
     def calc_casse_eq(self):
-        try:
-            oc = float(self.inp_oc.text() or 0)
-            prix = float(self.inp_prix_g_casse.text() or 0)
-            if oc != 0 and prix > 0:
-                self.inp_casse_da.blockSignals(True)
-                self.inp_casse_da.setText(f"{oc * prix:.2f}")
-                self.inp_casse_da.blockSignals(False)
-                self.auto_calculate_poids_deduit()
-        except: pass
+        self.on_casse_rate_changed()
 
     def calc_argent_casse_eq(self):
-        try:
-            oc_ag = float(self.inp_argent_casse.text() or 0)
-            prix = float(self.inp_prix_g_argent_casse.text() or 0)
-            if oc_ag != 0 and prix > 0:
-                self.inp_argent_casse_da.blockSignals(True)
-                self.inp_argent_casse_da.setText(f"{oc_ag * prix:.2f}")
-                self.inp_argent_casse_da.blockSignals(False)
-                self.auto_calculate_poids_deduit()
-        except: pass
+        self.on_argent_casse_rate_changed()
 
     def eventFilter(self, obj, event):
         if obj == self.inp_barcode and event.type() == QEvent.Type.KeyPress:
