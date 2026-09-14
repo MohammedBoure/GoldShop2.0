@@ -181,8 +181,15 @@ class InventoryQueryMixin:
                     params.append(category_id)
 
                 if metal_type_id:
-                    base_query += " AND i.metal_type_id = %s"
-                    params.append(metal_type_id)
+                    if metal_type_id == "NONE":
+                        base_query += " AND (i.metal_type_id IS NULL OR i.metal_type_id = 0)"
+                    elif isinstance(metal_type_id, str) and metal_type_id.startswith("CAT:"):
+                        cat_val = metal_type_id.split(":", 1)[1]
+                        base_query += " AND mt.metal_category = %s"
+                        params.append(cat_val)
+                    else:
+                        base_query += " AND i.metal_type_id = %s"
+                        params.append(metal_type_id)
 
                 if location_id:
                     base_query += " AND i.location_id = %s"

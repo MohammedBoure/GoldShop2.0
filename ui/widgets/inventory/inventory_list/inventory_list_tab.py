@@ -145,6 +145,13 @@ class InventoryListTab(QWidget):
         self.filter_category.currentIndexChanged.connect(self.reset_and_load)
         row1.addWidget(self.filter_category, 1)
 
+        # فلتر نوع وصنف المعدن (ذهب، فضة، عيار...)
+        self.filter_metal = QComboBox()
+        self.filter_metal.setFixedHeight(35)
+        self.filter_metal.addItem("Tous Métaux", None)
+        self.filter_metal.currentIndexChanged.connect(self.reset_and_load)
+        row1.addWidget(self.filter_metal, 1)
+
         # 🟢 إضافة زر فلتر الوزن الجديد
         self.btn_weight_filter = QPushButton(" Filtre Poids")
         self.btn_weight_filter.setFixedHeight(35)
@@ -261,6 +268,7 @@ class InventoryListTab(QWidget):
     # ------------------------------------------------------------------
 
     def load_combos(self):
+        curr_cat = self.filter_category.currentData()
         self.filter_category.blockSignals(True)
         self.filter_category.clear()
         self.filter_category.addItem("Toutes Catégories", None)
@@ -269,7 +277,41 @@ class InventoryListTab(QWidget):
                 self.filter_category.addItem(c['name'], c['id'])
         except Exception:
             pass
+        if curr_cat is not None:
+            idx = self.filter_category.findData(curr_cat)
+            if idx >= 0:
+                self.filter_category.setCurrentIndex(idx)
         self.filter_category.blockSignals(False)
+
+        curr_metal = self.filter_metal.currentData()
+        self.filter_metal.blockSignals(True)
+        self.filter_metal.clear()
+        self.filter_metal.addItem("Tous Métaux", None)
+        try:
+            metals = self.manager.metal_types.get_all_metal_types()
+            categories = []
+            for m in metals:
+                cat = (m.get('metal_category') or '').strip().upper()
+                if cat and cat not in categories:
+                    categories.append(cat)
+
+            if len(categories) > 1:
+                for cat in sorted(categories):
+                    cat_label = "🟡 Tout l'Or" if cat == "GOLD" else ("⚪ Tout l'Argent" if cat == "SILVER" else f"Tout {cat}")
+                    self.filter_metal.addItem(cat_label, f"CAT:{cat}")
+
+            for m in metals:
+                name = m.get('name') or str(m.get('id'))
+                purity = m.get('purity_value')
+                label = f"{name} ({purity})" if (purity and str(purity) not in name) else name
+                self.filter_metal.addItem(label, m.get('id'))
+        except Exception:
+            pass
+        if curr_metal is not None:
+            idx = self.filter_metal.findData(curr_metal)
+            if idx >= 0:
+                self.filter_metal.setCurrentIndex(idx)
+        self.filter_metal.blockSignals(False)
 
     def reset_and_load(self):
         self.selected_items.clear()
@@ -297,6 +339,7 @@ class InventoryListTab(QWidget):
                 search_text=self.search_input.text().strip(),
                 show_zero_stock=self.chk_show_zero.isChecked(),
                 category_id=self.filter_category.currentData(),
+                metal_type_id=self.filter_metal.currentData(),
                 sort_col=self.sort_col,
                 sort_dir=self.sort_dir,
                 status_filter=self.combo_status_filter.currentData(),
