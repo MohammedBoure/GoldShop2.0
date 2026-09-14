@@ -173,13 +173,6 @@ class SettingsTab(QWidget):
         self.tab_graphics = self.create_graphics_tab()
         self.tabs.addTab(self.tab_graphics, qta.icon("fa5s.desktop"), "Affichage")
 
-        self._add_lazy_tab(
-            "tab_interface_customization",
-            self._create_interface_customization_tab,
-            qta.icon("fa5s.palette"),
-            "Interface",
-        )
-        
         # 3. تبويبة الطابعة الحرارية
         self._add_lazy_tab(
             "tab_thermal_printer",
@@ -209,11 +202,6 @@ class SettingsTab(QWidget):
 
         layout.addWidget(self.tabs)
         self.tabs.currentChanged.connect(self._load_lazy_tab_at)
-
-    def _create_interface_customization_tab(self):
-        from .interface_customization_tab import InterfaceCustomizationTab
-
-        return InterfaceCustomizationTab(self.config, self.save_config)
 
     def _create_thermal_printer_tab(self):
         from .thermal_printer_tab import ThermalPrinterTab
@@ -864,8 +852,6 @@ class SettingsTab(QWidget):
             self.tab_label_printer.update_config_dict()
         if hasattr(self, "tab_pdf_printer"):
             self.tab_pdf_printer.update_config_dict()
-        if hasattr(self, "tab_interface_customization"):
-            self.tab_interface_customization.update_config_dict()
         return True
 
     def _write_config(self, show_success=True):
