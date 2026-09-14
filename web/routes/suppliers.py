@@ -40,18 +40,20 @@ def register_suppliers_routes(flask_app, api):
     @flask_app.route("/api/v1/suppliers")
     def api_v1_suppliers_list():
         """
-        List all suppliers with their metadata and current balances (Poids Net g and Solde DA).
+        List all suppliers with their metadata, operation counts, and current balances (Poids Net g and Solde DA).
         Powers the supplier selection dropdown and directory view in SuppliersView.
 
         Query Parameters:
         - search (str, optional): Search by name or phone
         - active_only (bool, optional): Include only active suppliers (default true)
+        - all (bool, optional): If true, return all matching suppliers without pagination limit
         - page (int, optional): Page number
         - per_page (int, optional): Items per page
         """
         search_text = api._str_arg("search", "").lower().strip()
         active_only = not api._bool_arg("include_inactive", False)
-        page, per_page, offset = api._page_args(default_per_page=50)
+        return_all = api._bool_arg("all", False)
+        page, per_page, offset = api._page_args(default_per_page=100)
 
         try:
             supplier_mgr = getattr(api, "supplier_manager", None)
@@ -62,7 +64,19 @@ def register_suppliers_routes(flask_app, api):
                 from database.supplier_manager import SupplierManager
                 supplier_mgr = SupplierManager(api.db)
 
-            suppliers = supplier_mgr.list_suppliers(active_only=active_only, limit=1000)
+            suppliers = supplier_mgr.list_suppliers(active_only=active_only, limit=2000)
+
+            # Query operation counts per supplier in one efficient batch query
+            ops_count_map = {}
+            try:
+                cnt_rows = api._fetch_rows(
+                    "SELECT supplier_id, COUNT(*) AS cnt FROM SupplierTransactions GROUP BY supplier_id"
+                )
+                for r in cnt_rows:
+                    if r.get("supplier_id") is not None:
+                        ops_count_map[r["supplier_id"]] = int(r.get("cnt") or 0)
+            except Exception:
+                pass
 
             filtered_suppliers = []
             for s in suppliers:
@@ -79,19 +93,27 @@ def register_suppliers_routes(flask_app, api):
                 s_copy = dict(s)
                 s_copy["poids_net"] = round(poids_net, 3)
                 s_copy["solde_da"] = round(solde_da, 2)
+                s_copy["weight_balance_g"] = round(poids_net, 3)
+                s_copy["money_balance_da"] = round(solde_da, 2)
                 s_copy["poids_net_formatted"] = f"{poids_net:,.2f} g"
                 s_copy["solde_da_formatted"] = f"{int(round(solde_da)):,} DA".replace(",", " ")
+                s_copy["operations_count"] = ops_count_map.get(s_id, 0)
                 filtered_suppliers.append(s_copy)
 
             total_records = len(filtered_suppliers)
-            paged_slice = filtered_suppliers[offset : offset + per_page]
+            if return_all:
+                paged_slice = filtered_suppliers
+                has_more = False
+            else:
+                paged_slice = filtered_suppliers[offset : offset + per_page]
+                has_more = (page * per_page) < total_records
 
             return api._ok(
                 paged_slice,
                 page=page,
-                per_page=per_page,
+                per_page=per_page if not return_all else total_records,
                 total=total_records,
-                has_more=(page * per_page) < total_records,
+                has_more=has_more,
             )
         except Exception as exc:
             logger.exception("Error loading suppliers list: %s", exc)
@@ -130,6 +152,8 @@ def register_suppliers_routes(flask_app, api):
 
             supplier["poids_net"] = round(poids_net, 3)
             supplier["solde_da"] = round(solde_da, 2)
+            supplier["weight_balance_g"] = round(poids_net, 3)
+            supplier["money_balance_da"] = round(solde_da, 2)
             supplier["header_poids_text"] = f"Poids Net: {poids_net:,.2f} g"
             supplier["header_solde_text"] = f"Solde: {int(round(solde_da)):,} DA".replace(",", " ")
 
@@ -155,7 +179,7 @@ def register_suppliers_routes(flask_app, api):
         search_text = api._str_arg("search", "").lower().strip()
         start_date = api._str_arg("start_date")
         end_date = api._str_arg("end_date")
-        page, per_page, offset = api._page_args(default_per_page=100)
+        page, per_page, offset = api._page_args(default_per_page=200)
 
         try:
             supplier = api._fetch_one("SELECT id, name FROM Suppliers WHERE id = %s", (supplier_id,))
@@ -190,26 +214,32 @@ def register_suppliers_routes(flask_app, api):
 
                 op_type = str(op.get("operation_type") or op.get("type") or "INCOMING").upper()
 
-                raw_w = (
-                    op.get("weight_g")
-                    if op.get("weight_g") is not None
-                    else (op.get("weight_delta") if op.get("weight_delta") is not None else op.get("weight"))
-                )
-                weight_val = float(raw_w or 0.0)
-
-                raw_m = (
-                    op.get("amount_da")
-                    if op.get("amount_da") is not None
-                    else (op.get("money_delta") if op.get("money_delta") is not None else op.get("amount"))
-                )
-                amount_val = float(raw_m or 0.0)
-
-                if op_type == "OUTGOING":
-                    signed_weight = -abs(weight_val)
-                    signed_amount = -abs(amount_val)
+                if "weight_delta" in op and "money_delta" in op:
+                    signed_weight = float(op.get("weight_delta") or 0.0)
+                    signed_amount = float(op.get("money_delta") or 0.0)
+                    weight_val = abs(signed_weight)
+                    amount_val = abs(signed_amount)
                 else:
-                    signed_weight = weight_val
-                    signed_amount = amount_val
+                    raw_w = (
+                        op.get("weight_g")
+                        if op.get("weight_g") is not None
+                        else (op.get("weight_delta") if op.get("weight_delta") is not None else op.get("weight"))
+                    )
+                    weight_val = float(raw_w or 0.0)
+
+                    raw_m = (
+                        op.get("amount_da")
+                        if op.get("amount_da") is not None
+                        else (op.get("money_delta") if op.get("money_delta") is not None else op.get("amount"))
+                    )
+                    amount_val = float(raw_m or 0.0)
+
+                    if op_type == "OUTGOING":
+                        signed_weight = -abs(weight_val)
+                        signed_amount = -abs(amount_val)
+                    else:
+                        signed_weight = weight_val
+                        signed_amount = amount_val
 
                 # Color highlight detection matching suppliers_view.py
                 is_red = False
@@ -224,11 +254,27 @@ def register_suppliers_routes(flask_app, api):
                 if "alliage" in clean_desc.lower():
                     is_blue = True
 
-                afacon_val = op.get("afacon") or op.get("labor_price_per_gram") or ""
-                afacon_str = str(afacon_val) if afacon_val and str(afacon_val) not in ("0", "0.00", "0.0") else "0"
+                afacon_raw = op.get("afacon") if op.get("afacon") is not None else op.get("labor_price_per_gram")
+                afacon_num = safe_float(afacon_raw)
+                if afacon_num > 0:
+                    afacon_str = (
+                        f"{int(round(afacon_num)):,}".replace(",", " ")
+                        if afacon_num % 1 == 0
+                        else f"{afacon_num:,.2f}".replace(",", " ").replace(".", ",")
+                    )
+                else:
+                    afacon_str = "0"
 
-                poids_str = f"{signed_weight:,.2f}".replace(",", " ").replace(".", ",") if abs(signed_weight) > 0.0001 else "0,00"
-                montant_str = f"{int(round(signed_amount)):,}".replace(",", " ") if abs(signed_amount) > 0.01 else "0"
+                poids_str = (
+                    f"{signed_weight:,.2f}".replace(",", " ").replace(".", ",")
+                    if abs(signed_weight) > 0.0001
+                    else "0,00"
+                )
+                montant_str = (
+                    f"{int(round(signed_amount)):,}".replace(",", " ")
+                    if abs(signed_amount) > 0.01
+                    else "0"
+                )
                 if signed_amount < 0 and not montant_str.startswith("-"):
                     montant_str = "-" + montant_str
 
@@ -241,12 +287,16 @@ def register_suppliers_routes(flask_app, api):
                         "operation_type": op_type,
                         "raw_weight_g": weight_val,
                         "signed_weight_g": round(signed_weight, 3),
+                        "poids": round(signed_weight, 3),
                         "poids_formatted": poids_str,
                         "afacon": afacon_str,
+                        "afacon_da": afacon_num,
                         "raw_amount_da": amount_val,
                         "signed_amount_da": round(signed_amount, 2),
+                        "montant": round(signed_amount, 2),
                         "montant_formatted": montant_str,
                         "obs": clean_desc,
+                        "libelle": clean_desc,
                         "is_red": is_red,
                         "is_blue": is_blue,
                     }
@@ -256,22 +306,44 @@ def register_suppliers_routes(flask_app, api):
             tot_poids = sum(o["signed_weight_g"] for o in filtered_ops)
             tot_montant = sum(o["signed_amount_da"] for o in filtered_ops)
 
-            paged_slice = filtered_ops[offset : offset + per_page]
+            summary_dict = {
+                "poids_net": round(tot_poids, 3),
+                "solde_da": round(tot_montant, 2),
+                "total_poids_net": round(tot_poids, 3),
+                "total_solde_da": round(tot_montant, 2),
+                "poids_net_formatted": f"Poids Net: {tot_poids:,.2f} g",
+                "solde_formatted": f"Solde: {int(round(tot_montant)):,} DA".replace(",", " "),
+                "operations_count": total_records,
+            }
+            supplier_dict = {
+                "id": supplier_id,
+                "name": supplier["name"],
+                "poids_net": round(tot_poids, 3),
+                "solde_da": round(tot_montant, 2),
+                "header_poids_text": f"Poids Net: {tot_poids:,.2f} g",
+                "header_solde_text": f"Solde: {int(round(tot_montant)):,} DA".replace(",", " "),
+            }
+
+            paged_slice = filtered_ops[offset : offset + per_page] if per_page < total_records else filtered_ops
 
             return api._ok(
-                paged_slice,
+                {
+                    "supplier_id": supplier_id,
+                    "supplier_name": supplier["name"],
+                    "supplier": supplier_dict,
+                    "rows": filtered_ops,
+                    "ledger_rows": filtered_ops,
+                    "paged_slice": paged_slice,
+                    "summary": summary_dict,
+                    "totals": summary_dict,
+                },
                 supplier_id=supplier_id,
                 supplier_name=supplier["name"],
                 page=page,
                 per_page=per_page,
                 total=total_records,
                 has_more=(page * per_page) < total_records,
-                totals={
-                    "total_poids_net": round(tot_poids, 3),
-                    "total_solde_da": round(tot_montant, 2),
-                    "poids_net_formatted": f"Poids Net: {tot_poids:,.2f} g",
-                    "solde_formatted": f"Solde: {int(round(tot_montant)):,} DA".replace(",", " "),
-                },
+                totals=summary_dict,
             )
         except Exception as exc:
             logger.exception("Error loading supplier ledger: %s", exc)
