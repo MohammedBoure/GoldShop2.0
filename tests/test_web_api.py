@@ -183,7 +183,8 @@ class TestWebApiEndpoints(unittest.TestCase):
                 self.assertIn("total_poids_net", ledger_payload.get("meta", {}).get("totals", {}))
                 self.assertIn("total_solde_da", ledger_payload.get("meta", {}).get("totals", {}))
 
-                ops = ledger_payload.get("data", [])
+                data = ledger_payload.get("data", {})
+                ops = data.get("rows", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
                 if ops:
                     first_op = ops[0]
                     self.assertIn("date", first_op)

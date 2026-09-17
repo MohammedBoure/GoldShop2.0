@@ -24,7 +24,9 @@ def build_production():
     required_assets = {
         "ui/logo.png": os.path.join(project_dir, "ui", "logo.png"),
         "ui/styles.qss": os.path.join(project_dir, "ui", "styles.qss"),
-        "translations": os.path.join(project_dir, "translations")
+        "translations": os.path.join(project_dir, "translations"),
+        "web/templates": os.path.join(project_dir, "web", "templates"),
+        "web/static": os.path.join(project_dir, "web", "static"),
     }
     
     for name, path in required_assets.items():
@@ -59,10 +61,12 @@ def build_production():
         "--clean",
         "--noupx",
 
-        # UI assets (تم إزالة templates لأنها غير موجودة في مشروعك)
+        # UI & Web assets
         "--add-data=ui/logo.png;ui",
         "--add-data=ui/styles.qss;ui",
         "--add-data=translations;translations",
+        "--add-data=web/templates;web/templates",
+        "--add-data=web/static;web/static",
 
         # MySQL pure-python resources
         f"--add-data={plugins_src};mysql/connector/plugins",
@@ -72,8 +76,17 @@ def build_production():
         "--collect-all=mysql.connector",
         "--collect-all=reportlab",
         "--collect-all=qtawesome",
+        "--collect-all=flask",
+        "--collect-all=jinja2",
+        "--collect-all=werkzeug",
+        "--collect-all=web",
 
         # Hidden imports
+        "--hidden-import=app",
+        "--hidden-import=web_security",
+        "--hidden-import=duckdns_updater",
+        "--hidden-import=services.duckdns",
+        "--hidden-import=services.runtime_control",
         "--hidden-import=mysql.connector.plugins.mysql_native_password",
         "--hidden-import=sqlalchemy",
         "--hidden-import=pandas",
@@ -82,6 +95,8 @@ def build_production():
         
         "--collect-submodules=database",
         "--collect-data=database",
+        "--collect-submodules=services",
+        "--collect-submodules=web",
 
         # Optional scientific/image packages
         "--exclude-module=scipy",
@@ -98,7 +113,7 @@ def build_production():
         print(f"Building {exe_name} for production...\n")
         subprocess.check_call(command, cwd=project_dir)
 
-        # 3. Post-build: copy external config files
+        # 3. Post-build: copy external config files and guarantee web & translation assets
         dist_path = os.path.join(output_root, exe_name)
 
         for cfg in (".env", "config.json"):
@@ -106,6 +121,21 @@ def build_production():
             if os.path.exists(cfg_path):
                 shutil.copy(cfg_path, dist_path)
                 print(f"[OK] Copied external config: {cfg}")
+
+        # Ensure web assets and translations exist directly in output directory
+        dist_web = os.path.join(dist_path, "web")
+        for subfolder in ("templates", "static"):
+            src_sub = os.path.join(project_dir, "web", subfolder)
+            dst_sub = os.path.join(dist_web, subfolder)
+            if os.path.exists(src_sub) and not os.path.exists(dst_sub):
+                shutil.copytree(src_sub, dst_sub)
+                print(f"[OK] Copied web/{subfolder} to output directory")
+
+        dist_trans = os.path.join(dist_path, "translations")
+        src_trans = os.path.join(project_dir, "translations")
+        if os.path.exists(src_trans) and not os.path.exists(dist_trans):
+            shutil.copytree(src_trans, dist_trans)
+            print(f"[OK] Copied translations to output directory")
 
         # 4. Create runtime folders
         for folder in ("runtime", "documents", "exports", "factures"):

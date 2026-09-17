@@ -43,12 +43,24 @@ from services.runtime_control import (
     execute_force_logout_command,
 )
 
+def _get_base_dir():
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass and os.path.isdir(os.path.join(meipass, "web", "templates")):
+            return meipass
+        exe_dir = os.path.dirname(sys.executable)
+        if os.path.isdir(os.path.join(exe_dir, "web", "templates")):
+            return exe_dir
+        return meipass or exe_dir
+    return os.path.dirname(os.path.abspath(__file__))
+
+BASE_DIR = _get_base_dir()
 logger = logging.getLogger("JEWELLERY_SYS")
 
 flask_app = Flask(
     __name__,
-    template_folder=os.path.join(os.path.dirname(__file__), "web", "templates"),
-    static_folder=os.path.join(os.path.dirname(__file__), "web", "static"),
+    template_folder=os.path.join(BASE_DIR, "web", "templates"),
+    static_folder=os.path.join(BASE_DIR, "web", "static"),
 )
 flask_app.url_map.strict_slashes = False
 
@@ -72,7 +84,11 @@ DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
 DEFAULT_LANGUAGE = "ar"
 LANGUAGE_COOKIE = "goldshop_lang"
-TRANSLATIONS_DIR = os.path.join(os.path.dirname(__file__), "translations")
+TRANSLATIONS_DIR = os.path.join(BASE_DIR, "translations")
+if not os.path.isdir(TRANSLATIONS_DIR) and getattr(sys, "frozen", False):
+    alt_trans = os.path.join(os.path.dirname(sys.executable), "translations")
+    if os.path.isdir(alt_trans):
+        TRANSLATIONS_DIR = alt_trans
 SUPPORTED_LANGUAGES = {
     "ar": {"name": "العربية", "dir": "rtl"},
     "fr": {"name": "Français", "dir": "ltr"},

@@ -55,8 +55,12 @@ def qt_message_handler(mode, context, message):
 
 
 def run_flask_server():
-    from app import flask_app
-    flask_app.run(host='0.0.0.0', port=8000, debug=False, use_reloader=False)
+    try:
+        from app import flask_app
+        logging.info("🌐 Lancement du serveur Web Flask sur http://0.0.0.0:8000 ...")
+        flask_app.run(host='0.0.0.0', port=8000, debug=False, use_reloader=False)
+    except Exception as e:
+        logging.error(f"❌ Échec du démarrage du serveur Web Flask: {e}", exc_info=True)
 
 
 def start_flask_server(qt_app):
