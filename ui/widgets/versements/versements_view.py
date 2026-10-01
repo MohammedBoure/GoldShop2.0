@@ -29,7 +29,6 @@ from ui.widgets.versements.invoice_note_selector import (
     create_invoice_note_combo,
     normalize_custom_note,
     selected_custom_note,
-    VersementPrintNoteDialog,
 )
 from ui.widgets.versements.edit_payment_dialog import EditPaymentDialog
 
@@ -568,9 +567,7 @@ class VersementsView(QWidget):
             "versement_operation_number": v_num,
             "versements": [],
             "items": [],
-            "currency": "DA",
-            "general_note": str(v_data.get('notes') or '').strip(),
-            "invoice_note": str(v_data.get('notes') or '').strip(),
+            "currency": "DA"
         }
 
         balances = calculate_versement_item_balances(v_data.get('items', []), v_data.get('payments', []))
@@ -590,8 +587,6 @@ class VersementsView(QWidget):
                 item_paid_amount = bal.get('paid_da', 0.0)
                 selling_price = float(item.get('display_price') or item.get('selling_price') or 0.0)
                 pdf_data['items'].append({
-                    "item_id": item_id,
-                    "id": item_id,
                     "name": full_name,
                     "item_name": full_name,
                     "description": desig,
@@ -605,7 +600,6 @@ class VersementsView(QWidget):
                     "remaining_weight": item_remaining_w,
                     "paid_amount": item_paid_amount,
                     "custom_note": normalize_custom_note(item.get("custom_note")),
-                    "observation": str(item.get("observation") or "").strip(),
                 })
 
         for p in v_data.get('payments', []):
@@ -631,9 +625,6 @@ class VersementsView(QWidget):
             total_money = payment_value
             total_weight_pay = poids_deduit
 
-            raw_notes = str(p.get('notes') or '').strip()
-            clean_notes = re.sub(r'\[Remise:[^\]]+\]', '', raw_notes).strip(" |")
-
             item_desig = p.get('item_designation', '')
             if item_desig:
                 for it in v_data.get('items', []):
@@ -643,7 +634,11 @@ class VersementsView(QWidget):
                             item_desig = f"{item_desig} ({w:.2f}g)"
                         break
             else:
-                if total_money < 0:
+                raw_notes = str(p.get('notes') or '').strip()
+                clean_notes = re.sub(r'\[Remise:[^\]]+\]', '', raw_notes).strip(" |")
+                if clean_notes:
+                    item_desig = clean_notes
+                elif total_money < 0:
                     item_desig = "Rendu surplus / Remboursement"
                 elif poids_casse > 0:
                     item_desig = f"Paiement Or Cassé ({poids_casse:.2f}g)"
@@ -658,7 +653,6 @@ class VersementsView(QWidget):
 
             raw_payment_entry = {
                 "id": p.get('id', ''),
-                "payment_id": p.get('id', ''),
                 "payment_date": p.get('payment_date'),
                 "amount": total_money,
                 "tpe_da": montant_tpe,
@@ -672,11 +666,7 @@ class VersementsView(QWidget):
                 "prix_gramme_apres_remise": after_remise_ppg,
                 "product_name": item_desig,
                 "item_name": item_desig,
-                "operation_number": v_num,
-                "note": clean_notes,
-                "notes": clean_notes,
-                "payment_note": clean_notes,
-                "display_payment_note": True,
+                "operation_number": v_num
             }
 
             if total_money < 0:
@@ -744,7 +734,7 @@ class VersementsView(QWidget):
             QMenu::separator { height: 1px; background: #ddd; margin: 4px 10px; }
         """)
         
-        act_print_pdf = act_print_direct = act_print_thermal = act_print_custom = None
+        act_print_pdf = act_print_direct = act_print_thermal = None
         act_pay_global = act_close = act_cancel = act_add_item = act_show_details = None
         act_reopen_versement = None
         act_pay_item = act_retirer_item = act_cancel_item = act_delete_item = act_edit_item_note = None
@@ -757,9 +747,6 @@ class VersementsView(QWidget):
             pdf_printer = self._get_pdf_printer_name()
             thermal_printer = self._get_thermal_printer_name()
 
-            is_libre = data.get("is_libre", False)
-            if is_libre:
-                act_print_custom = menu.addAction("📝 Imprimer avec Note / Options...")
             act_print_pdf = menu.addAction("📄 Télécharger Bon (Aperçu PDF)")
 
             if pdf_printer:
@@ -815,8 +802,6 @@ class VersementsView(QWidget):
         
         if action == act_show_details:
             self.show_product_specs(data)
-        elif action == act_print_custom:
-            self.open_print_notes_dialog(v_id)
         elif action == act_print_pdf:
             self.print_versement_pdf(v_id, open_pdf=True, direct=False)
         elif action == act_print_direct:
@@ -1070,11 +1055,8 @@ class VersementsView(QWidget):
         v_statut = data.get("statut")
 
         if row_type == "HEADER":
-            is_libre = data.get("is_libre", False)
             self._add_action_btn("fa5s.search-plus", "Détails Complets", "#0f8f83", "#0b776d", lambda: self.open_full_details_dialog(v_id))
             self._add_action_btn("fa5s.info-circle", "Spécifications", "#3498db", "#2980b9", lambda: self.show_product_specs(data))
-            if is_libre:
-                self._add_action_btn("fa5s.sticky-note", "Imprimer avec Note", "#16a085", "#117a65", lambda: self.open_print_notes_dialog(v_id))
             self._add_action_btn("fa5s.file-pdf", "Bon (PDF)", "#e74c3c", "#c0392b", lambda: self.print_versement_pdf(v_id, open_pdf=True, direct=False))
             pdf_printer = self._get_pdf_printer_name()
             self._add_action_btn("fa5s.print", f"Imprimer ({pdf_printer})" if pdf_printer else "Imprimer direct", "#9b59b6", "#8e44ad", lambda: self.print_versement_pdf(v_id, open_pdf=False, direct=True), enabled=bool(pdf_printer))
@@ -1165,24 +1147,19 @@ class VersementsView(QWidget):
     # ──────────────────────────────────────────────────────────────
     # طباعة PDF (تحميل أو مباشرة)
     # ──────────────────────────────────────────────────────────────
-    def print_versement_pdf(self, versement_id, open_pdf=True, direct=False, custom_pdf_data=None):
+    def print_versement_pdf(self, versement_id, open_pdf=True, direct=False):
         if not ReceiptGenerator:
             QMessageBox.warning(self, "Erreur", "Le module d'impression (invoice_generator) est introuvable.")
             return
 
-        if custom_pdf_data is not None:
-            pdf_data = custom_pdf_data
-            v_data = {'id': versement_id, 'type_versement': 'PRODUIT' if pdf_data.get('items') else 'A_VIDE'}
-        else:
-            pdf_data, v_data = self._prepare_versement_data(versement_id)
-            if not v_data:
-                QMessageBox.warning(self, "Erreur", "Données du versement introuvables.")
-                return
+        pdf_data, v_data = self._prepare_versement_data(versement_id)
+        if not v_data:
+            QMessageBox.warning(self, "Erreur", "Données du versement introuvables.")
+            return
 
         output_dir = os.path.abspath("factures/versements")
         os.makedirs(output_dir, exist_ok=True)
-        v_id_val = v_data.get('id', versement_id)
-        output_path = os.path.join(output_dir, f"Bon_Versement_{v_id_val}.pdf")
+        output_path = os.path.join(output_dir, f"Bon_Versement_{v_data['id']}.pdf")
 
         try:
             direct_printer = self._get_pdf_printer_name() if direct else ""
@@ -1190,7 +1167,7 @@ class VersementsView(QWidget):
                 QMessageBox.warning(self, "Aucune imprimante PDF", "Aucune imprimante PDF configurée dans les paramètres.")
                 return
 
-            if not pdf_data.get('items') or v_data.get('type_versement') == 'A_VIDE':
+            if not pdf_data['items'] or v_data.get('type_versement') == 'A_VIDE':
                 ReceiptGenerator.generate_global_versement_receipt(pdf_data, output_path=output_path, direct_printer_name=direct_printer)
             else:
                 ReceiptGenerator.generate_product_versement_receipt(pdf_data, output_path=output_path, direct_printer_name=direct_printer)
@@ -1210,19 +1187,16 @@ class VersementsView(QWidget):
     # ──────────────────────────────────────────────────────────────
     # طباعة حرارية مباشرة
     # ──────────────────────────────────────────────────────────────
-    def print_versement_thermal(self, versement_id, custom_pdf_data=None):
+    def print_versement_thermal(self, versement_id):
         thermal_printer = self._get_thermal_printer_name()
         if not thermal_printer:
             QMessageBox.warning(self, "Aucune imprimante thermique", "Aucune imprimante thermique n'est configurée.\n\nVeuillez aller dans Paramètres → Impression Thermique.")
             return
 
-        if custom_pdf_data is not None:
-            pdf_data = custom_pdf_data
-        else:
-            pdf_data, v_data = self._prepare_versement_data(versement_id)
-            if not v_data:
-                QMessageBox.warning(self, "Erreur", "Données du versement introuvables.")
-                return
+        pdf_data, v_data = self._prepare_versement_data(versement_id)
+        if not v_data:
+            QMessageBox.warning(self, "Erreur", "Données du versement introuvables.")
+            return
 
         try:
             from ui.tools.print_functions import print_thermal_bon_versement
@@ -1234,53 +1208,6 @@ class VersementsView(QWidget):
             import traceback
             traceback.print_exc()
             QMessageBox.critical(self, "Erreur thermique", f"Erreur lors de l'impression thermique :\n{e}")
-
-    # ──────────────────────────────────────────────────────────────
-    # خيارات الطباعة وتخصيص الملاحظات
-    # ──────────────────────────────────────────────────────────────
-    def open_print_notes_dialog(self, versement_id, default_action="pdf_preview"):
-        """Ouvrir la boîte de dialogue de personnalisation des notes avant impression (PDF / Thermique)."""
-        pdf_data, v_data = self._prepare_versement_data(versement_id)
-        if not v_data:
-            QMessageBox.warning(self, "Erreur", "Données du versement introuvables.")
-            return
-
-        is_libre = (not bool(pdf_data.get('items'))) or (v_data.get('type_versement') == 'A_VIDE')
-        if not is_libre:
-            if default_action == "pdf_preview":
-                self.print_versement_pdf(versement_id, open_pdf=True, direct=False)
-            elif default_action == "pdf_direct":
-                self.print_versement_pdf(versement_id, open_pdf=False, direct=True)
-            elif default_action == "thermal":
-                self.print_versement_thermal(versement_id)
-            return
-
-        pdf_printer = self._get_pdf_printer_name()
-        thermal_printer = self._get_thermal_printer_name()
-
-        dlg = VersementPrintNoteDialog(
-            parent=self,
-            manager=self.manager,
-            v_data=v_data,
-            pdf_data=pdf_data,
-            has_pdf_printer=bool(pdf_printer),
-            has_thermal_printer=bool(thermal_printer),
-            pdf_printer_name=pdf_printer,
-            thermal_printer_name=thermal_printer,
-            default_action=default_action,
-        )
-
-        if dlg.exec() == QDialog.Accepted:
-            dlg.apply_to_pdf_data(pdf_data)
-            dlg.save_to_database_if_requested()
-
-            action_type = dlg.selected_action
-            if action_type == "pdf_preview":
-                self.print_versement_pdf(versement_id, open_pdf=True, direct=False, custom_pdf_data=pdf_data)
-            elif action_type == "pdf_direct":
-                self.print_versement_pdf(versement_id, open_pdf=False, direct=True, custom_pdf_data=pdf_data)
-            elif action_type == "thermal":
-                self.print_versement_thermal(versement_id, custom_pdf_data=pdf_data)
 
     def _on_table_double_clicked(self, index):
         if not index.isValid(): return
@@ -1468,14 +1395,9 @@ class VersementsView(QWidget):
                 client_phone = str(v.get('phone') or '')
                 statut = v.get('status', '')
                 v_id = v['id']
-                is_libre = (not bool(v.get('items'))) or (v.get('type_versement') == 'A_VIDE')
-                header_data = {
-                    "type": "HEADER",
-                    "v_id": v_id,
-                    "statut": statut,
-                    "is_libre": is_libre,
-                    "type_versement": v.get('type_versement'),
-                }
+                is_annule = (statut == 'ANNULE')
+
+                header_data = {"type": "HEADER", "v_id": v_id, "statut": statut}
                 header_title = f" 📦 VRS-{v_id} | Client: {client_name} {f'(Tel: {client_phone})' if client_phone else ''}"
                 header_details = f"Poids Total Actif: {v.get('total_weight_g', 0):.2f} g "
                 self.add_group_header_row(header_data, header_title, 4, header_details, 5, bg_color="#dbe4ec", text_color="#1f2937", text_color2="#1f2937")
@@ -1886,16 +1808,6 @@ class VersementFullDetailsDialog(QDialog):
         # Action bar
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
-
-        is_libre = (not bool(v.get('items'))) or (v.get('type_versement') == 'A_VIDE')
-        if is_libre:
-            btn_print = QPushButton("🖨️ Imprimer Bon avec Notes...")
-            btn_print.setIcon(qta.icon("fa5s.print", color="white"))
-            btn_print.setCursor(Qt.PointingHandCursor)
-            btn_print.setStyleSheet("background-color: #16a085; color: white; font-weight: bold; padding: 8px 18px; border-radius: 6px;")
-            btn_print.clicked.connect(self._open_print_notes)
-            btn_layout.addWidget(btn_print)
-
         btn_close = QPushButton("Fermer")
         btn_close.setCursor(Qt.PointingHandCursor)
         btn_close.setStyleSheet("background-color: #64748b; color: white; font-weight: bold; padding: 8px 24px; border-radius: 6px;")
@@ -1903,12 +1815,6 @@ class VersementFullDetailsDialog(QDialog):
         btn_layout.addWidget(btn_close)
 
         layout.addLayout(btn_layout)
-
-    def _open_print_notes(self):
-        if self.parent() and hasattr(self.parent(), "open_print_notes_dialog"):
-            self.parent().open_print_notes_dialog(self.versement_id)
-        else:
-            QMessageBox.information(self, "Impression", "Impression disponible depuis la vue principale.")
 
     def _on_article_double_clicked(self, table_articles, items, idx):
         if not idx.isValid(): return

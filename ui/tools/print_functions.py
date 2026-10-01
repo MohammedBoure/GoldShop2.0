@@ -6,7 +6,6 @@ import json
 import logging
 import datetime
 import copy
-import re
 from PySide6.QtCore import Qt, QRect
 from PySide6.QtGui import QPainter, QFont, QColor, QPen, QImage
 from PySide6.QtPrintSupport import QPrinterInfo, QPrinter
@@ -818,16 +817,7 @@ def _draw_thermal_receipt(painter, width, data, tc, doc_type):
             for v in thermal_versements:
                 d_str = _thermal_payment_datetime(v)[:10]
                 amt = f"{_thermal_payment_amount(v):,.2f} {currency}"
-                if versement_kind == "VERSEMENT_LIBRE":
-                    raw_p_note = str(v.get('note') or v.get('notes') or v.get('payment_note') or '').strip()
-                    clean_p_note = re.sub(r'\[Remise:[^\]]+\]', '', raw_p_note).strip(" |")
-                    show_p_note = v.get('display_payment_note', True) and bool(clean_p_note)
-                    if show_p_note:
-                        rows.append([d_str, amt, f"Note: {clean_p_note}"])
-                    else:
-                        rows.append([d_str, amt])
-                else:
-                    rows.append([d_str, amt])
+                rows.append([d_str, amt])
         else:
             if show_rate:
                 headers = ["Date", "Opération", "Poids", "Prix/g", "Montant"]
@@ -846,26 +836,13 @@ def _draw_thermal_receipt(painter, width, data, tc, doc_type):
                 w = _thermal_payment_weight(v)
                 w_str = f"+{w:.2f} Gr" if w > 0 else "-"
                 amt = f"{amt_val:,.2f} {currency}"
-
-                if versement_kind == "VERSEMENT_LIBRE":
-                    raw_p_note = str(v.get('note') or v.get('notes') or v.get('payment_note') or '').strip()
-                    clean_p_note = re.sub(r'\[Remise:[^\]]+\]', '', raw_p_note).strip(" |")
-                    show_p_note = v.get('display_payment_note', True) and bool(clean_p_note)
-                else:
-                    show_p_note = False
-
+                
                 if show_rate:
                     rate = _thermal_payment_rate(v)
                     rate_str = f"{rate:,.0f}" if (rate > 0 and amt_val > 0 and w > 0) else "-"
-                    if show_p_note:
-                        rows.append([d_str, op, w_str, rate_str, amt, f"Note: {clean_p_note}"])
-                    else:
-                        rows.append([d_str, op, w_str, rate_str, amt])
+                    rows.append([d_str, op, w_str, rate_str, amt])
                 else:
-                    if show_p_note:
-                        rows.append([d_str, op, w_str, amt, f"Note: {clean_p_note}"])
-                    else:
-                        rows.append([d_str, op, w_str, amt])
+                    rows.append([d_str, op, w_str, amt])
 
         if rows:
             draw_table(headers, ratios, rows)
@@ -884,17 +861,6 @@ def _draw_thermal_receipt(painter, width, data, tc, doc_type):
                 draw_text_absolute(value, totals_x, y, f_norm, align_right=True, limit=totals_w)
                 y += f_norm + 10
         y += 5
-
-        if versement_kind == "VERSEMENT_LIBRE":
-            general_note = str(data.get('general_note') or data.get('invoice_note') or data.get('note') or data.get('notes') or '').strip()
-            if general_note:
-                painter.drawLine(m, y, width - m, y); y += 10
-                font_gn = QFont("Arial"); font_gn.setPixelSize(f_small); font_gn.setBold(True)
-                note_lines = wrap_text_to_lines(f"Note / Observation : {general_note}", width - 2 * m, font_gn)
-                for line in note_lines:
-                    draw_text_absolute(line, m, y, f_small, bold=True)
-                    y += f_small + 5
-                y += 5
 
     elif doc_type == "CreditClient":
         headers = ["Date", "Opération", "Reste", "Montant"]

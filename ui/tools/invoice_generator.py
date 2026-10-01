@@ -868,13 +868,7 @@ class ReceiptGenerator:
                 used_str = ""
                 amount_color = c_red if amount < 0 else c_grn
                 amount_str = f"{amount:,.2f} {currency}"
-
-                raw_p_note = str(v.get('note') or v.get('notes') or v.get('payment_note') or '').strip()
-                clean_p_note = re.sub(r'\[Remise:[^\]]+\]', '', raw_p_note).strip(" |")
-                show_p_note = v.get('display_payment_note', True) and bool(clean_p_note)
-                note_span = f"<br><span style='font-size:{int(f_norm*0.82)}px; color:#0f8f83; font-style:italic; font-weight:normal;'>🏷️ {escape(clean_p_note)}</span>" if show_p_note else ""
-
-                versements_html += f"<tr><td style='vertical-align:middle;'>{date_str}{note_span}</td><td style='text-align:center; vertical-align:middle; font-weight:bold; color:{amount_color};'>{amount_str} {used_str}</td></tr>"
+                versements_html += f"<tr><td style='vertical-align:middle;'>{date_str}</td><td style='text-align:center; vertical-align:middle; font-weight:bold; color:{amount_color};'>{amount_str} {used_str}</td></tr>"
 
             versements_html += f"""
             <tr style="background-color:{c_th}; font-weight:bold; border-top:2px solid {c_txt};">
@@ -888,16 +882,6 @@ class ReceiptGenerator:
         rc_nif_txt = f"{'RC: '+rc+' | NIF: '+nif if pdf_cfg['display'].get('show_rc_nif', True) else ''}"
         if qr_html:
             rc_nif_txt = f"{rc_nif_txt}{qr_html}"
-
-        invoice_note = data.get('general_note') or data.get('invoice_note') or data.get('note') or data.get('notes') or ''
-        invoice_note_html = ""
-        if invoice_note and str(invoice_note).strip():
-            clean_note = escape(str(invoice_note).strip())
-            invoice_note_html = f"""
-            <div style="margin-top:10px; margin-bottom:12px; padding:7px 12px; border-left:4px solid #0f8f83; background-color:#e8f7f4; border-radius:4px; font-size:{int(f_norm*0.9)}px; color:#075f58;">
-                <b>Note / Observation :</b> {clean_note}
-            </div>
-            """
 
         html = f"""
         <html><head><style>
@@ -928,7 +912,6 @@ class ReceiptGenerator:
                 <tr><th style="text-align:left;">Date du Versement libre</th><th style="text-align:center;">Montant libre initial</th></tr>
                 {versements_html}
             </table>
-            {invoice_note_html}
 
             <table width="100%" style="border: none;">
                 <tr>

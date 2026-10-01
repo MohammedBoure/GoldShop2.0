@@ -27,4 +27,3 @@ table_layouts.ini
 app.log*
 app.log
 *.spec
-*.bak
