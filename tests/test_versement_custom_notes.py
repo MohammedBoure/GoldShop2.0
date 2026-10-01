@@ -280,7 +280,167 @@ class VersementCustomNoteTests(unittest.TestCase):
         self.assertEqual(dlg.get_product_note(), "Gravure personnalisée")
         self.assertEqual(dlg.get_observation(), "Attention fermoir délicat")
 
+    def test_versement_print_note_dialog_toggle_and_edit_notes(self):
+        from ui.widgets.versements.invoice_note_selector import VersementPrintNoteDialog
+        manager = SimpleNamespace(invoice_notes=_InvoiceNotes())
+        v_data = {"id": 10, "client_name": "Karim", "phone": "0555123456"}
+        pdf_data = {
+            "customer_name": "Karim",
+            "phone": "0555123456",
+            "operation_number": "VRS-00010",
+            "total_paid": 50000.0,
+            "items": [
+                {
+                    "item_id": 101,
+                    "id": 101,
+                    "name": "Bague Or (3.00g)",
+                    "custom_note": "A vendre",
+                },
+                {
+                    "item_id": 102,
+                    "id": 102,
+                    "name": "Chaine Or (5.00g)",
+                    "custom_note": "",
+                },
+            ],
+        }
+
+        dlg = VersementPrintNoteDialog(
+            manager=manager,
+            v_data=v_data,
+            pdf_data=pdf_data,
+            has_pdf_printer=True,
+            has_thermal_printer=True,
+        )
+
+        # Vérifier l'état initial des items
+        self.assertEqual(len(dlg.item_row_widgets), 2)
+        # Item 1 avait une note => coché
+        self.assertTrue(dlg.item_row_widgets[0]["chk"].isChecked())
+        self.assertEqual(dlg.item_row_widgets[0]["txt"].text(), "A vendre")
+        # Item 2 n'avait pas de note => non coché
+        self.assertFalse(dlg.item_row_widgets[1]["chk"].isChecked())
+
+        # Modifier la note générale
+        self.assertFalse(dlg.chk_enable_general.isChecked())
+        dlg.chk_enable_general.setChecked(True)
+        dlg.txt_general_note.setPlainText("Solde à la livraison prévue mardi")
+
+        # Décocher item 1 (on ne veut pas qu'il apparaisse)
+        dlg.item_row_widgets[0]["chk"].setChecked(False)
+
+        # Saisir une note sur item 2 et vérifier auto-cochage
+        dlg.item_row_widgets[1]["txt"].setText("Taille 54")
+        self.assertTrue(dlg.item_row_widgets[1]["chk"].isChecked())
+
+        # Appliquer à pdf_data
+        dlg.apply_to_pdf_data(pdf_data)
+
+        self.assertEqual(pdf_data["general_note"], "Solde à la livraison prévue mardi")
+        self.assertEqual(pdf_data["invoice_note"], "Solde à la livraison prévue mardi")
+        self.assertEqual(pdf_data["items"][0]["custom_note"], "")  # Masqué
+        self.assertEqual(pdf_data["items"][1]["custom_note"], "Taille 54")  # Affiché et modifié
+
+    def test_versement_print_note_dialog_save_to_database(self):
+        from ui.widgets.versements.invoice_note_selector import VersementPrintNoteDialog
+        mock_versements = SimpleNamespace(update_versement_item_notes=Mock(return_value=True))
+        manager = SimpleNamespace(invoice_notes=_InvoiceNotes(), versements=mock_versements)
+
+        v_data = {"id": 10, "client_name": "Karim"}
+        pdf_data = {
+            "operation_number": "VRS-00010",
+            "items": [
+                {"item_id": 101, "name": "Bague Or", "custom_note": "A vendre"},
+            ],
+        }
+
+        dlg = VersementPrintNoteDialog(manager=manager, v_data=v_data, pdf_data=pdf_data)
+        dlg.item_row_widgets[0]["txt"].setText("Gravure Sami")
+        dlg.chk_save_db.setChecked(True)
+
+        dlg.save_to_database_if_requested()
+        mock_versements.update_versement_item_notes.assert_called_once_with(101, notes="Gravure Sami")
+
+    def test_generate_global_versement_receipt_with_general_note(self):
+        from ui.tools.invoice_generator import ReceiptGenerator
+        pdf_data = {
+            "customer_name": "Ali",
+            "phone": "0550000000",
+            "operation_number": "VRS-00005",
+            "versements": [{"id": 1, "amount": 20000, "weight": 0}],
+            "currency": "DA",
+            "general_note": "Acompte valable 30 jours",
+        }
+
+        with patch("ui.tools.invoice_generator._render_html_document") as mock_render:
+            ReceiptGenerator.generate_global_versement_receipt(pdf_data, output_path="dummy.pdf")
+            self.assertTrue(mock_render.called)
+            html = mock_render.call_args[0][0]
+            self.assertIn("Note / Observation :", html)
+            self.assertIn("Acompte valable 30 jours", html)
+
+    def test_generate_product_versement_receipt_with_general_note_and_filtered_items(self):
+        from ui.tools.invoice_generator import ReceiptGenerator
+        pdf_data = {
+            "customer_name": "Fatima",
+            "phone": "0660000000",
+            "operation_number": "VRS-00008",
+            "items": [
+                {
+                    "item_id": 1,
+                    "name": "Bague Solitaire (3.20g)",
+                    "weight": 3.2,
+                    "selling_price": 45000,
+                    "custom_note": "Gravure personnalisée 'F & M'",
+                },
+                {
+                    "item_id": 2,
+                    "name": "Bracelet Tennis (6.50g)",
+                    "weight": 6.5,
+                    "selling_price": 95000,
+                    "custom_note": "",  # Note masquée par l'utilisateur
+                },
+            ],
+            "versements": [{"id": 1, "amount": 30000, "weight": 1.5}],
+            "total_paid": 30000,
+            "currency": "DA",
+            "general_note": "Livraison estimée sous 10 jours",
+        }
+
+        with patch("ui.tools.invoice_generator._render_html_document") as mock_render:
+            ReceiptGenerator.generate_product_versement_receipt(pdf_data, output_path="dummy.pdf")
+            self.assertTrue(mock_render.called)
+            html = mock_render.call_args[0][0]
+            self.assertIn("Note / Observation :", html)
+            self.assertIn("Livraison estimée sous 10 jours", html)
+            self.assertIn("Gravure personnalisée &#x27;F &amp; M&#x27;", html)
+
+    def test_thermal_versement_draws_general_note_and_custom_notes(self):
+        from PySide6.QtGui import QImage, QPainter
+        from ui.tools.print_functions import _draw_thermal_receipt, get_thermal_config
+        tc = get_thermal_config()
+
+        data = {
+            "client_name": "Yassine",
+            "operation_number": "VRS-00015",
+            "receipt_id": 15,
+            "items": [
+                {"name": "Gourmette", "weight": 4.0, "remaining_weight": 2.0, "custom_note": "Longueur 19cm"},
+            ],
+            "versements": [{"id": 1, "amount": 25000, "weight": 2.0, "date": "2026-10-01"}],
+            "general_note": "Solde à la remise en mains propres",
+        }
+
+        img = QImage(576, 1200, QImage.Format_ARGB32)
+        painter = QPainter(img)
+        try:
+            h = _draw_thermal_receipt(painter, 576, data, tc, "Versement")
+            self.assertGreater(h, 100)
+        finally:
+            painter.end()
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

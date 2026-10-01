@@ -862,6 +862,16 @@ def _draw_thermal_receipt(painter, width, data, tc, doc_type):
                 y += f_norm + 10
         y += 5
 
+        general_note = str(data.get('general_note') or data.get('invoice_note') or data.get('note') or data.get('notes') or '').strip()
+        if general_note:
+            painter.drawLine(m, y, width - m, y); y += 10
+            font_gn = QFont("Arial"); font_gn.setPixelSize(f_small); font_gn.setBold(True)
+            note_lines = wrap_text_to_lines(f"Note / Observation : {general_note}", width - 2 * m, font_gn)
+            for line in note_lines:
+                draw_text_absolute(line, m, y, f_small, bold=True)
+                y += f_small + 5
+            y += 5
+
     elif doc_type == "CreditClient":
         headers = ["Date", "Opération", "Reste", "Montant"]
         ratios = [0.25, 0.35, 0.15, 0.25]

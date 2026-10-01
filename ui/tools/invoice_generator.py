@@ -883,6 +883,16 @@ class ReceiptGenerator:
         if qr_html:
             rc_nif_txt = f"{rc_nif_txt}{qr_html}"
 
+        invoice_note = data.get('general_note') or data.get('invoice_note') or data.get('note') or data.get('notes') or ''
+        invoice_note_html = ""
+        if invoice_note and str(invoice_note).strip():
+            clean_note = escape(str(invoice_note).strip())
+            invoice_note_html = f"""
+            <div style="margin-top:10px; margin-bottom:12px; padding:7px 12px; border-left:4px solid #0f8f83; background-color:#e8f7f4; border-radius:4px; font-size:{int(f_norm*0.9)}px; color:#075f58;">
+                <b>Note / Observation :</b> {clean_note}
+            </div>
+            """
+
         html = f"""
         <html><head><style>
             body {{ font-family: Arial, sans-serif; color: {c_txt}; font-size: {f_norm}px; }}
@@ -912,6 +922,7 @@ class ReceiptGenerator:
                 <tr><th style="text-align:left;">Date du Versement libre</th><th style="text-align:center;">Montant libre initial</th></tr>
                 {versements_html}
             </table>
+            {invoice_note_html}
 
             <table width="100%" style="border: none;">
                 <tr>
@@ -979,7 +990,7 @@ class ReceiptGenerator:
         has_item_notes = any(
             str(item.get("custom_note") or item.get("note") or "").strip() for item in items
         )
-        show_items_section = bool(pdf_cfg["display"].get("show_versement_items_section", True))
+        show_items_section = bool(pdf_cfg["display"].get("show_versement_items_section", True)) or has_item_notes
         show_payment_rate = bool(pdf_cfg["display"].get("show_versement_payment_rate", True))
 
         def _label(key, default):
@@ -1208,6 +1219,16 @@ class ReceiptGenerator:
             </div>
             """
 
+        invoice_note = data.get('general_note') or data.get('invoice_note') or data.get('note') or data.get('notes') or ''
+        invoice_note_html = ""
+        if invoice_note and str(invoice_note).strip():
+            clean_note = escape(str(invoice_note).strip())
+            invoice_note_html = f"""
+            <div style="margin-top:10px; margin-bottom:12px; padding:7px 12px; border-left:4px solid #0f8f83; background-color:#e8f7f4; border-radius:4px; font-size:{int(f_norm*0.9)}px; color:#075f58; clear:both;">
+                <b>Note / Observation :</b> {clean_note}
+            </div>
+            """
+
         html = f"""
         <html><head><style>
             body {{ font-family: Arial, sans-serif; color: {c_txt}; font-size: {f_norm}px; }}
@@ -1252,6 +1273,8 @@ class ReceiptGenerator:
                 {summary_rows}
             </table>
             <div style="clear:both;"></div>
+
+            {invoice_note_html}
 
             <div style='margin-top:25px; text-align:center; border-top:1px dashed #aaa; padding-top:15px;'><b style='font-size:{int(f_norm*0.9)}px;'>{pdf_cfg["texts"].get("policy_debt", "")}</b><br><span dir='rtl' style='font-size:{f_norm}px;'>{pdf_cfg["texts"].get("arabic_debt", "")}</span></div>
         </body></html>
