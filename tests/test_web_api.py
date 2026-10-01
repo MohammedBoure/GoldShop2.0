@@ -247,6 +247,28 @@ class TestWebApiEndpoints(unittest.TestCase):
         auth_status_data = res_auth_status.get_json()
         self.assertTrue(auth_status_data.get("success"))
         self.assertIn("password_required", auth_status_data.get("data", {}))
+        self.assertTrue(auth_status_data["data"]["password_required"])
+        self.assertFalse(auth_status_data["data"]["authenticated"])
+
+        # 9. Test Imperative Password Enforcement (Unauthenticated API access blocked)
+        res_blocked = self.client.get("/api/v1/reports/journal")
+        self.assertEqual(res_blocked.status_code, 401)
+        self.assertFalse(res_blocked.get_json().get("success"))
+
+        res_blocked_wrong = self.client.get("/api/v1/reports/journal", headers={"X-GoldShop-Password": "incorrect_password"})
+        self.assertEqual(res_blocked_wrong.status_code, 401)
+
+        # 10. Test Today's Date Default Selection in HTML
+        from datetime import date
+        today = date.today()
+        res_journal_html = self.client.get("/journal")
+        html_journal = res_journal_html.get_data(as_text=True)
+        self.assertIn(f'value="{today.month}" selected', html_journal)
+        self.assertIn(f'value="{today.day}" selected', html_journal)
+
+        res_monthly_html = self.client.get("/monthly-summary")
+        html_monthly = res_monthly_html.get_data(as_text=True)
+        self.assertIn(f'value="{today.month}" selected', html_monthly)
 
 
 if __name__ == "__main__":

@@ -147,7 +147,7 @@
 {% block scripts %}
 <script>
   // Load live gold price for home ticker
-  document.addEventListener("DOMContentLoaded", async () => {
+  async function loadHomeGoldPrice() {
     try {
       const res = await GoldShopApp.apiFetch("/api/v1/references/metal-types");
       if (res && res.data && Array.isArray(res.data)) {
@@ -158,6 +158,8 @@
         }
       }
     } catch {}
-  });
+  }
+  document.addEventListener("DOMContentLoaded", loadHomeGoldPrice);
+  window.refreshCurrentPageData = loadHomeGoldPrice;
 </script>
 {% endblock %}

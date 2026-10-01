@@ -29,16 +29,18 @@
 
   function populateDaySelect() {
     if (!daySelect) return;
-    const currentDay = daySelect.value || "0";
+    const now = new Date();
+    const currentDay = daySelect.value && daySelect.value !== "" ? daySelect.value : String(now.getDate());
     daySelect.innerHTML = `<option value="0">Tous les jours</option>`;
     for (let d = 1; d <= 31; d++) {
       const opt = document.createElement("option");
       const dStr = d < 10 ? `0${d}` : `${d}`;
       opt.value = String(d);
       opt.textContent = dStr;
-      if (String(d) === currentDay) opt.selected = true;
+      if (String(d) === String(currentDay)) opt.selected = true;
       daySelect.appendChild(opt);
     }
+    daySelect.value = String(currentDay);
   }
 
   async function loadSellers() {
@@ -67,15 +69,20 @@
     if (!container) return;
 
     const now = new Date();
-    const year = yearSelect ? yearSelect.value : now.getFullYear();
-    const month = monthSelect ? monthSelect.value : (now.getMonth() + 1);
-    const day = daySelect ? daySelect.value : "0";
+    const year = yearSelect && yearSelect.value ? yearSelect.value : now.getFullYear();
+    const month = monthSelect && monthSelect.value ? monthSelect.value : (now.getMonth() + 1);
+    const day = daySelect && daySelect.value !== undefined && daySelect.value !== "" ? daySelect.value : String(now.getDate());
     const seller = sellerSelect ? sellerSelect.value : "0";
     const search = searchInput ? searchInput.value.trim() : "";
 
     const monthName = FRENCH_MONTHS[parseInt(month, 10) - 1] || "";
     if (mainTitle) {
-      mainTitle.textContent = `États De Recettes Du Mois De ${monthName} ${year}`;
+      if (day && day !== "0") {
+        const dStr = parseInt(day, 10) < 10 ? `0${parseInt(day, 10)}` : `${day}`;
+        mainTitle.textContent = `États De Recettes Du ${dStr} ${monthName} ${year}`;
+      } else {
+        mainTitle.textContent = `États De Recettes Du Mois De ${monthName} ${year}`;
+      }
     }
 
     const params = new URLSearchParams();
@@ -98,18 +105,6 @@
         const data = res.data;
         const sessions = Array.isArray(data.sessions) ? data.sessions : [];
         const grandTotals = data.grand_totals || data.totals || {};
-
-        // Intelligent active month detection: If current month has 0 sessions on initial load,
-        // fallback to August 2026 where data exists so user sees records immediately!
-        if (!initialAutoDetectDone && sessions.length === 0 && parseInt(month, 10) === 9 && parseInt(year, 10) === 2026) {
-          initialAutoDetectDone = true;
-          if (monthSelect) monthSelect.value = "8"; // Select August 2026
-          if (noticeBanner && noticeText) {
-            noticeBanner.style.display = "flex";
-            noticeText.textContent = "Affichage automatique du dernier mois contenant des données : Août 2026";
-          }
-          return fetchJournalData();
-        }
 
         renderJournalKPIs(grandTotals);
         renderJournalSessions(sessions, grandTotals);
@@ -152,7 +147,7 @@
         <div class="empty-state">
           <div class="empty-icon">📋</div>
           <div style="font-size: 15px; font-weight: 700; color: var(--text-heading);">Aucune donnée trouvée pour cette période.</div>
-          <div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">لا توجد حركات مسجلة للفترة المحددة. اختر شهراً آخر (مثلاً أوت 2026) لعرض البيانات.</div>
+          <div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">لا توجد حركات مسجلة لهذا اليوم أو الفترة المحددة.</div>
         </div>
       `;
       return;
@@ -380,6 +375,13 @@
 
   // Bind Events
   document.addEventListener("DOMContentLoaded", () => {
+    const now = new Date();
+    if (yearSelect && (!yearSelect.value || yearSelect.value === "")) {
+      yearSelect.value = String(now.getFullYear());
+    }
+    if (monthSelect && (!monthSelect.value || monthSelect.value === "")) {
+      monthSelect.value = String(now.getMonth() + 1);
+    }
     populateDaySelect();
 
     if (yearSelect) yearSelect.addEventListener("change", fetchJournalData);

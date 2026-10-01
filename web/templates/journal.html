@@ -24,7 +24,7 @@
     <div style="display: flex; align-items: center; gap: 4px;">
       <label for="journalYearSelect" style="font-weight: 700; font-size: 13px; color: var(--text-heading); white-space: nowrap;">📅 Année :</label>
       <select id="journalYearSelect" class="form-control" style="width: auto; min-width: 90px; font-weight: 700;">
-        <option value="{{ current_year }}">{{ current_year }}</option>
+        <option value="{{ current_year }}" selected>{{ current_year }}</option>
         <option value="{{ current_year - 1 }}">{{ current_year - 1 }}</option>
         <option value="{{ current_year - 2 }}">{{ current_year - 2 }}</option>
       </select>
@@ -33,18 +33,9 @@
     <div style="display: flex; align-items: center; gap: 4px;">
       <label for="journalMonthSelect" style="font-weight: 700; font-size: 13px; color: var(--text-heading); white-space: nowrap;">Mois :</label>
       <select id="journalMonthSelect" class="form-control" style="width: auto; min-width: 120px; font-weight: 700;">
-        <option value="1">Janvier</option>
-        <option value="2">Février</option>
-        <option value="3">Mars</option>
-        <option value="4">Avril</option>
-        <option value="5">Mai</option>
-        <option value="6">Juin</option>
-        <option value="7">Juillet</option>
-        <option value="8">Août</option>
-        <option value="9">Septembre</option>
-        <option value="10">Octobre</option>
-        <option value="11">Novembre</option>
-        <option value="12">Décembre</option>
+        {% for m_num, m_name in [(1, 'Janvier'), (2, 'Février'), (3, 'Mars'), (4, 'Avril'), (5, 'Mai'), (6, 'Juin'), (7, 'Juillet'), (8, 'Août'), (9, 'Septembre'), (10, 'Octobre'), (11, 'Novembre'), (12, 'Décembre')] %}
+          <option value="{{ m_num }}" {% if current_month == m_num %}selected{% endif %}>{{ m_name }}</option>
+        {% endfor %}
       </select>
     </div>
 
@@ -52,6 +43,9 @@
       <label for="journalDaySelect" style="font-weight: 700; font-size: 13px; color: var(--text-heading); white-space: nowrap;">Jour :</label>
       <select id="journalDaySelect" class="form-control" style="width: auto; min-width: 130px; font-weight: 700;">
         <option value="0">Tous les jours</option>
+        {% for d in range(1, 32) %}
+          <option value="{{ d }}" {% if current_day == d %}selected{% endif %}>{{ "%02d" % d }}</option>
+        {% endfor %}
       </select>
     </div>
 

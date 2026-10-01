@@ -84,29 +84,34 @@
     <div class="modal-sheet">
       <div class="modal-header">
         <h3 class="modal-title">
-          {% if current_lang == 'ar' %}تسجيل الدخول إلى الخادم{% else %}Connexion au Serveur Web{% endif %}
+          🔒 {% if current_lang == 'ar' %}تسجيل الدخول إلى الخادم{% else %}Connexion au Serveur Web{% endif %}
         </h3>
-        <button class="btn-close" onclick="GoldShopApp.hideAuthModal()">✕</button>
+        <button id="btnAuthClose" class="btn-close" onclick="GoldShopApp.hideAuthModal()">✕</button>
       </div>
 
       <form id="authForm">
-        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.5;">
           {% if current_lang == 'ar' %}
-            يرجى إدخال كلمة مرور الويب المحددة في إعدادات البرنامج للوصول إلى كافة البيانات بأمان.
+            يجب إدخال كلمة مرور الويب المحددة في إعدادات البرنامج للوصول إلى كافة البيانات بأمان.
           {% else %}
-            Veuillez saisir le mot de passe Web configuré dans les paramètres du logiciel pour accéder aux données en toute sécurité.
+            Le mot de passe Web configuré dans les paramètres du logiciel est obligatoire pour accéder aux données.
           {% endif %}
         </p>
 
-        <div id="authErrorBox" style="display: none; background: var(--danger-surface); color: var(--danger); border: 1px solid var(--danger); border-radius: 6px; padding: 8px 12px; font-size: 12px; margin-bottom: 12px;"></div>
+        <div id="authErrorBox" style="display: none; background: var(--danger-surface); color: var(--danger); border: 1px solid var(--danger); border-radius: 6px; padding: 10px 12px; font-size: 13px; font-weight: 600; margin-bottom: 14px;"></div>
 
         <div style="margin-bottom: 16px;">
-          <input type="password" id="authPasswordInput" class="form-control" placeholder="{% if current_lang == 'ar' %}كلمة مرور الويب{% else %}Mot de passe Web{% endif %}" required autocomplete="current-password">
+          <input type="password" id="authPasswordInput" class="form-control" placeholder="{% if current_lang == 'ar' %}أدخل كلمة مرور الويب...{% else %}Entrez le mot de passe Web...{% endif %}" required autocomplete="current-password" style="font-size: 14px; padding: 10px 12px;">
         </div>
 
-        <button type="submit" class="btn-primary">
-          {% if current_lang == 'ar' %}تأكيد والاتصال{% else %}Valider et Se Connecter{% endif %}
-        </button>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button type="submit" class="btn-primary" style="flex: 1; padding: 10px 16px; font-size: 14px; font-weight: 700;">
+            {% if current_lang == 'ar' %}تأكيد والاتصال{% else %}Valider et Se Connecter{% endif %}
+          </button>
+          <button type="button" id="btnAuthLogout" class="btn-secondary-light" style="display: none; padding: 10px 14px; font-size: 13px; color: var(--danger);">
+            {% if current_lang == 'ar' %}تسجيل الخروج{% else %}Déconnexion{% endif %}
+          </button>
+        </div>
       </form>
     </div>
   </div>

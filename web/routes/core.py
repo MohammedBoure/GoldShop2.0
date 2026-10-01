@@ -118,10 +118,14 @@ def register_core_routes(flask_app, api):
     def api_v1_auth_status():
         """Check whether password is required and if the current request is already authenticated."""
         is_configured = api.web_password_configured()
-        token = api.request.headers.get(api.WEB_PASSWORD_HEADER, "") or api.request.cookies.get("goldshop_web_password", "")
-        is_authenticated = api.verify_web_password(token) if is_configured else True
+        from urllib.parse import unquote
+        raw_token = api.request.headers.get(api.WEB_PASSWORD_HEADER, "") or api.request.cookies.get("goldshop_web_password", "")
+        token = str(raw_token).strip() if raw_token else ""
+        unquoted = unquote(token).strip() if token else ""
+        is_authenticated = bool(token and is_configured and (api.verify_web_password(token) or api.verify_web_password(unquoted)))
         return api._ok({
-            "password_required": is_configured,
+            "password_required": True,
+            "password_configured": is_configured,
             "authenticated": is_authenticated,
         })
 
@@ -136,9 +140,9 @@ def register_core_routes(flask_app, api):
             return api._json_error(api._translate_key("auth.rate_limited"), status=429)
 
         payload = api.request.get_json(silent=True) or {}
-        password = payload.get("password") or api.request.headers.get(api.WEB_PASSWORD_HEADER, "")
+        password = str(payload.get("password") or api.request.headers.get(api.WEB_PASSWORD_HEADER, "")).strip()
 
-        if not api.verify_web_password(str(password)):
+        if not api.verify_web_password(password):
             api.record_failed_login(client_key)
             return api._json_error(api._translate_key("auth.invalid_password"), status=401)
 
@@ -146,7 +150,7 @@ def register_core_routes(flask_app, api):
         resp = api._ok({"authenticated": True, "message": "Authentication successful"})
         resp.set_cookie(
             "goldshop_web_password",
-            str(password),
+            password,
             max_age=60 * 60 * 24 * 30,
             httponly=False,
             samesite="Lax",

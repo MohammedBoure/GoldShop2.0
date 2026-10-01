@@ -29,8 +29,8 @@
     if (!container) return;
 
     const now = new Date();
-    const year = yearSelect ? yearSelect.value : now.getFullYear();
-    const month = monthSelect ? monthSelect.value : (now.getMonth() + 1);
+    const year = yearSelect && yearSelect.value ? yearSelect.value : now.getFullYear();
+    const month = monthSelect && monthSelect.value ? monthSelect.value : (now.getMonth() + 1);
 
     const monthName = FRENCH_MONTHS[parseInt(month, 10) - 1] || "";
     if (mainTitle) {
@@ -50,19 +50,6 @@
         const data = res.data;
         const days = Array.isArray(data.days) ? data.days : [];
         const totals = data.totals || {};
-
-        // Intelligent active month detection: If current month has 0 days with data on first load,
-        // switch to August 2026 so user sees data immediately!
-        const hasAnyData = days.some(d => d.has_data || d.recette_da > 0 || d.ps_gold > 0);
-        if (!initialAutoDetectDone && !hasAnyData && parseInt(month, 10) === 9 && parseInt(year, 10) === 2026) {
-          initialAutoDetectDone = true;
-          if (monthSelect) monthSelect.value = "8"; // August 2026
-          if (noticeBanner && noticeText) {
-            noticeBanner.style.display = "flex";
-            noticeText.textContent = "Affichage automatique du dernier mois contenant des recettes : Août 2026";
-          }
-          return fetchMonthlyData();
-        }
 
         renderMonthlyKPIs(totals);
         renderDailyBreakdown(days, totals);
@@ -294,11 +281,11 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     const now = new Date();
-    if (monthSelect && !monthSelect.value) {
-      monthSelect.value = String(now.getMonth() + 1);
-    }
-    if (yearSelect && !yearSelect.value) {
+    if (yearSelect && (!yearSelect.value || yearSelect.value === "")) {
       yearSelect.value = String(now.getFullYear());
+    }
+    if (monthSelect && (!monthSelect.value || monthSelect.value === "")) {
+      monthSelect.value = String(now.getMonth() + 1);
     }
 
     if (monthSelect) monthSelect.addEventListener("change", fetchMonthlyData);

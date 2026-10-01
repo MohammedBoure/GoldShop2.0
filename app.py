@@ -364,26 +364,30 @@ def enforce_read_only_api():
 def require_api_password():
     if not request.path.startswith("/api") or request.method == "OPTIONS":
         return None
-    if request.path in {"/api/v1/auth/status", "/api/v1/auth/login"}:
+    if request.path in {"/api/health", "/api/v1/health", "/api/v1/auth/status", "/api/v1/auth/login"}:
         return None
+
+    if not web_password_configured():
+        return _json_error(_translate_key("auth.not_configured"), status=503)
 
     client_key = request.remote_addr or "unknown"
     if login_is_rate_limited(client_key):
         return _json_error(_translate_key("auth.rate_limited"), status=429)
 
-    provided = request.headers.get(WEB_PASSWORD_HEADER, "") or request.cookies.get("goldshop_web_password", "")
-    if provided:
-        if verify_web_password(str(provided)):
-            clear_failed_logins(client_key)
-            return None
-        record_failed_login(client_key)
-        return _json_error(_translate_key("auth.invalid_password"), status=401)
+    raw_token = request.headers.get(WEB_PASSWORD_HEADER, "") or request.cookies.get("goldshop_web_password", "")
+    if not raw_token:
+        return _json_error(_translate_key("auth.required"), status=401)
 
-    # For read-only operations, allow seamless viewing from web interface
-    if request.method in READ_ONLY_METHODS:
+    from urllib.parse import unquote
+    token = str(raw_token).strip()
+    unquoted_token = unquote(token).strip()
+
+    if verify_web_password(token) or verify_web_password(unquoted_token):
+        clear_failed_logins(client_key)
         return None
 
-    return _json_error("Toutes les modifications sont strictement interdites. L'API et le site sont en lecture seule.", status=405)
+    record_failed_login(client_key)
+    return _json_error(_translate_key("auth.invalid_password"), status=401)
 
 @flask_app.after_request
 def add_api_headers(response):

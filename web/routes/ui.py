@@ -23,9 +23,11 @@ def register_ui_routes(flask_app, api):
         return {
             "shop_name": shop_name,
             "active_tab": active_tab,
-            "today_date": today.isoformat(),
+            "today_date": today.strftime("%d/%m/%Y"),
+            "today_iso": today.isoformat(),
             "current_year": today.year,
             "current_month": today.month,
+            "current_day": today.day,
             "web_auth_configured": web_password_configured(),
         }
 

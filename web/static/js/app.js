@@ -11,7 +11,17 @@ const GoldShopApp = (function() {
   let currentLanguage = document.documentElement.lang || "ar";
 
   function getStoredPassword() {
-    return localStorage.getItem(STORAGE_KEY_PASS) || "";
+    const fromStorage = localStorage.getItem(STORAGE_KEY_PASS);
+    if (fromStorage) return fromStorage;
+    const match = document.cookie.match(/(?:^|;\s*)goldshop_web_password=([^;]*)/);
+    if (match && match[1]) {
+      try {
+        return decodeURIComponent(match[1]);
+      } catch {
+        return match[1];
+      }
+    }
+    return "";
   }
 
   function setStoredPassword(pass) {
@@ -20,7 +30,7 @@ const GoldShopApp = (function() {
       document.cookie = `goldshop_web_password=${encodeURIComponent(pass)}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
     } else {
       localStorage.removeItem(STORAGE_KEY_PASS);
-      document.cookie = "goldshop_web_password=; path=/; max-age=0";
+      document.cookie = "goldshop_web_password=; path=/; max-age=0; SameSite=Lax";
     }
   }
 
@@ -36,12 +46,20 @@ const GoldShopApp = (function() {
       const response = await fetch(url, options);
 
       if (response.status === 401 || response.status === 503) {
-        showAuthModal(response.status === 503 ? "Server Web Access not configured" : "Authentication required");
+        setStoredPassword("");
+        let errMsg = response.status === 503
+          ? (currentLanguage === "ar" ? "واجهة البيانات مقفلة. عيّن كلمة مرور الويب أولاً من إعدادات البرنامج." : "Configuration requise : mot de passe Web non configuré sur le serveur.")
+          : (currentLanguage === "ar" ? "يجب إدخال كلمة المرور للوصول إلى هذه البيانات." : "Mot de passe Web obligatoire pour accéder aux données.");
+        try {
+          const errData = await response.json();
+          if (errData && errData.error) errMsg = errData.error;
+        } catch {}
+        showAuthModal(errMsg, true);
         throw new Error("AUTH_REQUIRED");
       }
 
       if (response.status === 429) {
-        showToast("Rate limit exceeded. Please wait a moment.", "error");
+        showToast(currentLanguage === "ar" ? "عدد محاولات كبير. أعد المحاولة بعد بضع دقائق." : "Trop de tentatives. Veuillez patienter.", "error");
         throw new Error("RATE_LIMITED");
       }
 
@@ -102,20 +120,56 @@ const GoldShopApp = (function() {
     }, 3500);
   }
 
-  function showAuthModal(message = "") {
+  function showAuthModal(message = "", imperative = true) {
     const modal = document.getElementById("authModal");
     const errorBox = document.getElementById("authErrorBox");
+    const btnClose = document.getElementById("btnAuthClose") || (modal ? modal.querySelector(".btn-close") : null);
+    const btnLogout = document.getElementById("btnAuthLogout");
+    const input = document.getElementById("authPasswordInput");
+
     if (!modal) return;
     if (errorBox) {
       errorBox.textContent = message || "";
       errorBox.style.display = message ? "block" : "none";
     }
+
+    const isAuthed = Boolean(getStoredPassword());
+    if (btnClose) {
+      btnClose.style.display = (imperative && !isAuthed) ? "none" : "block";
+    }
+    if (btnLogout) {
+      btnLogout.style.display = isAuthed ? "inline-block" : "none";
+    }
+    if (input) {
+      input.value = "";
+    }
+
     modal.classList.add("show");
+    if (input) {
+      setTimeout(() => input.focus(), 120);
+    }
   }
 
   function hideAuthModal() {
     const modal = document.getElementById("authModal");
+    // If not authenticated, cannot hide imperative modal
+    if (!getStoredPassword()) {
+      return;
+    }
     if (modal) modal.classList.remove("show");
+  }
+
+  function logout() {
+    setStoredPassword("");
+    const btnLock = document.getElementById("btnAuthPrompt");
+    if (btnLock) {
+      btnLock.title = "Non connecté / غير متصل";
+      btnLock.classList.remove("authenticated");
+    }
+    showAuthModal(currentLanguage === "ar" ? "تم تسجيل الخروج بنجاح." : "Déconnecté. Veuillez saisir le mot de passe pour continuer.", true);
+    if (window.refreshCurrentPageData) {
+      window.refreshCurrentPageData();
+    }
   }
 
   async function handleLoginSubmit(event) {
@@ -126,7 +180,7 @@ const GoldShopApp = (function() {
 
     if (!password) {
       if (errorBox) {
-        errorBox.textContent = "Please enter password";
+        errorBox.textContent = currentLanguage === "ar" ? "يرجى إدخال كلمة المرور" : "Veuillez saisir le mot de passe Web";
         errorBox.style.display = "block";
       }
       return;
@@ -143,20 +197,25 @@ const GoldShopApp = (function() {
       if (data && data.success) {
         setStoredPassword(password);
         hideAuthModal();
-        showToast("Connected successfully", "success");
+        const btnLock = document.getElementById("btnAuthPrompt");
+        if (btnLock) {
+          btnLock.title = "Connecté / متصل";
+          btnLock.classList.add("authenticated");
+        }
+        showToast(currentLanguage === "ar" ? "تم الاتصال بنجاح" : "Connecté avec succès", "success");
         // Trigger data reload
         if (window.refreshCurrentPageData) {
           window.refreshCurrentPageData();
         }
       } else {
         if (errorBox) {
-          errorBox.textContent = data.error || "Invalid password";
+          errorBox.textContent = (data && data.error) || (currentLanguage === "ar" ? "كلمة المرور غير صحيحة" : "Mot de passe incorrect");
           errorBox.style.display = "block";
         }
       }
     } catch (e) {
       if (errorBox) {
-        errorBox.textContent = "Connection error";
+        errorBox.textContent = currentLanguage === "ar" ? "خطأ في الاتصال بالخادم" : "Erreur de connexion au serveur";
         errorBox.style.display = "block";
       }
     }
@@ -176,9 +235,17 @@ const GoldShopApp = (function() {
       authForm.addEventListener("submit", handleLoginSubmit);
     }
 
+    const btnLogout = document.getElementById("btnAuthLogout");
+    if (btnLogout) {
+      btnLogout.addEventListener("click", logout);
+    }
+
     const btnLock = document.getElementById("btnAuthPrompt");
     if (btnLock) {
-      btnLock.addEventListener("click", () => showAuthModal());
+      btnLock.addEventListener("click", () => {
+        const isAuthed = Boolean(getStoredPassword());
+        showAuthModal("", !isAuthed);
+      });
     }
 
     const btnRefresh = document.getElementById("btnGlobalRefresh");
@@ -194,15 +261,31 @@ const GoldShopApp = (function() {
       });
     }
 
-    // Auto-check auth status silently without blocking user interface
-    apiFetch("/api/v1/auth/status")
-      .then(res => {
-        if (res && res.data && res.data.authenticated) {
-          const btnLock = document.getElementById("btnAuthPrompt");
-          if (btnLock) btnLock.title = "Connecté / متصل";
-        }
+    // Imperative password check on page load:
+    const pass = getStoredPassword();
+    if (!pass) {
+      // Must prompt password imperatively
+      showAuthModal("", true);
+    } else {
+      // Verify stored password with the server
+      fetch("/api/v1/auth/status", {
+        headers: { [HEADER_PASS]: pass, "Accept": "application/json" }
       })
-      .catch(() => {});
+        .then(r => r.json())
+        .then(res => {
+          if (res && res.data && res.data.authenticated) {
+            const btnLock = document.getElementById("btnAuthPrompt");
+            if (btnLock) {
+              btnLock.title = "Connecté / متصل";
+              btnLock.classList.add("authenticated");
+            }
+          } else {
+            setStoredPassword("");
+            showAuthModal(currentLanguage === "ar" ? "انتهت صلاحية الجلسة، أدخل كلمة المرور مجدداً." : "Session expirée ou mot de passe invalide. Veuillez vous reconnecter.", true);
+          }
+        })
+        .catch(() => {});
+    }
   });
 
   return {
@@ -215,6 +298,7 @@ const GoldShopApp = (function() {
     showToast,
     showAuthModal,
     hideAuthModal,
+    logout,
     switchLanguage,
   };
 })();
