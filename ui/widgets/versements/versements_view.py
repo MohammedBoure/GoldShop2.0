@@ -757,7 +757,9 @@ class VersementsView(QWidget):
             pdf_printer = self._get_pdf_printer_name()
             thermal_printer = self._get_thermal_printer_name()
 
-            act_print_custom = menu.addAction("📝 Imprimer avec Note / Options...")
+            is_libre = data.get("is_libre", False)
+            if is_libre:
+                act_print_custom = menu.addAction("📝 Imprimer avec Note / Options...")
             act_print_pdf = menu.addAction("📄 Télécharger Bon (Aperçu PDF)")
 
             if pdf_printer:
@@ -1068,9 +1070,11 @@ class VersementsView(QWidget):
         v_statut = data.get("statut")
 
         if row_type == "HEADER":
+            is_libre = data.get("is_libre", False)
             self._add_action_btn("fa5s.search-plus", "Détails Complets", "#0f8f83", "#0b776d", lambda: self.open_full_details_dialog(v_id))
             self._add_action_btn("fa5s.info-circle", "Spécifications", "#3498db", "#2980b9", lambda: self.show_product_specs(data))
-            self._add_action_btn("fa5s.sticky-note", "Imprimer avec Note", "#16a085", "#117a65", lambda: self.open_print_notes_dialog(v_id))
+            if is_libre:
+                self._add_action_btn("fa5s.sticky-note", "Imprimer avec Note", "#16a085", "#117a65", lambda: self.open_print_notes_dialog(v_id))
             self._add_action_btn("fa5s.file-pdf", "Bon (PDF)", "#e74c3c", "#c0392b", lambda: self.print_versement_pdf(v_id, open_pdf=True, direct=False))
             pdf_printer = self._get_pdf_printer_name()
             self._add_action_btn("fa5s.print", f"Imprimer ({pdf_printer})" if pdf_printer else "Imprimer direct", "#9b59b6", "#8e44ad", lambda: self.print_versement_pdf(v_id, open_pdf=False, direct=True), enabled=bool(pdf_printer))
@@ -1239,6 +1243,16 @@ class VersementsView(QWidget):
         pdf_data, v_data = self._prepare_versement_data(versement_id)
         if not v_data:
             QMessageBox.warning(self, "Erreur", "Données du versement introuvables.")
+            return
+
+        is_libre = (not bool(pdf_data.get('items'))) or (v_data.get('type_versement') == 'A_VIDE')
+        if not is_libre:
+            if default_action == "pdf_preview":
+                self.print_versement_pdf(versement_id, open_pdf=True, direct=False)
+            elif default_action == "pdf_direct":
+                self.print_versement_pdf(versement_id, open_pdf=False, direct=True)
+            elif default_action == "thermal":
+                self.print_versement_thermal(versement_id)
             return
 
         pdf_printer = self._get_pdf_printer_name()
@@ -1454,9 +1468,14 @@ class VersementsView(QWidget):
                 client_phone = str(v.get('phone') or '')
                 statut = v.get('status', '')
                 v_id = v['id']
-                is_annule = (statut == 'ANNULE')
-
-                header_data = {"type": "HEADER", "v_id": v_id, "statut": statut}
+                is_libre = (not bool(v.get('items'))) or (v.get('type_versement') == 'A_VIDE')
+                header_data = {
+                    "type": "HEADER",
+                    "v_id": v_id,
+                    "statut": statut,
+                    "is_libre": is_libre,
+                    "type_versement": v.get('type_versement'),
+                }
                 header_title = f" 📦 VRS-{v_id} | Client: {client_name} {f'(Tel: {client_phone})' if client_phone else ''}"
                 header_details = f"Poids Total Actif: {v.get('total_weight_g', 0):.2f} g "
                 self.add_group_header_row(header_data, header_title, 4, header_details, 5, bg_color="#dbe4ec", text_color="#1f2937", text_color2="#1f2937")
@@ -1868,12 +1887,14 @@ class VersementFullDetailsDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
-        btn_print = QPushButton("🖨️ Imprimer Bon avec Notes...")
-        btn_print.setIcon(qta.icon("fa5s.print", color="white"))
-        btn_print.setCursor(Qt.PointingHandCursor)
-        btn_print.setStyleSheet("background-color: #16a085; color: white; font-weight: bold; padding: 8px 18px; border-radius: 6px;")
-        btn_print.clicked.connect(self._open_print_notes)
-        btn_layout.addWidget(btn_print)
+        is_libre = (not bool(v.get('items'))) or (v.get('type_versement') == 'A_VIDE')
+        if is_libre:
+            btn_print = QPushButton("🖨️ Imprimer Bon avec Notes...")
+            btn_print.setIcon(qta.icon("fa5s.print", color="white"))
+            btn_print.setCursor(Qt.PointingHandCursor)
+            btn_print.setStyleSheet("background-color: #16a085; color: white; font-weight: bold; padding: 8px 18px; border-radius: 6px;")
+            btn_print.clicked.connect(self._open_print_notes)
+            btn_layout.addWidget(btn_print)
 
         btn_close = QPushButton("Fermer")
         btn_close.setCursor(Qt.PointingHandCursor)

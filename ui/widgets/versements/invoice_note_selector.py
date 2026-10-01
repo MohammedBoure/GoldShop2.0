@@ -157,7 +157,7 @@ class VersementPrintNoteDialog(QDialog):
             self.pdf_data.get("operation_number")
             or f"VRS-{self.v_data.get('id', 0):05d}"
         )
-        self.setWindowTitle(f"Options d'impression & Notes — Bon de Versement {op_num}")
+        self.setWindowTitle(f"Options d'impression & Notes — Bon de Versement Libre {op_num}")
 
         # Dimensions réactives selon l'écran disponible
         screen_geom = QApplication.primaryScreen().availableGeometry() if QApplication.primaryScreen() else None
@@ -453,7 +453,7 @@ class VersementPrintNoteDialog(QDialog):
         title_icon.setPixmap(qta.icon("fa5s.file-invoice-dollar", color="#0f8f83").pixmap(20, 20))
         title_layout.addWidget(title_icon)
 
-        lbl_title = QLabel(f"<b>Bon de Versement {op_num}</b> &nbsp;—&nbsp; <span style='color: #475569;'>Client : <b>{client_name}</b></span>")
+        lbl_title = QLabel(f"<b>Bon de Versement Libre {op_num}</b> &nbsp;—&nbsp; <span style='color: #475569;'>Client : <b>{client_name}</b></span>")
         lbl_title.setStyleSheet("font-size: 15px; color: #075f58; background: transparent; border: none;")
         title_layout.addWidget(lbl_title, stretch=1)
         header_layout.addLayout(title_layout)

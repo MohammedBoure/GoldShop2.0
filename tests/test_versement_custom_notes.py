@@ -379,7 +379,7 @@ class VersementCustomNoteTests(unittest.TestCase):
             self.assertIn("Note / Observation :", html)
             self.assertIn("Acompte valable 30 jours", html)
 
-    def test_generate_product_versement_receipt_with_general_note_and_filtered_items(self):
+    def test_generate_product_versement_receipt_remains_original_without_extra_notes(self):
         from ui.tools.invoice_generator import ReceiptGenerator
         pdf_data = {
             "customer_name": "Fatima",
@@ -393,15 +393,8 @@ class VersementCustomNoteTests(unittest.TestCase):
                     "selling_price": 45000,
                     "custom_note": "Gravure personnalisée 'F & M'",
                 },
-                {
-                    "item_id": 2,
-                    "name": "Bracelet Tennis (6.50g)",
-                    "weight": 6.5,
-                    "selling_price": 95000,
-                    "custom_note": "",  # Note masquée par l'utilisateur
-                },
             ],
-            "versements": [{"id": 1, "amount": 30000, "weight": 1.5}],
+            "versements": [{"id": 1, "amount": 30000, "weight": 1.5, "note": "Acompte espèces"}],
             "total_paid": 30000,
             "currency": "DA",
             "general_note": "Livraison estimée sous 10 jours",
@@ -411,9 +404,10 @@ class VersementCustomNoteTests(unittest.TestCase):
             ReceiptGenerator.generate_product_versement_receipt(pdf_data, output_path="dummy.pdf")
             self.assertTrue(mock_render.called)
             html = mock_render.call_args[0][0]
-            self.assertIn("Note / Observation :", html)
-            self.assertIn("Livraison estimée sous 10 jours", html)
-            self.assertIn("Gravure personnalisée &#x27;F &amp; M&#x27;", html)
+            # Le bon de versement sur produit reste conforme à l'original (aucun bloc de note générale ni note paiement)
+            self.assertNotIn("Livraison estimée sous 10 jours", html)
+            self.assertNotIn("Acompte espèces", html)
+            self.assertIn("Bague Solitaire", html)
 
     def test_thermal_versement_draws_general_note_and_custom_notes(self):
         from PySide6.QtGui import QImage, QPainter
@@ -500,7 +494,7 @@ class VersementCustomNoteTests(unittest.TestCase):
         dlg.save_to_database_if_requested()
         mock_versements.update_payment_notes.assert_called_once_with(55, notes="Avance modifiée chèque")
 
-    def test_product_versement_receipt_renders_payment_line_notes_with_theme(self):
+    def test_product_versement_receipt_does_not_render_payment_line_notes(self):
         from ui.tools.invoice_generator import ReceiptGenerator
         pdf_data = {
             "customer_name": "Sami",
@@ -518,16 +512,8 @@ class VersementCustomNoteTests(unittest.TestCase):
                     "note": "Acompte espèces comptoir",
                     "display_payment_note": True,
                 },
-                {
-                    "id": 2,
-                    "amount": 10000,
-                    "weight": 0.5,
-                    "product_name": "Paiement Espèces / TPE",
-                    "note": "Note masquée",
-                    "display_payment_note": False,
-                }
             ],
-            "total_paid": 30000,
+            "total_paid": 20000,
             "currency": "DA",
         }
 
@@ -535,13 +521,11 @@ class VersementCustomNoteTests(unittest.TestCase):
             ReceiptGenerator.generate_product_versement_receipt(pdf_data, output_path="dummy_prod.pdf")
             self.assertTrue(mock_render.called)
             html = mock_render.call_args[0][0]
-            # La note affichée doit être stylée avec la couleur thème #0f8f83
-            self.assertIn("Acompte espèces comptoir", html)
-            self.assertIn("#0f8f83", html)
-            # La note masquée ne doit pas apparaître
-            self.assertNotIn("Note masquée", html)
+            # Pour les versements sur produits, les notes de paiement ne sont pas affichées (reversion à l'état d'origine)
+            self.assertNotIn("Acompte espèces comptoir", html)
+            self.assertIn("Paiement Espèces / TPE", html)
 
-    def test_global_versement_receipt_renders_payment_line_notes(self):
+    def test_global_versement_receipt_renders_payment_line_notes_with_theme(self):
         from ui.tools.invoice_generator import ReceiptGenerator
         pdf_data = {
             "customer_name": "Yassine",
@@ -567,7 +551,9 @@ class VersementCustomNoteTests(unittest.TestCase):
             ReceiptGenerator.generate_global_versement_receipt(pdf_data, output_path="dummy_glob.pdf")
             self.assertTrue(mock_render.called)
             html = mock_render.call_args[0][0]
+            # Pour le versement libre, la note cochée doit être présente avec le thème vert #0f8f83
             self.assertIn("Premier versement libre", html)
+            self.assertIn("#0f8f83", html)
             self.assertNotIn("Deuxième note cachée", html)
 
     def test_thermal_versement_draws_payment_line_notes(self):

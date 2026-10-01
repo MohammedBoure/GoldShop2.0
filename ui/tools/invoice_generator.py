@@ -996,7 +996,7 @@ class ReceiptGenerator:
         has_item_notes = any(
             str(item.get("custom_note") or item.get("note") or "").strip() for item in items
         )
-        show_items_section = bool(pdf_cfg["display"].get("show_versement_items_section", True)) or has_item_notes
+        show_items_section = bool(pdf_cfg["display"].get("show_versement_items_section", True))
         show_payment_rate = bool(pdf_cfg["display"].get("show_versement_payment_rate", True))
 
         def _label(key, default):
@@ -1037,7 +1037,7 @@ class ReceiptGenerator:
             for item in items:
                 item_name = escape(str(item.get('item_name') or item.get('name') or item.get('description') or 'Article').strip())
                 item_note = escape(str(item.get('custom_note') or item.get('note') or '').strip())
-                item_name_html = f"{item_name}<br><span style='font-size:{int(f_norm*0.85)}px; color:#0f8f83; font-weight:bold;'>🏷️ {item_note}</span>" if item_note else item_name
+                item_name_html = f"{item_name}<br><span style='font-size:{int(f_norm*0.85)}px; color:#8e44ad; font-weight:bold;'>{item_note}</span>" if item_note else item_name
                 item_barcode = str(item.get('barcode') or item.get('inventory_barcode') or item.get('item_barcode') or '').strip()
                 item_weight = _safe_float(item.get('weight', 0))
                 item_total_amount = _safe_float(item.get('selling_price', item.get('total_amount', 0)))
@@ -1094,17 +1094,8 @@ class ReceiptGenerator:
                 operation_prefix = _payment_operation_prefix(v, f_norm, operation_number)
                 id_str = f"<span style='color:#7f8c8d; font-weight:bold;'>N°{pay_id}</span> - " if pay_id and pay_id != 'N/A' else ""
 
-                v_name = escape(str(v.get('product_name') or v.get('item_name') or default_names).strip())
+                v_name = str(v.get('product_name') or v.get('item_name') or default_names).strip()
                 v_barcode = str(v.get('barcode') or v.get('product_barcode') or v.get('item_barcode') or default_barcodes).strip()
-
-                raw_p_note = str(v.get('note') or v.get('notes') or v.get('payment_note') or '').strip()
-                clean_p_note = re.sub(r'\[Remise:[^\]]+\]', '', raw_p_note).strip(" |")
-                show_p_note = v.get('display_payment_note', True) and bool(clean_p_note)
-                if show_p_note:
-                    v_note_html = f"<br><span style='font-size:{int(f_norm*0.82)}px; color:#0f8f83; font-style:italic; font-weight:normal;'>🏷️ {escape(clean_p_note)}</span>"
-                    v_name_display = f"{v_name}{v_note_html}"
-                else:
-                    v_name_display = v_name
 
                 td_code_content_v = v_barcode
                 if show_code and code_format == "Code-Barres" and v_barcode and v_barcode != "N/A":
@@ -1140,7 +1131,7 @@ class ReceiptGenerator:
                 versements_html += f"""
                 <tr>
                     <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#333333;">{date_str}</td>
-                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#2c3e50; font-weight:bold;">{v_name_display}</td>
+                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#2c3e50; font-weight:bold;">{v_name}</td>
                     {code_td_v}
                     <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:{amount_color}; text-align:center; font-weight:bold;">{amount_str}</td>
                     <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:{weight_color}; text-align:center;">{weight_str}</td>
@@ -1234,16 +1225,6 @@ class ReceiptGenerator:
             </div>
             """
 
-        invoice_note = data.get('general_note') or data.get('invoice_note') or data.get('note') or data.get('notes') or ''
-        invoice_note_html = ""
-        if invoice_note and str(invoice_note).strip():
-            clean_note = escape(str(invoice_note).strip())
-            invoice_note_html = f"""
-            <div style="margin-top:10px; margin-bottom:12px; padding:7px 12px; border-left:4px solid #0f8f83; background-color:#e8f7f4; border-radius:4px; font-size:{int(f_norm*0.9)}px; color:#075f58; clear:both;">
-                <b>Note / Observation :</b> {clean_note}
-            </div>
-            """
-
         html = f"""
         <html><head><style>
             body {{ font-family: Arial, sans-serif; color: {c_txt}; font-size: {f_norm}px; }}
@@ -1288,8 +1269,6 @@ class ReceiptGenerator:
                 {summary_rows}
             </table>
             <div style="clear:both;"></div>
-
-            {invoice_note_html}
 
             <div style='margin-top:25px; text-align:center; border-top:1px dashed #aaa; padding-top:15px;'><b style='font-size:{int(f_norm*0.9)}px;'>{pdf_cfg["texts"].get("policy_debt", "")}</b><br><span dir='rtl' style='font-size:{f_norm}px;'>{pdf_cfg["texts"].get("arabic_debt", "")}</span></div>
         </body></html>
