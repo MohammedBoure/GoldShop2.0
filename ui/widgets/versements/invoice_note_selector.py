@@ -1,8 +1,7 @@
-"""Shared helpers and dialogs for Versement invoice notes and print customization."""
-
+import os
 import re
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QColor
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -27,6 +26,20 @@ import qtawesome as qta
 
 MAX_CUSTOM_NOTE_LENGTH = 255
 EMPTY_NOTE_LABEL = "--- Note ---"
+
+
+def get_or_create_check_icon_path():
+    """Returns absolute path to a crisp white checkmark icon for QCheckBox styling."""
+    assets_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "assets"))
+    os.makedirs(assets_dir, exist_ok=True)
+    icon_path = os.path.join(assets_dir, "check_white.png")
+    if not os.path.exists(icon_path):
+        try:
+            icon = qta.icon("fa5s.check", color="white")
+            icon.pixmap(14, 14).save(icon_path)
+        except Exception:
+            pass
+    return icon_path.replace("\\", "/")
 
 
 def normalize_custom_note(value):
@@ -140,95 +153,99 @@ class VersementPrintNoteDialog(QDialog):
             or f"VRS-{self.v_data.get('id', 0):05d}"
         )
         self.setWindowTitle(f"Options d'impression & Notes — Bon de Versement {op_num}")
-        self.setMinimumWidth(740)
-        self.resize(780, 620)
+        self.setMinimumWidth(820)
+        self.resize(860, 640)
         self._init_ui()
 
     def _init_ui(self):
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #f8f9fa;
-            }
-            QTabWidget::pane {
+        check_icon_path = get_or_create_check_icon_path()
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: #f8fafc;
+            }}
+            QCheckBox {{
+                font-size: 13px;
+                color: #1e293b;
+                background: transparent;
+                spacing: 8px;
+            }}
+            QCheckBox::indicator {{
+                width: 18px;
+                height: 18px;
+                border: 1.5px solid #94a3b8;
+                border-radius: 4px;
+                background-color: #ffffff;
+            }}
+            QCheckBox::indicator:hover {{
+                border-color: #0f8f83;
+                background-color: #f0fdfa;
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: #0f8f83;
+                border: 1.5px solid #0f8f83;
+                image: url("{check_icon_path}");
+            }}
+            QCheckBox::indicator:checked:hover {{
+                background-color: #0b776d;
+                border-color: #0b776d;
+            }}
+            QTabWidget::pane {{
                 border: 1px solid #cbd5e1;
                 border-radius: 6px;
                 background-color: #ffffff;
                 top: -1px;
-            }
-            QTabBar::tab {
+            }}
+            QTabBar::tab {{
                 background-color: #f1f5f9;
-                color: #334155;
+                color: #475569;
                 font-size: 13px;
                 font-weight: bold;
-                padding: 10px 20px;
+                padding: 10px 22px;
                 border-top-left-radius: 6px;
                 border-top-right-radius: 6px;
                 margin-right: 4px;
                 border: 1px solid #cbd5e1;
                 border-bottom: none;
-            }
-            QTabBar::tab:selected {
+            }}
+            QTabBar::tab:selected {{
                 background-color: #0f8f83;
                 color: #ffffff;
                 border-color: #0f8f83;
-            }
-            QTabBar::tab:hover:!selected {
-                background-color: #e2f4f1;
+            }}
+            QTabBar::tab:hover:!selected {{
+                background-color: #e6f6f4;
                 color: #075f58;
-            }
-            QGroupBox {
-                font-size: 13px;
-                font-weight: bold;
-                color: #1e293b;
+            }}
+            QTableWidget {{
+                background-color: #ffffff;
                 border: 1px solid #e2e8f0;
                 border-radius: 6px;
-                margin-top: 10px;
-                padding-top: 12px;
-                background-color: white;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                left: 12px;
-                padding: 0 6px;
-                background-color: white;
-            }
-            QLabel {
-                font-size: 13px;
-                color: #1e293b;
-            }
-            QTextEdit, QLineEdit, QComboBox {
-                font-size: 13px;
-                padding: 6px 8px;
-                border: 1px solid #cbd5e1;
-                border-radius: 5px;
-                background-color: white;
-                color: #1e293b;
-            }
-            QTextEdit:focus, QLineEdit:focus, QComboBox:focus {
-                border: 2px solid #0f8f83;
-            }
-            QTableWidget {
-                background-color: white;
-                border: 1px solid #e2e8f0;
-                border-radius: 4px;
                 gridline-color: #f1f5f9;
-            }
-            QHeaderView::section {
+            }}
+            QHeaderView::section {{
                 background-color: #f8fafc;
                 font-weight: bold;
                 font-size: 12px;
                 color: #1e293b;
-                padding: 6px;
+                padding: 8px 10px;
                 border: none;
                 border-bottom: 2px solid #0f8f83;
-            }
-            QPushButton {
+            }}
+            QTableWidget::item {{
+                padding: 4px 8px;
+            }}
+            QTextEdit, QLineEdit, QComboBox {{
                 font-size: 13px;
-                font-weight: bold;
-                padding: 8px 14px;
-                border-radius: 6px;
-            }
+                padding: 6px 10px;
+                border: 1px solid #cbd5e1;
+                border-radius: 5px;
+                background-color: white;
+                color: #1e293b;
+            }}
+            QTextEdit:focus, QLineEdit:focus, QComboBox:focus {{
+                border: 2px solid #0f8f83;
+                background-color: #f0fdfa;
+            }}
         """)
 
         main_layout = QVBoxLayout(self)
@@ -239,14 +256,14 @@ class VersementPrintNoteDialog(QDialog):
         header_frame = QFrame()
         header_frame.setStyleSheet("""
             QFrame {
-                background-color: #e8f7f4;
-                border: 1px solid #a2ded0;
+                background-color: #f0fdfa;
+                border: 1px solid #99dfd3;
                 border-radius: 8px;
-                padding: 8px 12px;
+                padding: 10px 14px;
             }
         """)
         header_layout = QVBoxLayout(header_frame)
-        header_layout.setSpacing(4)
+        header_layout.setSpacing(6)
         header_layout.setContentsMargins(6, 6, 6, 6)
 
         client_name = self.pdf_data.get("customer_name") or self.v_data.get("client_name", "Client Inconnu")
@@ -256,21 +273,27 @@ class VersementPrintNoteDialog(QDialog):
         items_count = len(self.pdf_data.get("items", []))
         payments_count = len(self.pdf_data.get("versements", []))
 
-        lbl_title = QLabel(f"📄 Bon de Versement {op_num} — Client : {client_name}")
-        lbl_title.setStyleSheet("font-size: 15px; font-weight: bold; color: #075f58; background: transparent; border: none;")
-        header_layout.addWidget(lbl_title)
+        title_layout = QHBoxLayout()
+        title_icon = QLabel()
+        title_icon.setPixmap(qta.icon("fa5s.file-invoice-dollar", color="#0f8f83").pixmap(20, 20))
+        title_layout.addWidget(title_icon)
+
+        lbl_title = QLabel(f"<b>Bon de Versement {op_num}</b> &nbsp;—&nbsp; <span style='color: #475569;'>Client : <b>{client_name}</b></span>")
+        lbl_title.setStyleSheet("font-size: 15px; color: #075f58; background: transparent; border: none;")
+        title_layout.addWidget(lbl_title, stretch=1)
+        header_layout.addLayout(title_layout)
 
         info_parts = []
         if phone:
-            info_parts.append(f"📞 Tél: {phone}")
-        info_parts.append(f"💵 Total Versé: {total_paid:,.2f} DA")
-        info_parts.append(f"💳 Paiements: {payments_count}")
+            info_parts.append(f"<span style='color:#64748b;'>Tél :</span> <b>{phone}</b>")
+        info_parts.append(f"<span style='color:#64748b;'>Total Versé :</span> <b style='color:#0f8f83;'>{total_paid:,.2f} DA</b>")
+        info_parts.append(f"<span style='color:#64748b;'>Paiements :</span> <b style='color:#2563eb;'>{payments_count}</b>")
         if items_count > 0:
-            info_parts.append(f"📦 Articles: {items_count}")
+            info_parts.append(f"<span style='color:#64748b;'>Articles :</span> <b style='color:#7c3aed;'>{items_count}</b>")
         else:
-            info_parts.append("💰 Versement libre")
+            info_parts.append("<span style='color:#d97706; font-weight:bold;'>Versement libre</span>")
 
-        lbl_info = QLabel("   |   ".join(info_parts))
+        lbl_info = QLabel(" &nbsp;&nbsp;•&nbsp;&nbsp; ".join(info_parts))
         lbl_info.setStyleSheet("font-size: 12px; color: #334155; background: transparent; border: none;")
         header_layout.addWidget(lbl_info)
 
@@ -282,7 +305,7 @@ class VersementPrintNoteDialog(QDialog):
         # ──────── TAB 1 : Notes de chaque ligne de paiement ─────────
         tab_payments = QWidget()
         lay_payments = QVBoxLayout(tab_payments)
-        lay_payments.setSpacing(8)
+        lay_payments.setSpacing(10)
         lay_payments.setContentsMargins(12, 12, 12, 12)
 
         lbl_pay_sub = QLabel(
@@ -293,22 +316,44 @@ class VersementPrintNoteDialog(QDialog):
         lay_payments.addWidget(lbl_pay_sub)
 
         quick_pay_lay = QHBoxLayout()
-        btn_check_all_pay = QPushButton(" Tout afficher (Cocher)")
-        btn_check_all_pay.setIcon(qta.icon("fa5s.check-square", color="#0f8f83"))
+        btn_check_all_pay = QPushButton("Tout afficher")
+        btn_check_all_pay.setIcon(qta.icon("fa5s.check-double", color="#0f8f83"))
         btn_check_all_pay.setCursor(Qt.PointingHandCursor)
         btn_check_all_pay.setStyleSheet("""
-            QPushButton { background-color: #f1f5f9; color: #1e293b; font-size: 11px; padding: 5px 12px; border: 1px solid #cbd5e1; }
-            QPushButton:hover { background-color: #e2e8f0; }
+            QPushButton {
+                background-color: #e8f7f4;
+                color: #075f58;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 6px 14px;
+                border: 1px solid #99dfd3;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #d1f2ec;
+                border-color: #0f8f83;
+            }
         """)
         btn_check_all_pay.clicked.connect(self._check_all_payments)
         quick_pay_lay.addWidget(btn_check_all_pay)
 
-        btn_uncheck_all_pay = QPushButton(" Tout masquer (Décocher)")
-        btn_uncheck_all_pay.setIcon(qta.icon("fa5s.square", color="#64748b"))
+        btn_uncheck_all_pay = QPushButton("Tout masquer")
+        btn_uncheck_all_pay.setIcon(qta.icon("fa5s.times", color="#64748b"))
         btn_uncheck_all_pay.setCursor(Qt.PointingHandCursor)
         btn_uncheck_all_pay.setStyleSheet("""
-            QPushButton { background-color: #f1f5f9; color: #1e293b; font-size: 11px; padding: 5px 12px; border: 1px solid #cbd5e1; }
-            QPushButton:hover { background-color: #e2e8f0; }
+            QPushButton {
+                background-color: #f8fafc;
+                color: #475569;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 6px 14px;
+                border: 1px solid #cbd5e1;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #f1f5f9;
+                border-color: #94a3b8;
+            }
         """)
         btn_uncheck_all_pay.clicked.connect(self._uncheck_all_payments)
         quick_pay_lay.addWidget(btn_uncheck_all_pay)
@@ -321,10 +366,12 @@ class VersementPrintNoteDialog(QDialog):
         self.table_payments.setColumnCount(3)
         self.table_payments.setHorizontalHeaderLabels(["Afficher ?", "Opération & Montant", "Note / Observation de la ligne"])
         self.table_payments.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
-        self.table_payments.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.table_payments.horizontalHeader().setSectionResizeMode(1, QHeaderView.Interactive)
         self.table_payments.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-        self.table_payments.setColumnWidth(0, 75)
+        self.table_payments.setColumnWidth(0, 90)
+        self.table_payments.setColumnWidth(1, 380)
         self.table_payments.verticalHeader().setVisible(False)
+        self.table_payments.verticalHeader().setDefaultSectionSize(44)
         self.table_payments.setRowCount(len(versements))
         self.table_payments.setSelectionMode(QAbstractItemView.NoSelection)
 
@@ -342,12 +389,14 @@ class VersementPrintNoteDialog(QDialog):
             chk_lay.setContentsMargins(0, 0, 0, 0)
             chk_lay.setAlignment(Qt.AlignCenter)
             chk = QCheckBox()
+            chk.setCursor(Qt.PointingHandCursor)
+            chk.setFixedSize(22, 22)
             chk.setChecked(bool(clean_p_note))
             chk_lay.addWidget(chk)
             self.table_payments.setCellWidget(row_idx, 0, chk_widget)
 
             # Col 1: Date, Opération & Montant
-            label_text = f"{p_date} — {p_op} : {p_amount:,.2f} DA"
+            label_text = f"{p_date}   •   {p_op} :  {p_amount:,.2f} DA"
             it_desc = QTableWidgetItem(label_text)
             it_desc.setFlags(Qt.ItemIsEnabled)
             it_desc.setFont(QFont("Arial", 10, QFont.Bold))
@@ -355,8 +404,21 @@ class VersementPrintNoteDialog(QDialog):
 
             # Col 2: Editable Note LineEdit
             txt_note = QLineEdit(clean_p_note)
-            txt_note.setPlaceholderText("Aucune observation pour cette ligne de paiement")
-            txt_note.setStyleSheet("font-size: 12px; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px;")
+            txt_note.setPlaceholderText("Ajouter une note à ce paiement...")
+            txt_note.setStyleSheet("""
+                QLineEdit {
+                    font-size: 13px;
+                    padding: 6px 10px;
+                    border: 1px solid #cbd5e1;
+                    border-radius: 5px;
+                    background-color: #ffffff;
+                    color: #1e293b;
+                }
+                QLineEdit:focus {
+                    border: 2px solid #0f8f83;
+                    background-color: #f0fdfa;
+                }
+            """)
 
             def _create_pay_text_changed_handler(target_chk):
                 def _handler(text):
@@ -376,12 +438,13 @@ class VersementPrintNoteDialog(QDialog):
 
         lay_payments.addWidget(self.table_payments)
 
-        self.chk_save_payment_notes = QCheckBox("💾 Enregistrer également ces modifications de notes de paiement en base de données")
-        self.chk_save_payment_notes.setStyleSheet("font-size: 12px; color: #1e293b; font-weight: bold;")
+        self.chk_save_payment_notes = QCheckBox("Enregistrer également ces modifications de notes de paiement en base de données")
+        self.chk_save_payment_notes.setCursor(Qt.PointingHandCursor)
+        self.chk_save_payment_notes.setStyleSheet("font-size: 12px; color: #1e293b; font-weight: bold; spacing: 8px;")
         self.chk_save_payment_notes.setChecked(False)
         lay_payments.addWidget(self.chk_save_payment_notes)
 
-        self.tabs.addTab(tab_payments, f"💵 Notes des Paiements ({len(versements)})")
+        self.tabs.addTab(tab_payments, qta.icon("fa5s.money-bill-wave", color="#475569", color_selected="#ffffff"), f"Notes des Paiements ({len(versements)})")
 
         # ──────── TAB 2 : Note Générale du Bon ──────────────────────
         tab_general = QWidget()
@@ -390,7 +453,8 @@ class VersementPrintNoteDialog(QDialog):
         lay_general.setContentsMargins(12, 12, 12, 12)
 
         self.chk_enable_general = QCheckBox("Afficher une note générale sur le bon")
-        self.chk_enable_general.setStyleSheet("font-size: 13px; font-weight: bold; color: #0f8f83;")
+        self.chk_enable_general.setCursor(Qt.PointingHandCursor)
+        self.chk_enable_general.setStyleSheet("font-size: 13px; font-weight: bold; color: #0f8f83; spacing: 8px;")
         self.chk_enable_general.setChecked(False)
         lay_general.addWidget(self.chk_enable_general)
 
@@ -430,16 +494,17 @@ class VersementPrintNoteDialog(QDialog):
         self.btn_vkb.setIcon(qta.icon("fa5s.keyboard", color="white"))
         self.btn_vkb.setCursor(Qt.PointingHandCursor)
         self.btn_vkb.setStyleSheet("""
-            QPushButton { background-color: #2c3e50; color: white; border: none; padding: 6px 14px; font-size: 12px; }
+            QPushButton { background-color: #2c3e50; color: white; border: none; padding: 6px 14px; font-size: 12px; border-radius: 5px; }
             QPushButton:hover { background-color: #34495e; }
         """)
         self.btn_vkb.clicked.connect(lambda: self._open_virtual_keyboard(self.txt_general_note))
         tools_layout.addWidget(self.btn_vkb)
 
         self.btn_clear_general = QPushButton("Effacer")
+        self.btn_clear_general.setIcon(qta.icon("fa5s.eraser", color="white"))
         self.btn_clear_general.setCursor(Qt.PointingHandCursor)
         self.btn_clear_general.setStyleSheet("""
-            QPushButton { background-color: #94a3b8; color: white; border: none; padding: 6px 14px; font-size: 12px; }
+            QPushButton { background-color: #94a3b8; color: white; border: none; padding: 6px 14px; font-size: 12px; border-radius: 5px; }
             QPushButton:hover { background-color: #64748b; }
         """)
         self.btn_clear_general.clicked.connect(self.txt_general_note.clear)
@@ -447,14 +512,14 @@ class VersementPrintNoteDialog(QDialog):
         tools_layout.addStretch()
         lay_general.addLayout(tools_layout)
 
-        self.tabs.addTab(tab_general, "📝 Note Générale du Bon")
+        self.tabs.addTab(tab_general, qta.icon("fa5s.sticky-note", color="#475569", color_selected="#ffffff"), "Note Générale du Bon")
 
         # ──────── TAB 3 : Notes des Articles Réservés ────────────────
         items = self.pdf_data.get("items", [])
         if items:
             tab_items = QWidget()
             lay_items = QVBoxLayout(tab_items)
-            lay_items.setSpacing(8)
+            lay_items.setSpacing(10)
             lay_items.setContentsMargins(12, 12, 12, 12)
 
             lbl_item_sub = QLabel(
@@ -465,22 +530,44 @@ class VersementPrintNoteDialog(QDialog):
             lay_items.addWidget(lbl_item_sub)
 
             quick_item_lay = QHBoxLayout()
-            btn_check_all_items = QPushButton(" Tout afficher (Cocher)")
-            btn_check_all_items.setIcon(qta.icon("fa5s.check-square", color="#0f8f83"))
+            btn_check_all_items = QPushButton("Tout afficher")
+            btn_check_all_items.setIcon(qta.icon("fa5s.check-double", color="#0f8f83"))
             btn_check_all_items.setCursor(Qt.PointingHandCursor)
             btn_check_all_items.setStyleSheet("""
-                QPushButton { background-color: #f1f5f9; color: #1e293b; font-size: 11px; padding: 5px 12px; border: 1px solid #cbd5e1; }
-                QPushButton:hover { background-color: #e2e8f0; }
+                QPushButton {
+                    background-color: #e8f7f4;
+                    color: #075f58;
+                    font-size: 12px;
+                    font-weight: bold;
+                    padding: 6px 14px;
+                    border: 1px solid #99dfd3;
+                    border-radius: 5px;
+                }
+                QPushButton:hover {
+                    background-color: #d1f2ec;
+                    border-color: #0f8f83;
+                }
             """)
             btn_check_all_items.clicked.connect(self._check_all_items)
             quick_item_lay.addWidget(btn_check_all_items)
 
-            btn_uncheck_all_items = QPushButton(" Tout masquer (Décocher)")
-            btn_uncheck_all_items.setIcon(qta.icon("fa5s.square", color="#64748b"))
+            btn_uncheck_all_items = QPushButton("Tout masquer")
+            btn_uncheck_all_items.setIcon(qta.icon("fa5s.times", color="#64748b"))
             btn_uncheck_all_items.setCursor(Qt.PointingHandCursor)
             btn_uncheck_all_items.setStyleSheet("""
-                QPushButton { background-color: #f1f5f9; color: #1e293b; font-size: 11px; padding: 5px 12px; border: 1px solid #cbd5e1; }
-                QPushButton:hover { background-color: #e2e8f0; }
+                QPushButton {
+                    background-color: #f8fafc;
+                    color: #475569;
+                    font-size: 12px;
+                    font-weight: bold;
+                    padding: 6px 14px;
+                    border: 1px solid #cbd5e1;
+                    border-radius: 5px;
+                }
+                QPushButton:hover {
+                    background-color: #f1f5f9;
+                    border-color: #94a3b8;
+                }
             """)
             btn_uncheck_all_items.clicked.connect(self._uncheck_all_items)
             quick_item_lay.addWidget(btn_uncheck_all_items)
@@ -491,10 +578,12 @@ class VersementPrintNoteDialog(QDialog):
             self.table_items.setColumnCount(3)
             self.table_items.setHorizontalHeaderLabels(["Afficher ?", "Article", "Note à imprimer"])
             self.table_items.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
-            self.table_items.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+            self.table_items.horizontalHeader().setSectionResizeMode(1, QHeaderView.Interactive)
             self.table_items.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-            self.table_items.setColumnWidth(0, 75)
+            self.table_items.setColumnWidth(0, 90)
+            self.table_items.setColumnWidth(1, 320)
             self.table_items.verticalHeader().setVisible(False)
+            self.table_items.verticalHeader().setDefaultSectionSize(44)
             self.table_items.setRowCount(len(items))
             self.table_items.setSelectionMode(QAbstractItemView.NoSelection)
 
@@ -508,6 +597,8 @@ class VersementPrintNoteDialog(QDialog):
                 chk_lay.setContentsMargins(0, 0, 0, 0)
                 chk_lay.setAlignment(Qt.AlignCenter)
                 chk = QCheckBox()
+                chk.setCursor(Qt.PointingHandCursor)
+                chk.setFixedSize(22, 22)
                 chk.setChecked(bool(raw_note))
                 chk_lay.addWidget(chk)
                 self.table_items.setCellWidget(row_idx, 0, chk_widget)
@@ -518,8 +609,21 @@ class VersementPrintNoteDialog(QDialog):
                 self.table_items.setItem(row_idx, 1, it_name)
 
                 txt_note = QLineEdit(raw_note)
-                txt_note.setPlaceholderText("Aucune note pour cet article")
-                txt_note.setStyleSheet("font-size: 12px; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px;")
+                txt_note.setPlaceholderText("Ajouter une note à cet article...")
+                txt_note.setStyleSheet("""
+                    QLineEdit {
+                        font-size: 13px;
+                        padding: 6px 10px;
+                        border: 1px solid #cbd5e1;
+                        border-radius: 5px;
+                        background-color: #ffffff;
+                        color: #1e293b;
+                    }
+                    QLineEdit:focus {
+                        border: 2px solid #0f8f83;
+                        background-color: #f0fdfa;
+                    }
+                """)
 
                 def _create_item_text_changed_handler(target_chk):
                     def _handler(text):
@@ -539,61 +643,71 @@ class VersementPrintNoteDialog(QDialog):
 
             lay_items.addWidget(self.table_items)
 
-            self.chk_save_item_notes = QCheckBox("💾 Enregistrer également ces modifications de notes des articles en base de données")
-            self.chk_save_item_notes.setStyleSheet("font-size: 12px; color: #1e293b; font-weight: bold;")
+            self.chk_save_item_notes = QCheckBox("Enregistrer également ces modifications de notes des articles en base de données")
+            self.chk_save_item_notes.setCursor(Qt.PointingHandCursor)
+            self.chk_save_item_notes.setStyleSheet("font-size: 12px; color: #1e293b; font-weight: bold; spacing: 8px;")
             self.chk_save_item_notes.setChecked(False)
             self.chk_save_db = self.chk_save_item_notes
             lay_items.addWidget(self.chk_save_item_notes)
 
-            self.tabs.addTab(tab_items, f"📦 Notes des Articles ({len(items)})")
+            self.tabs.addTab(tab_items, qta.icon("fa5s.gem", color="#475569", color_selected="#ffffff"), f"Notes des Articles ({len(items)})")
 
         main_layout.addWidget(self.tabs)
 
         # ── 3. Boutons d'Action / Impression (Bottom Bar) ───────────
-        main_layout.addSpacing(4)
+        main_layout.addSpacing(6)
         btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(10)
+        btn_layout.setSpacing(12)
 
-        self.btn_pdf_preview = QPushButton("📄 Aperçu PDF")
+        self.btn_pdf_preview = QPushButton("Aperçu PDF")
         self.btn_pdf_preview.setIcon(qta.icon("fa5s.file-pdf", color="white"))
         self.btn_pdf_preview.setCursor(Qt.PointingHandCursor)
+        self.btn_pdf_preview.setMinimumHeight(40)
         self.btn_pdf_preview.setStyleSheet("""
-            QPushButton { background-color: #e74c3c; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-weight: bold; }
-            QPushButton:hover { background-color: #c0392b; }
+            QPushButton { background-color: #dc2626; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: bold; font-size: 13px; }
+            QPushButton:hover { background-color: #b91c1c; }
         """)
         self.btn_pdf_preview.clicked.connect(lambda: self._apply_and_close("pdf_preview"))
         btn_layout.addWidget(self.btn_pdf_preview)
 
-        pdf_label = f"🖨️ PDF Direct ({self.pdf_printer_name})" if self.pdf_printer_name else "🖨️ PDF Direct"
+        pdf_printer_short = self.pdf_printer_name if len(self.pdf_printer_name) <= 18 else self.pdf_printer_name[:16] + "..."
+        pdf_label = f"PDF Direct ({pdf_printer_short})" if self.pdf_printer_name else "PDF Direct"
         self.btn_pdf_direct = QPushButton(pdf_label)
+        if self.pdf_printer_name:
+            self.btn_pdf_direct.setToolTip(f"Imprimer directement sur : {self.pdf_printer_name}")
         self.btn_pdf_direct.setIcon(qta.icon("fa5s.print", color="white"))
         self.btn_pdf_direct.setCursor(Qt.PointingHandCursor)
         self.btn_pdf_direct.setEnabled(bool(self.has_pdf_printer))
+        self.btn_pdf_direct.setMinimumHeight(40)
         if self.has_pdf_printer:
             self.btn_pdf_direct.setStyleSheet("""
-                QPushButton { background-color: #9b59b6; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-weight: bold; }
-                QPushButton:hover { background-color: #8e44ad; }
+                QPushButton { background-color: #7c3aed; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: bold; font-size: 13px; }
+                QPushButton:hover { background-color: #6d28d9; }
             """)
         else:
             self.btn_pdf_direct.setStyleSheet("""
-                QPushButton { background-color: #e2e8f0; color: #94a3b8; border: none; padding: 10px 16px; border-radius: 6px; font-weight: bold; }
+                QPushButton { background-color: #e2e8f0; color: #94a3b8; border: none; padding: 10px 18px; border-radius: 6px; font-weight: bold; font-size: 13px; }
             """)
         self.btn_pdf_direct.clicked.connect(lambda: self._apply_and_close("pdf_direct"))
         btn_layout.addWidget(self.btn_pdf_direct)
 
-        thermal_label = f"🧾 Ticket Thermique ({self.thermal_printer_name})" if self.thermal_printer_name else "🧾 Ticket Thermique"
+        thermal_printer_short = self.thermal_printer_name if len(self.thermal_printer_name) <= 18 else self.thermal_printer_name[:16] + "..."
+        thermal_label = f"Ticket ({thermal_printer_short})" if self.thermal_printer_name else "Ticket Thermique"
         self.btn_thermal = QPushButton(thermal_label)
+        if self.thermal_printer_name:
+            self.btn_thermal.setToolTip(f"Imprimer sur ticket thermique : {self.thermal_printer_name}")
         self.btn_thermal.setIcon(qta.icon("fa5s.receipt", color="white"))
         self.btn_thermal.setCursor(Qt.PointingHandCursor)
         self.btn_thermal.setEnabled(bool(self.has_thermal_printer))
+        self.btn_thermal.setMinimumHeight(40)
         if self.has_thermal_printer:
             self.btn_thermal.setStyleSheet("""
-                QPushButton { background-color: #e67e22; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-weight: bold; }
-                QPushButton:hover { background-color: #d35400; }
+                QPushButton { background-color: #ea580c; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: bold; font-size: 13px; }
+                QPushButton:hover { background-color: #c2410c; }
             """)
         else:
             self.btn_thermal.setStyleSheet("""
-                QPushButton { background-color: #e2e8f0; color: #94a3b8; border: none; padding: 10px 16px; border-radius: 6px; font-weight: bold; }
+                QPushButton { background-color: #e2e8f0; color: #94a3b8; border: none; padding: 10px 18px; border-radius: 6px; font-weight: bold; font-size: 13px; }
             """)
         self.btn_thermal.clicked.connect(lambda: self._apply_and_close("thermal"))
         btn_layout.addWidget(self.btn_thermal)
@@ -601,10 +715,12 @@ class VersementPrintNoteDialog(QDialog):
         btn_layout.addStretch()
 
         self.btn_cancel = QPushButton("Annuler")
+        self.btn_cancel.setIcon(qta.icon("fa5s.times", color="#475569"))
         self.btn_cancel.setCursor(Qt.PointingHandCursor)
+        self.btn_cancel.setMinimumHeight(40)
         self.btn_cancel.setStyleSheet("""
-            QPushButton { background-color: #cbd5e1; color: #1e293b; border: none; padding: 10px 16px; border-radius: 6px; font-weight: bold; }
-            QPushButton:hover { background-color: #94a3b8; }
+            QPushButton { background-color: #ffffff; color: #475569; border: 1px solid #cbd5e1; padding: 10px 20px; border-radius: 6px; font-weight: bold; font-size: 13px; }
+            QPushButton:hover { background-color: #f1f5f9; color: #1e293b; border-color: #94a3b8; }
         """)
         self.btn_cancel.clicked.connect(self.reject)
         btn_layout.addWidget(self.btn_cancel)
