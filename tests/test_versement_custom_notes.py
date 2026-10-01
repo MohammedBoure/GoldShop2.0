@@ -601,8 +601,49 @@ class VersementCustomNoteTests(unittest.TestCase):
         finally:
             painter.end()
 
+    def test_versement_print_note_dialog_virtual_keyboard_and_responsive_controls(self):
+        from PySide6.QtWidgets import QLineEdit
+        from ui.widgets.versements.invoice_note_selector import VersementPrintNoteDialog
+        v_data = {"id": 23, "client_name": "Belkacem"}
+        pdf_data = {
+            "operation_number": "VRS-00023",
+            "versements": [
+                {"id": 1, "payment_id": 1, "amount": 10000, "product_name": "Versement Espèces", "notes": "Avance 1"},
+            ],
+            "items": [
+                {"id": 1, "item_id": 1, "name": "Boucle d'oreille (1.90g)", "custom_note": "Or 18K"},
+            ],
+        }
+
+        dlg = VersementPrintNoteDialog(manager=None, v_data=v_data, pdf_data=pdf_data)
+
+        # Vérifier la présence du bouton clavier dans la barre inférieure
+        self.assertTrue(hasattr(dlg, "btn_kb_bottom"))
+        self.assertIsNotNone(dlg.btn_kb_bottom)
+
+        # Vérifier que les cellules de notes ont bien un QLineEdit et un bouton clavier tactile
+        cell_widget = dlg.table_payments.cellWidget(0, 2)
+        self.assertIsNotNone(cell_widget)
+        # Le widget de la liste des lignes contient l'objet QLineEdit
+        self.assertIsInstance(dlg.payment_row_widgets[0]["txt"], QLineEdit)
+
+        # Vérifier l'intégration du clavier tactile
+        with patch("ui.tools.virtual_keyboard.VirtualKeyboardDialog.show") as mock_kb_show:
+            dlg.show_virtual_keyboard(dlg.payment_row_widgets[0]["txt"])
+            self.assertEqual(dlg.last_focused_input, dlg.payment_row_widgets[0]["txt"])
+
+        # Vérifier la fermeture sécurisée du clavier
+        dlg.close_keyboard()
+
+        # Vérifier le changement dynamique des icônes d'onglets
+        dlg._update_tab_icons(0)
+        self.assertEqual(dlg.tabs.currentIndex(), 0)
+        dlg.tabs.setCurrentIndex(2)
+        dlg._update_tab_icons(2)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
