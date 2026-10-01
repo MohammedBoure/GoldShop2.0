@@ -868,7 +868,13 @@ class ReceiptGenerator:
                 used_str = ""
                 amount_color = c_red if amount < 0 else c_grn
                 amount_str = f"{amount:,.2f} {currency}"
-                versements_html += f"<tr><td style='vertical-align:middle;'>{date_str}</td><td style='text-align:center; vertical-align:middle; font-weight:bold; color:{amount_color};'>{amount_str} {used_str}</td></tr>"
+
+                raw_p_note = str(v.get('note') or v.get('notes') or v.get('payment_note') or '').strip()
+                clean_p_note = re.sub(r'\[Remise:[^\]]+\]', '', raw_p_note).strip(" |")
+                show_p_note = v.get('display_payment_note', True) and bool(clean_p_note)
+                note_span = f"<br><span style='font-size:{int(f_norm*0.82)}px; color:#0f8f83; font-style:italic; font-weight:normal;'>🏷️ {escape(clean_p_note)}</span>" if show_p_note else ""
+
+                versements_html += f"<tr><td style='vertical-align:middle;'>{date_str}{note_span}</td><td style='text-align:center; vertical-align:middle; font-weight:bold; color:{amount_color};'>{amount_str} {used_str}</td></tr>"
 
             versements_html += f"""
             <tr style="background-color:{c_th}; font-weight:bold; border-top:2px solid {c_txt};">
@@ -1031,7 +1037,7 @@ class ReceiptGenerator:
             for item in items:
                 item_name = escape(str(item.get('item_name') or item.get('name') or item.get('description') or 'Article').strip())
                 item_note = escape(str(item.get('custom_note') or item.get('note') or '').strip())
-                item_name_html = f"{item_name}<br><span style='font-size:{int(f_norm*0.85)}px; color:#8e44ad; font-weight:bold;'>{item_note}</span>" if item_note else item_name
+                item_name_html = f"{item_name}<br><span style='font-size:{int(f_norm*0.85)}px; color:#0f8f83; font-weight:bold;'>🏷️ {item_note}</span>" if item_note else item_name
                 item_barcode = str(item.get('barcode') or item.get('inventory_barcode') or item.get('item_barcode') or '').strip()
                 item_weight = _safe_float(item.get('weight', 0))
                 item_total_amount = _safe_float(item.get('selling_price', item.get('total_amount', 0)))
@@ -1088,8 +1094,17 @@ class ReceiptGenerator:
                 operation_prefix = _payment_operation_prefix(v, f_norm, operation_number)
                 id_str = f"<span style='color:#7f8c8d; font-weight:bold;'>N°{pay_id}</span> - " if pay_id and pay_id != 'N/A' else ""
 
-                v_name = str(v.get('product_name') or v.get('item_name') or default_names).strip()
+                v_name = escape(str(v.get('product_name') or v.get('item_name') or default_names).strip())
                 v_barcode = str(v.get('barcode') or v.get('product_barcode') or v.get('item_barcode') or default_barcodes).strip()
+
+                raw_p_note = str(v.get('note') or v.get('notes') or v.get('payment_note') or '').strip()
+                clean_p_note = re.sub(r'\[Remise:[^\]]+\]', '', raw_p_note).strip(" |")
+                show_p_note = v.get('display_payment_note', True) and bool(clean_p_note)
+                if show_p_note:
+                    v_note_html = f"<br><span style='font-size:{int(f_norm*0.82)}px; color:#0f8f83; font-style:italic; font-weight:normal;'>🏷️ {escape(clean_p_note)}</span>"
+                    v_name_display = f"{v_name}{v_note_html}"
+                else:
+                    v_name_display = v_name
 
                 td_code_content_v = v_barcode
                 if show_code and code_format == "Code-Barres" and v_barcode and v_barcode != "N/A":
@@ -1125,7 +1140,7 @@ class ReceiptGenerator:
                 versements_html += f"""
                 <tr>
                     <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#333333;">{date_str}</td>
-                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#2c3e50; font-weight:bold;">{v_name}</td>
+                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#2c3e50; font-weight:bold;">{v_name_display}</td>
                     {code_td_v}
                     <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:{amount_color}; text-align:center; font-weight:bold;">{amount_str}</td>
                     <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:{weight_color}; text-align:center;">{weight_str}</td>

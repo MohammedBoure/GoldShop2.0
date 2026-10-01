@@ -440,6 +440,168 @@ class VersementCustomNoteTests(unittest.TestCase):
             painter.end()
 
 
+    def test_payment_line_note_selection_and_editing_in_dialog(self):
+        from ui.widgets.versements.invoice_note_selector import VersementPrintNoteDialog
+        v_data = {"id": 10, "client_name": "Karim"}
+        pdf_data = {
+            "operation_number": "VRS-00010",
+            "versements": [
+                {"id": 1, "payment_id": 1, "amount": 20000, "product_name": "Paiement Espèces / TPE", "notes": "Avance 1"},
+                {"id": 2, "payment_id": 2, "amount": 15000, "product_name": "Paiement Espèces / TPE", "notes": ""},
+            ],
+            "items": [],
+        }
+
+        dlg = VersementPrintNoteDialog(manager=None, v_data=v_data, pdf_data=pdf_data)
+        self.assertEqual(len(dlg.payment_row_widgets), 2)
+        # Premier paiement avec note: coché par défaut
+        self.assertTrue(dlg.payment_row_widgets[0]["chk"].isChecked())
+        self.assertEqual(dlg.payment_row_widgets[0]["txt"].text(), "Avance 1")
+        # Deuxième paiement sans note: décoché par défaut
+        self.assertFalse(dlg.payment_row_widgets[1]["chk"].isChecked())
+
+        # Modifier la note du paiement 1 et décocher le paiement 1
+        dlg.payment_row_widgets[0]["chk"].setChecked(False)
+
+        # Activer le paiement 2 et saisir une note
+        dlg.payment_row_widgets[1]["txt"].setText("Paiement par virement")
+        self.assertTrue(dlg.payment_row_widgets[1]["chk"].isChecked())
+
+        # Appliquer à pdf_data
+        dlg.apply_to_pdf_data(pdf_data)
+        # Paiement 1 doit avoir sa note vidée / masquée
+        self.assertEqual(pdf_data["versements"][0]["note"], "")
+        self.assertFalse(pdf_data["versements"][0]["display_payment_note"])
+        # Paiement 2 doit avoir la nouvelle note et être affiché
+        self.assertEqual(pdf_data["versements"][1]["note"], "Paiement par virement")
+        self.assertTrue(pdf_data["versements"][1]["display_payment_note"])
+
+    def test_payment_line_note_saving_to_database(self):
+        from ui.widgets.versements.invoice_note_selector import VersementPrintNoteDialog
+        mock_versements = SimpleNamespace(
+            update_payment_notes=Mock(return_value=True),
+            update_versement_item_notes=Mock(return_value=True)
+        )
+        manager = SimpleNamespace(invoice_notes=_InvoiceNotes(), versements=mock_versements)
+
+        v_data = {"id": 10, "client_name": "Karim"}
+        pdf_data = {
+            "operation_number": "VRS-00010",
+            "versements": [
+                {"id": 55, "payment_id": 55, "amount": 20000, "notes": "Avance 1"},
+            ],
+            "items": [],
+        }
+
+        dlg = VersementPrintNoteDialog(manager=manager, v_data=v_data, pdf_data=pdf_data)
+        dlg.payment_row_widgets[0]["txt"].setText("Avance modifiée chèque")
+        dlg.chk_save_payment_notes.setChecked(True)
+
+        dlg.save_to_database_if_requested()
+        mock_versements.update_payment_notes.assert_called_once_with(55, notes="Avance modifiée chèque")
+
+    def test_product_versement_receipt_renders_payment_line_notes_with_theme(self):
+        from ui.tools.invoice_generator import ReceiptGenerator
+        pdf_data = {
+            "customer_name": "Sami",
+            "phone": "0555123456",
+            "operation_number": "VRS-00020",
+            "items": [
+                {"item_id": 1, "name": "Bague Or 18K", "weight": 2.5, "selling_price": 35000, "custom_note": "Taille 52"},
+            ],
+            "versements": [
+                {
+                    "id": 1,
+                    "amount": 20000,
+                    "weight": 1.0,
+                    "product_name": "Paiement Espèces / TPE",
+                    "note": "Acompte espèces comptoir",
+                    "display_payment_note": True,
+                },
+                {
+                    "id": 2,
+                    "amount": 10000,
+                    "weight": 0.5,
+                    "product_name": "Paiement Espèces / TPE",
+                    "note": "Note masquée",
+                    "display_payment_note": False,
+                }
+            ],
+            "total_paid": 30000,
+            "currency": "DA",
+        }
+
+        with patch("ui.tools.invoice_generator._render_html_document") as mock_render:
+            ReceiptGenerator.generate_product_versement_receipt(pdf_data, output_path="dummy_prod.pdf")
+            self.assertTrue(mock_render.called)
+            html = mock_render.call_args[0][0]
+            # La note affichée doit être stylée avec la couleur thème #0f8f83
+            self.assertIn("Acompte espèces comptoir", html)
+            self.assertIn("#0f8f83", html)
+            # La note masquée ne doit pas apparaître
+            self.assertNotIn("Note masquée", html)
+
+    def test_global_versement_receipt_renders_payment_line_notes(self):
+        from ui.tools.invoice_generator import ReceiptGenerator
+        pdf_data = {
+            "customer_name": "Yassine",
+            "operation_number": "VRS-00021",
+            "versements": [
+                {
+                    "id": 1,
+                    "amount": 15000,
+                    "note": "Premier versement libre",
+                    "display_payment_note": True,
+                },
+                {
+                    "id": 2,
+                    "amount": 5000,
+                    "note": "Deuxième note cachée",
+                    "display_payment_note": False,
+                }
+            ],
+            "currency": "DA",
+        }
+
+        with patch("ui.tools.invoice_generator._render_html_document") as mock_render:
+            ReceiptGenerator.generate_global_versement_receipt(pdf_data, output_path="dummy_glob.pdf")
+            self.assertTrue(mock_render.called)
+            html = mock_render.call_args[0][0]
+            self.assertIn("Premier versement libre", html)
+            self.assertNotIn("Deuxième note cachée", html)
+
+    def test_thermal_versement_draws_payment_line_notes(self):
+        from PySide6.QtGui import QImage, QPainter
+        from ui.tools.print_functions import _draw_thermal_receipt, get_thermal_config
+        tc = get_thermal_config()
+
+        data = {
+            "client_name": "Yassine",
+            "operation_number": "VRS-00022",
+            "receipt_id": 22,
+            "items": [],
+            "versements": [
+                {
+                    "id": 1,
+                    "amount": 25000,
+                    "weight": 0,
+                    "date": "2026-10-01",
+                    "note": "Avance thermique",
+                    "display_payment_note": True,
+                },
+            ],
+            "general_note": "",
+        }
+
+        img = QImage(576, 1200, QImage.Format_ARGB32)
+        painter = QPainter(img)
+        try:
+            h = _draw_thermal_receipt(painter, 576, data, tc, "Versement")
+            self.assertGreater(h, 100)
+        finally:
+            painter.end()
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -1,5 +1,6 @@
 """Shared helpers and dialogs for Versement invoice notes and print customization."""
 
+import re
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QFrame,
     QWidget,
+    QTabWidget,
     QAbstractItemView,
 )
 import qtawesome as qta
@@ -99,10 +101,10 @@ def selected_custom_note(combo):
 class VersementPrintNoteDialog(QDialog):
     """
     Boîte de dialogue permettant de configurer les notes avant l'impression du Bon de Versement (PDF / Thermique).
-    - Choisir d'afficher ou non une note générale (avec liste de modèles ou saisie libre).
-    - Spécifier les notes des articles à faire apparaître ou masquer.
-    - Modifier les notes directement avant impression.
-    - Possibilité d'enregistrer les modifications en base de données.
+    - Contrôle de la visibilité des notes pour CHAQUE opération de paiement (activer/désactiver et modifier).
+    - Saisie d'une note générale sur le bon avec modèles prédéfinis.
+    - Contrôle de la visibilité des notes sur chaque article réservé.
+    - Enregistrement optionnel des modifications en base de données.
     - Choix de la méthode d'impression (Aperçu PDF, PDF Direct, Ticket Thermique).
     """
 
@@ -127,15 +129,19 @@ class VersementPrintNoteDialog(QDialog):
         self.pdf_printer_name = pdf_printer_name
         self.thermal_printer_name = thermal_printer_name
         self.selected_action = default_action
+        self.payment_row_widgets = []
         self.item_row_widgets = []
+        self.chk_save_payment_notes = None
+        self.chk_save_item_notes = None
+        self.chk_save_db = QCheckBox()
 
         op_num = (
             self.pdf_data.get("operation_number")
             or f"VRS-{self.v_data.get('id', 0):05d}"
         )
         self.setWindowTitle(f"Options d'impression & Notes — Bon de Versement {op_num}")
-        self.setMinimumWidth(660)
-        self.resize(700, 600)
+        self.setMinimumWidth(740)
+        self.resize(780, 620)
         self._init_ui()
 
     def _init_ui(self):
@@ -143,14 +149,41 @@ class VersementPrintNoteDialog(QDialog):
             QDialog {
                 background-color: #f8f9fa;
             }
+            QTabWidget::pane {
+                border: 1px solid #cbd5e1;
+                border-radius: 6px;
+                background-color: #ffffff;
+                top: -1px;
+            }
+            QTabBar::tab {
+                background-color: #f1f5f9;
+                color: #334155;
+                font-size: 13px;
+                font-weight: bold;
+                padding: 10px 20px;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+                margin-right: 4px;
+                border: 1px solid #cbd5e1;
+                border-bottom: none;
+            }
+            QTabBar::tab:selected {
+                background-color: #0f8f83;
+                color: #ffffff;
+                border-color: #0f8f83;
+            }
+            QTabBar::tab:hover:!selected {
+                background-color: #e2f4f1;
+                color: #075f58;
+            }
             QGroupBox {
                 font-size: 13px;
                 font-weight: bold;
-                color: #2c3e50;
-                border: 1px solid #dcdde1;
+                color: #1e293b;
+                border: 1px solid #e2e8f0;
                 border-radius: 6px;
-                margin-top: 12px;
-                padding-top: 15px;
+                margin-top: 10px;
+                padding-top: 12px;
                 background-color: white;
             }
             QGroupBox::title {
@@ -162,18 +195,33 @@ class VersementPrintNoteDialog(QDialog):
             }
             QLabel {
                 font-size: 13px;
-                color: #2c3e50;
+                color: #1e293b;
             }
             QTextEdit, QLineEdit, QComboBox {
                 font-size: 13px;
                 padding: 6px 8px;
-                border: 1px solid #bdc3c7;
+                border: 1px solid #cbd5e1;
                 border-radius: 5px;
                 background-color: white;
-                color: #2c3e50;
+                color: #1e293b;
             }
             QTextEdit:focus, QLineEdit:focus, QComboBox:focus {
                 border: 2px solid #0f8f83;
+            }
+            QTableWidget {
+                background-color: white;
+                border: 1px solid #e2e8f0;
+                border-radius: 4px;
+                gridline-color: #f1f5f9;
+            }
+            QHeaderView::section {
+                background-color: #f8fafc;
+                font-weight: bold;
+                font-size: 12px;
+                color: #1e293b;
+                padding: 6px;
+                border: none;
+                border-bottom: 2px solid #0f8f83;
             }
             QPushButton {
                 font-size: 13px;
@@ -185,15 +233,15 @@ class VersementPrintNoteDialog(QDialog):
 
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(12)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setContentsMargins(18, 18, 18, 18)
 
-        # ── 1. Entête du versement ─────────────────────────────────
+        # ── 1. Entête du versement (Header Card) ───────────────────
         header_frame = QFrame()
         header_frame.setStyleSheet("""
             QFrame {
                 background-color: #e8f7f4;
                 border: 1px solid #a2ded0;
-                border-radius: 6px;
+                border-radius: 8px;
                 padding: 8px 12px;
             }
         """)
@@ -206,6 +254,7 @@ class VersementPrintNoteDialog(QDialog):
         phone = self.pdf_data.get("phone") or self.v_data.get("phone", "")
         total_paid = float(self.pdf_data.get("total_paid", 0.0) or 0.0)
         items_count = len(self.pdf_data.get("items", []))
+        payments_count = len(self.pdf_data.get("versements", []))
 
         lbl_title = QLabel(f"📄 Bon de Versement {op_num} — Client : {client_name}")
         lbl_title.setStyleSheet("font-size: 15px; font-weight: bold; color: #075f58; background: transparent; border: none;")
@@ -214,22 +263,131 @@ class VersementPrintNoteDialog(QDialog):
         info_parts = []
         if phone:
             info_parts.append(f"📞 Tél: {phone}")
+        info_parts.append(f"💵 Total Versé: {total_paid:,.2f} DA")
+        info_parts.append(f"💳 Paiements: {payments_count}")
         if items_count > 0:
-            info_parts.append(f"📦 Articles réservés: {items_count}")
+            info_parts.append(f"📦 Articles: {items_count}")
         else:
             info_parts.append("💰 Versement libre")
-        info_parts.append(f"💵 Total Versé: {total_paid:,.2f} DA")
 
         lbl_info = QLabel("   |   ".join(info_parts))
-        lbl_info.setStyleSheet("font-size: 12px; color: #2c3e50; background: transparent; border: none;")
+        lbl_info.setStyleSheet("font-size: 12px; color: #334155; background: transparent; border: none;")
         header_layout.addWidget(lbl_info)
 
         main_layout.addWidget(header_frame)
 
-        # ── 2. Section Note Générale ────────────────────────────────
-        grp_general = QGroupBox("1. Note Générale du Bon")
-        lay_general = QVBoxLayout(grp_general)
-        lay_general.setSpacing(8)
+        # ── 2. Onglets de personnalisation (Tabs) ───────────────────
+        self.tabs = QTabWidget()
+
+        # ──────── TAB 1 : Notes de chaque ligne de paiement ─────────
+        tab_payments = QWidget()
+        lay_payments = QVBoxLayout(tab_payments)
+        lay_payments.setSpacing(8)
+        lay_payments.setContentsMargins(12, 12, 12, 12)
+
+        lbl_pay_sub = QLabel(
+            "Cochez les notes de chaque opération de paiement que vous souhaitez afficher sur le bon et modifiez-les si nécessaire :"
+        )
+        lbl_pay_sub.setStyleSheet("font-size: 12px; color: #475569;")
+        lbl_pay_sub.setWordWrap(True)
+        lay_payments.addWidget(lbl_pay_sub)
+
+        quick_pay_lay = QHBoxLayout()
+        btn_check_all_pay = QPushButton(" Tout afficher (Cocher)")
+        btn_check_all_pay.setIcon(qta.icon("fa5s.check-square", color="#0f8f83"))
+        btn_check_all_pay.setCursor(Qt.PointingHandCursor)
+        btn_check_all_pay.setStyleSheet("""
+            QPushButton { background-color: #f1f5f9; color: #1e293b; font-size: 11px; padding: 5px 12px; border: 1px solid #cbd5e1; }
+            QPushButton:hover { background-color: #e2e8f0; }
+        """)
+        btn_check_all_pay.clicked.connect(self._check_all_payments)
+        quick_pay_lay.addWidget(btn_check_all_pay)
+
+        btn_uncheck_all_pay = QPushButton(" Tout masquer (Décocher)")
+        btn_uncheck_all_pay.setIcon(qta.icon("fa5s.square", color="#64748b"))
+        btn_uncheck_all_pay.setCursor(Qt.PointingHandCursor)
+        btn_uncheck_all_pay.setStyleSheet("""
+            QPushButton { background-color: #f1f5f9; color: #1e293b; font-size: 11px; padding: 5px 12px; border: 1px solid #cbd5e1; }
+            QPushButton:hover { background-color: #e2e8f0; }
+        """)
+        btn_uncheck_all_pay.clicked.connect(self._uncheck_all_payments)
+        quick_pay_lay.addWidget(btn_uncheck_all_pay)
+        quick_pay_lay.addStretch()
+        lay_payments.addLayout(quick_pay_lay)
+
+        # Table des paiements
+        versements = self.pdf_data.get("versements", [])
+        self.table_payments = QTableWidget()
+        self.table_payments.setColumnCount(3)
+        self.table_payments.setHorizontalHeaderLabels(["Afficher ?", "Opération & Montant", "Note / Observation de la ligne"])
+        self.table_payments.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+        self.table_payments.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.table_payments.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.table_payments.setColumnWidth(0, 75)
+        self.table_payments.verticalHeader().setVisible(False)
+        self.table_payments.setRowCount(len(versements))
+        self.table_payments.setSelectionMode(QAbstractItemView.NoSelection)
+
+        for row_idx, p in enumerate(versements):
+            p_id = p.get("payment_id") or p.get("id")
+            p_date = str(p.get("payment_date") or "")[:10]
+            p_amount = float(p.get("amount") or 0.0)
+            p_op = str(p.get("product_name") or p.get("item_name") or "Versement").strip()
+            raw_p_note = str(p.get("note") or p.get("notes") or p.get("payment_note") or "").strip()
+            clean_p_note = re.sub(r'\[Remise:[^\]]+\]', '', raw_p_note).strip(" |")
+
+            # Col 0: Checkbox
+            chk_widget = QWidget()
+            chk_lay = QHBoxLayout(chk_widget)
+            chk_lay.setContentsMargins(0, 0, 0, 0)
+            chk_lay.setAlignment(Qt.AlignCenter)
+            chk = QCheckBox()
+            chk.setChecked(bool(clean_p_note))
+            chk_lay.addWidget(chk)
+            self.table_payments.setCellWidget(row_idx, 0, chk_widget)
+
+            # Col 1: Date, Opération & Montant
+            label_text = f"{p_date} — {p_op} : {p_amount:,.2f} DA"
+            it_desc = QTableWidgetItem(label_text)
+            it_desc.setFlags(Qt.ItemIsEnabled)
+            it_desc.setFont(QFont("Arial", 10, QFont.Bold))
+            self.table_payments.setItem(row_idx, 1, it_desc)
+
+            # Col 2: Editable Note LineEdit
+            txt_note = QLineEdit(clean_p_note)
+            txt_note.setPlaceholderText("Aucune observation pour cette ligne de paiement")
+            txt_note.setStyleSheet("font-size: 12px; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px;")
+
+            def _create_pay_text_changed_handler(target_chk):
+                def _handler(text):
+                    if text.strip() and not target_chk.isChecked():
+                        target_chk.setChecked(True)
+                return _handler
+
+            txt_note.textChanged.connect(_create_pay_text_changed_handler(chk))
+            self.table_payments.setCellWidget(row_idx, 2, txt_note)
+
+            self.payment_row_widgets.append({
+                "payment_id": p_id,
+                "chk": chk,
+                "txt": txt_note,
+                "orig_note": clean_p_note,
+            })
+
+        lay_payments.addWidget(self.table_payments)
+
+        self.chk_save_payment_notes = QCheckBox("💾 Enregistrer également ces modifications de notes de paiement en base de données")
+        self.chk_save_payment_notes.setStyleSheet("font-size: 12px; color: #1e293b; font-weight: bold;")
+        self.chk_save_payment_notes.setChecked(False)
+        lay_payments.addWidget(self.chk_save_payment_notes)
+
+        self.tabs.addTab(tab_payments, f"💵 Notes des Paiements ({len(versements)})")
+
+        # ──────── TAB 2 : Note Générale du Bon ──────────────────────
+        tab_general = QWidget()
+        lay_general = QVBoxLayout(tab_general)
+        lay_general.setSpacing(10)
+        lay_general.setContentsMargins(12, 12, 12, 12)
 
         self.chk_enable_general = QCheckBox("Afficher une note générale sur le bon")
         self.chk_enable_general.setStyleSheet("font-size: 13px; font-weight: bold; color: #0f8f83;")
@@ -253,7 +411,7 @@ class VersementPrintNoteDialog(QDialog):
         self.txt_general_note.setPlaceholderText(
             "Entrez une note ou observation générale à afficher sur le bon... (Ex: Solde à la livraison, Valable 30 jours, etc.)"
         )
-        self.txt_general_note.setMaximumHeight(70)
+        self.txt_general_note.setMinimumHeight(100)
         default_gn = str(
             self.pdf_data.get("general_note")
             or self.pdf_data.get("invoice_note")
@@ -266,13 +424,13 @@ class VersementPrintNoteDialog(QDialog):
 
         lay_general.addWidget(self.txt_general_note)
 
-        # Boutons outils pour note générale
+        # Boutons outils note générale
         tools_layout = QHBoxLayout()
         self.btn_vkb = QPushButton(" Clavier Tactile (Touch)")
         self.btn_vkb.setIcon(qta.icon("fa5s.keyboard", color="white"))
         self.btn_vkb.setCursor(Qt.PointingHandCursor)
         self.btn_vkb.setStyleSheet("""
-            QPushButton { background-color: #2c3e50; color: white; border: none; padding: 5px 12px; font-size: 12px; }
+            QPushButton { background-color: #2c3e50; color: white; border: none; padding: 6px 14px; font-size: 12px; }
             QPushButton:hover { background-color: #34495e; }
         """)
         self.btn_vkb.clicked.connect(lambda: self._open_virtual_keyboard(self.txt_general_note))
@@ -281,51 +439,53 @@ class VersementPrintNoteDialog(QDialog):
         self.btn_clear_general = QPushButton("Effacer")
         self.btn_clear_general.setCursor(Qt.PointingHandCursor)
         self.btn_clear_general.setStyleSheet("""
-            QPushButton { background-color: #95a5a6; color: white; border: none; padding: 5px 12px; font-size: 12px; }
-            QPushButton:hover { background-color: #7f8c8d; }
+            QPushButton { background-color: #94a3b8; color: white; border: none; padding: 6px 14px; font-size: 12px; }
+            QPushButton:hover { background-color: #64748b; }
         """)
         self.btn_clear_general.clicked.connect(self.txt_general_note.clear)
         tools_layout.addWidget(self.btn_clear_general)
-
         tools_layout.addStretch()
         lay_general.addLayout(tools_layout)
 
-        main_layout.addWidget(grp_general)
+        self.tabs.addTab(tab_general, "📝 Note Générale du Bon")
 
-        # ── 3. Section Notes des Articles Réservés ───────────────────
+        # ──────── TAB 3 : Notes des Articles Réservés ────────────────
         items = self.pdf_data.get("items", [])
         if items:
-            grp_items = QGroupBox("2. Notes des Articles Réservés")
-            lay_items = QVBoxLayout(grp_items)
+            tab_items = QWidget()
+            lay_items = QVBoxLayout(tab_items)
             lay_items.setSpacing(8)
+            lay_items.setContentsMargins(12, 12, 12, 12)
 
-            lbl_sub = QLabel(
-                "Cochez les notes des articles que vous souhaitez faire apparaître sur le bon et modifiez leur texte si nécessaire :"
+            lbl_item_sub = QLabel(
+                "Cochez les notes des articles que vous souhaitez faire apparaître sur le bon et modifiez-les si nécessaire :"
             )
-            lbl_sub.setStyleSheet("font-size: 12px; color: #555;")
-            lbl_sub.setWordWrap(True)
-            lay_items.addWidget(lbl_sub)
+            lbl_item_sub.setStyleSheet("font-size: 12px; color: #475569;")
+            lbl_item_sub.setWordWrap(True)
+            lay_items.addWidget(lbl_item_sub)
 
-            quick_lay = QHBoxLayout()
-            btn_check_all = QPushButton(" Tout afficher (Cocher)")
-            btn_check_all.setCursor(Qt.PointingHandCursor)
-            btn_check_all.setStyleSheet("""
-                QPushButton { background-color: #ecf0f1; color: #2c3e50; font-size: 11px; padding: 4px 10px; border: 1px solid #bdc3c7; }
-                QPushButton:hover { background-color: #dcdde1; }
+            quick_item_lay = QHBoxLayout()
+            btn_check_all_items = QPushButton(" Tout afficher (Cocher)")
+            btn_check_all_items.setIcon(qta.icon("fa5s.check-square", color="#0f8f83"))
+            btn_check_all_items.setCursor(Qt.PointingHandCursor)
+            btn_check_all_items.setStyleSheet("""
+                QPushButton { background-color: #f1f5f9; color: #1e293b; font-size: 11px; padding: 5px 12px; border: 1px solid #cbd5e1; }
+                QPushButton:hover { background-color: #e2e8f0; }
             """)
-            btn_check_all.clicked.connect(self._check_all_items)
-            quick_lay.addWidget(btn_check_all)
+            btn_check_all_items.clicked.connect(self._check_all_items)
+            quick_item_lay.addWidget(btn_check_all_items)
 
-            btn_uncheck_all = QPushButton(" Tout masquer (Décocher)")
-            btn_uncheck_all.setCursor(Qt.PointingHandCursor)
-            btn_uncheck_all.setStyleSheet("""
-                QPushButton { background-color: #ecf0f1; color: #2c3e50; font-size: 11px; padding: 4px 10px; border: 1px solid #bdc3c7; }
-                QPushButton:hover { background-color: #dcdde1; }
+            btn_uncheck_all_items = QPushButton(" Tout masquer (Décocher)")
+            btn_uncheck_all_items.setIcon(qta.icon("fa5s.square", color="#64748b"))
+            btn_uncheck_all_items.setCursor(Qt.PointingHandCursor)
+            btn_uncheck_all_items.setStyleSheet("""
+                QPushButton { background-color: #f1f5f9; color: #1e293b; font-size: 11px; padding: 5px 12px; border: 1px solid #cbd5e1; }
+                QPushButton:hover { background-color: #e2e8f0; }
             """)
-            btn_uncheck_all.clicked.connect(self._uncheck_all_items)
-            quick_lay.addWidget(btn_uncheck_all)
-            quick_lay.addStretch()
-            lay_items.addLayout(quick_lay)
+            btn_uncheck_all_items.clicked.connect(self._uncheck_all_items)
+            quick_item_lay.addWidget(btn_uncheck_all_items)
+            quick_item_lay.addStretch()
+            lay_items.addLayout(quick_item_lay)
 
             self.table_items = QTableWidget()
             self.table_items.setColumnCount(3)
@@ -337,17 +497,12 @@ class VersementPrintNoteDialog(QDialog):
             self.table_items.verticalHeader().setVisible(False)
             self.table_items.setRowCount(len(items))
             self.table_items.setSelectionMode(QAbstractItemView.NoSelection)
-            self.table_items.setStyleSheet("""
-                QTableWidget { background-color: white; border: 1px solid #dcdde1; border-radius: 4px; }
-                QHeaderView::section { background-color: #f1f2f6; font-weight: bold; font-size: 12px; color: #2f3542; padding: 5px; border-bottom: 2px solid #0f8f83; }
-            """)
 
             for row_idx, item in enumerate(items):
                 item_id = item.get("item_id") or item.get("id")
                 item_name = str(item.get("name") or item.get("item_name") or item.get("description") or "Article").strip()
                 raw_note = normalize_custom_note(item.get("custom_note") or item.get("note") or "")
 
-                # Col 0: Checkbox
                 chk_widget = QWidget()
                 chk_lay = QHBoxLayout(chk_widget)
                 chk_lay.setContentsMargins(0, 0, 0, 0)
@@ -357,24 +512,22 @@ class VersementPrintNoteDialog(QDialog):
                 chk_lay.addWidget(chk)
                 self.table_items.setCellWidget(row_idx, 0, chk_widget)
 
-                # Col 1: Article name
                 it_name = QTableWidgetItem(item_name)
                 it_name.setFlags(Qt.ItemIsEnabled)
                 it_name.setFont(QFont("Arial", 10, QFont.Bold))
                 self.table_items.setItem(row_idx, 1, it_name)
 
-                # Col 2: Editable line edit for note
                 txt_note = QLineEdit(raw_note)
                 txt_note.setPlaceholderText("Aucune note pour cet article")
-                txt_note.setStyleSheet("font-size: 12px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 4px;")
+                txt_note.setStyleSheet("font-size: 12px; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px;")
 
-                def _create_text_changed_handler(target_chk):
+                def _create_item_text_changed_handler(target_chk):
                     def _handler(text):
                         if text.strip() and not target_chk.isChecked():
                             target_chk.setChecked(True)
                     return _handler
 
-                txt_note.textChanged.connect(_create_text_changed_handler(chk))
+                txt_note.textChanged.connect(_create_item_text_changed_handler(chk))
                 self.table_items.setCellWidget(row_idx, 2, txt_note)
 
                 self.item_row_widgets.append({
@@ -384,19 +537,20 @@ class VersementPrintNoteDialog(QDialog):
                     "orig_note": raw_note,
                 })
 
-            table_h = min(170, max(80, len(items) * 36 + 32))
-            self.table_items.setFixedHeight(table_h)
             lay_items.addWidget(self.table_items)
 
-            self.chk_save_db = QCheckBox("💾 Enregistrer également ces modifications de notes en base de données")
-            self.chk_save_db.setStyleSheet("font-size: 12px; color: #2c3e50;")
-            self.chk_save_db.setChecked(False)
-            lay_items.addWidget(self.chk_save_db)
+            self.chk_save_item_notes = QCheckBox("💾 Enregistrer également ces modifications de notes des articles en base de données")
+            self.chk_save_item_notes.setStyleSheet("font-size: 12px; color: #1e293b; font-weight: bold;")
+            self.chk_save_item_notes.setChecked(False)
+            self.chk_save_db = self.chk_save_item_notes
+            lay_items.addWidget(self.chk_save_item_notes)
 
-            main_layout.addWidget(grp_items)
+            self.tabs.addTab(tab_items, f"📦 Notes des Articles ({len(items)})")
 
-        # ── 4. Boutons d'Action / Impression ────────────────────────
-        main_layout.addSpacing(6)
+        main_layout.addWidget(self.tabs)
+
+        # ── 3. Boutons d'Action / Impression (Bottom Bar) ───────────
+        main_layout.addSpacing(4)
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
 
@@ -404,7 +558,7 @@ class VersementPrintNoteDialog(QDialog):
         self.btn_pdf_preview.setIcon(qta.icon("fa5s.file-pdf", color="white"))
         self.btn_pdf_preview.setCursor(Qt.PointingHandCursor)
         self.btn_pdf_preview.setStyleSheet("""
-            QPushButton { background-color: #e74c3c; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; }
+            QPushButton { background-color: #e74c3c; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-weight: bold; }
             QPushButton:hover { background-color: #c0392b; }
         """)
         self.btn_pdf_preview.clicked.connect(lambda: self._apply_and_close("pdf_preview"))
@@ -417,12 +571,12 @@ class VersementPrintNoteDialog(QDialog):
         self.btn_pdf_direct.setEnabled(bool(self.has_pdf_printer))
         if self.has_pdf_printer:
             self.btn_pdf_direct.setStyleSheet("""
-                QPushButton { background-color: #9b59b6; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; }
+                QPushButton { background-color: #9b59b6; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-weight: bold; }
                 QPushButton:hover { background-color: #8e44ad; }
             """)
         else:
             self.btn_pdf_direct.setStyleSheet("""
-                QPushButton { background-color: #dcdde1; color: #7f8c8d; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; }
+                QPushButton { background-color: #e2e8f0; color: #94a3b8; border: none; padding: 10px 16px; border-radius: 6px; font-weight: bold; }
             """)
         self.btn_pdf_direct.clicked.connect(lambda: self._apply_and_close("pdf_direct"))
         btn_layout.addWidget(self.btn_pdf_direct)
@@ -434,12 +588,12 @@ class VersementPrintNoteDialog(QDialog):
         self.btn_thermal.setEnabled(bool(self.has_thermal_printer))
         if self.has_thermal_printer:
             self.btn_thermal.setStyleSheet("""
-                QPushButton { background-color: #e67e22; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; }
+                QPushButton { background-color: #e67e22; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-weight: bold; }
                 QPushButton:hover { background-color: #d35400; }
             """)
         else:
             self.btn_thermal.setStyleSheet("""
-                QPushButton { background-color: #dcdde1; color: #7f8c8d; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; }
+                QPushButton { background-color: #e2e8f0; color: #94a3b8; border: none; padding: 10px 16px; border-radius: 6px; font-weight: bold; }
             """)
         self.btn_thermal.clicked.connect(lambda: self._apply_and_close("thermal"))
         btn_layout.addWidget(self.btn_thermal)
@@ -449,13 +603,29 @@ class VersementPrintNoteDialog(QDialog):
         self.btn_cancel = QPushButton("Annuler")
         self.btn_cancel.setCursor(Qt.PointingHandCursor)
         self.btn_cancel.setStyleSheet("""
-            QPushButton { background-color: #bdc3c7; color: #2c3e50; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; }
-            QPushButton:hover { background-color: #95a5a6; }
+            QPushButton { background-color: #cbd5e1; color: #1e293b; border: none; padding: 10px 16px; border-radius: 6px; font-weight: bold; }
+            QPushButton:hover { background-color: #94a3b8; }
         """)
         self.btn_cancel.clicked.connect(self.reject)
         btn_layout.addWidget(self.btn_cancel)
 
         main_layout.addLayout(btn_layout)
+
+    def _check_all_payments(self):
+        for w in self.payment_row_widgets:
+            w["chk"].setChecked(True)
+
+    def _uncheck_all_payments(self):
+        for w in self.payment_row_widgets:
+            w["chk"].setChecked(False)
+
+    def _check_all_items(self):
+        for w in self.item_row_widgets:
+            w["chk"].setChecked(True)
+
+    def _uncheck_all_items(self):
+        for w in self.item_row_widgets:
+            w["chk"].setChecked(False)
 
     def _on_predefined_selected(self, index):
         if index <= 0:
@@ -469,14 +639,6 @@ class VersementPrintNoteDialog(QDialog):
                 self.txt_general_note.setPlainText(selected_text)
             self.chk_enable_general.setChecked(True)
             self.combo_predefined.setCurrentIndex(0)
-
-    def _check_all_items(self):
-        for w in self.item_row_widgets:
-            w["chk"].setChecked(True)
-
-    def _uncheck_all_items(self):
-        for w in self.item_row_widgets:
-            w["chk"].setChecked(False)
 
     def _open_virtual_keyboard(self, target_widget=None):
         try:
@@ -498,7 +660,26 @@ class VersementPrintNoteDialog(QDialog):
 
     def apply_to_pdf_data(self, pdf_data):
         """Met à jour le dictionnaire pdf_data avec les choix de notes effectués par l'utilisateur."""
-        # 1. Note générale
+        # 1. Notes de chaque ligne de paiement
+        if self.payment_row_widgets and "versements" in pdf_data:
+            for idx, widgets in enumerate(self.payment_row_widgets):
+                if idx < len(pdf_data["versements"]):
+                    p_entry = pdf_data["versements"][idx]
+                    chk = widgets["chk"]
+                    txt_edit = widgets["txt"]
+                    if chk.isChecked():
+                        new_note = txt_edit.text().strip()
+                        p_entry["note"] = new_note
+                        p_entry["notes"] = new_note
+                        p_entry["payment_note"] = new_note
+                        p_entry["display_payment_note"] = True
+                    else:
+                        p_entry["note"] = ""
+                        p_entry["notes"] = ""
+                        p_entry["payment_note"] = ""
+                        p_entry["display_payment_note"] = False
+
+        # 2. Note générale
         if self.chk_enable_general.isChecked():
             gn_text = self.txt_general_note.toPlainText().strip()
             pdf_data["general_note"] = gn_text
@@ -507,7 +688,7 @@ class VersementPrintNoteDialog(QDialog):
             pdf_data["general_note"] = ""
             pdf_data["invoice_note"] = ""
 
-        # 2. Notes des articles
+        # 3. Notes des articles
         if self.item_row_widgets and "items" in pdf_data:
             for idx, widgets in enumerate(self.item_row_widgets):
                 if idx < len(pdf_data["items"]):
@@ -523,23 +704,46 @@ class VersementPrintNoteDialog(QDialog):
                         item["note"] = ""
 
     def save_to_database_if_requested(self):
-        """Si demandé, enregistre les modifications de notes des articles en base de données."""
-        if not hasattr(self, "chk_save_db") or not self.chk_save_db.isChecked():
-            return
+        """Si demandé, enregistre les modifications de notes de paiements et d'articles en base de données."""
         if not self.manager or not hasattr(self.manager, "versements"):
             return
 
-        for widgets in self.item_row_widgets:
-            item_id = widgets.get("item_id")
-            if not item_id:
-                continue
-            chk = widgets["chk"]
-            txt_edit = widgets["txt"]
-            orig_note = widgets.get("orig_note", "")
-            if chk.isChecked():
-                new_note = normalize_custom_note(txt_edit.text().strip())
-                if new_note != orig_note:
-                    try:
-                        self.manager.versements.update_versement_item_notes(item_id, notes=new_note)
-                    except Exception as e:
-                        print(f"Erreur sauvegarde note article {item_id}: {e}")
+        # 1. Sauvegarde des notes de chaque paiement
+        if hasattr(self, "chk_save_payment_notes") and self.chk_save_payment_notes and self.chk_save_payment_notes.isChecked():
+            for widgets in self.payment_row_widgets:
+                p_id = widgets.get("payment_id")
+                if not p_id:
+                    continue
+                chk = widgets["chk"]
+                txt_edit = widgets["txt"]
+                orig_note = widgets.get("orig_note", "")
+                if chk.isChecked():
+                    new_note = txt_edit.text().strip()
+                    if new_note != orig_note:
+                        try:
+                            self.manager.versements.update_payment_notes(p_id, notes=new_note)
+                        except Exception as e:
+                            print(f"Erreur sauvegarde note paiement {p_id}: {e}")
+
+        # 2. Sauvegarde des notes d'articles
+        should_save_items = False
+        if hasattr(self, "chk_save_item_notes") and self.chk_save_item_notes and self.chk_save_item_notes.isChecked():
+            should_save_items = True
+        elif hasattr(self, "chk_save_db") and self.chk_save_db and self.chk_save_db.isChecked():
+            should_save_items = True
+
+        if should_save_items:
+            for widgets in self.item_row_widgets:
+                item_id = widgets.get("item_id")
+                if not item_id:
+                    continue
+                chk = widgets["chk"]
+                txt_edit = widgets["txt"]
+                orig_note = widgets.get("orig_note", "")
+                if chk.isChecked():
+                    new_note = normalize_custom_note(txt_edit.text().strip())
+                    if new_note != orig_note:
+                        try:
+                            self.manager.versements.update_versement_item_notes(item_id, notes=new_note)
+                        except Exception as e:
+                            print(f"Erreur sauvegarde note article {item_id}: {e}")

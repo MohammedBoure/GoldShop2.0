@@ -631,6 +631,9 @@ class VersementsView(QWidget):
             total_money = payment_value
             total_weight_pay = poids_deduit
 
+            raw_notes = str(p.get('notes') or '').strip()
+            clean_notes = re.sub(r'\[Remise:[^\]]+\]', '', raw_notes).strip(" |")
+
             item_desig = p.get('item_designation', '')
             if item_desig:
                 for it in v_data.get('items', []):
@@ -640,11 +643,7 @@ class VersementsView(QWidget):
                             item_desig = f"{item_desig} ({w:.2f}g)"
                         break
             else:
-                raw_notes = str(p.get('notes') or '').strip()
-                clean_notes = re.sub(r'\[Remise:[^\]]+\]', '', raw_notes).strip(" |")
-                if clean_notes:
-                    item_desig = clean_notes
-                elif total_money < 0:
+                if total_money < 0:
                     item_desig = "Rendu surplus / Remboursement"
                 elif poids_casse > 0:
                     item_desig = f"Paiement Or Cassé ({poids_casse:.2f}g)"
@@ -659,6 +658,7 @@ class VersementsView(QWidget):
 
             raw_payment_entry = {
                 "id": p.get('id', ''),
+                "payment_id": p.get('id', ''),
                 "payment_date": p.get('payment_date'),
                 "amount": total_money,
                 "tpe_da": montant_tpe,
@@ -672,7 +672,11 @@ class VersementsView(QWidget):
                 "prix_gramme_apres_remise": after_remise_ppg,
                 "product_name": item_desig,
                 "item_name": item_desig,
-                "operation_number": v_num
+                "operation_number": v_num,
+                "note": clean_notes,
+                "notes": clean_notes,
+                "payment_note": clean_notes,
+                "display_payment_note": True,
             }
 
             if total_money < 0:
