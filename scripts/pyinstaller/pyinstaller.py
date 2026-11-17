@@ -116,11 +116,16 @@ def build_production():
         # 3. Post-build: copy external config files and guarantee web & translation assets
         dist_path = os.path.join(output_root, exe_name)
 
-        for cfg in (".env", "config.json"):
-            cfg_path = os.path.join(project_dir, cfg)
-            if os.path.exists(cfg_path):
-                shutil.copy(cfg_path, dist_path)
-                print(f"[OK] Copied external config: {cfg}")
+        env_path = os.path.join(project_dir, ".env")
+        if os.path.exists(env_path):
+            shutil.copy(env_path, dist_path)
+            print("[OK] Copied external config: .env")
+
+        cfg_path = os.path.join(project_dir, "config.json")
+        if os.path.exists(cfg_path):
+            # Copie en tant que modele par defaut pour ne jamais ecraser config.json lors d'une mise a jour
+            shutil.copy(cfg_path, os.path.join(dist_path, "config.default.json"))
+            print("[OK] Copied default template: config.default.json")
 
         # Ensure web assets and translations exist directly in output directory
         dist_web = os.path.join(dist_path, "web")

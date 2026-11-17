@@ -528,11 +528,15 @@ class VersementsView(QWidget):
     @staticmethod
     def _read_config_json():
         try:
-            if os.path.exists("config.json"):
-                with open("config.json", "r", encoding="utf-8") as f:
-                    return json.load(f)
+            from config import load_full_config
+            return load_full_config()
         except Exception:
-            pass
+            try:
+                if os.path.exists("config.json"):
+                    with open("config.json", "r", encoding="utf-8") as f:
+                        return json.load(f)
+            except Exception:
+                pass
         return {}
 
     @classmethod
@@ -555,8 +559,16 @@ class VersementsView(QWidget):
         if not v_data:
             return None, None
 
-        from database.versement import build_versement_payment_summary
-        payment_summary = build_versement_payment_summary(v_data.get('payments', []))
+        total_estimated_price = float(v_data.get('total_estimated_price_da', 0))
+        from database.versement import build_versement_payment_summary, calculate_versement_financial_summary
+        payment_summary = build_versement_payment_summary(
+            v_data.get('payments', []),
+            items_brut_total=total_estimated_price,
+        )
+        financials = calculate_versement_financial_summary(v_data.get('items', []), v_data.get('payments', []))
+        per_payment_map = {
+            idx: info for idx, info in enumerate(financials.get("per_payment", []))
+        }
         v_num = f"VRS-{v_data['id']:05d}"
         
         pdf_data = {
@@ -602,7 +614,7 @@ class VersementsView(QWidget):
                     "custom_note": normalize_custom_note(item.get("custom_note")),
                 })
 
-        for p in v_data.get('payments', []):
+        for idx, p in enumerate(v_data.get('payments', [])):
             montant_da = float(p.get('montant_da') or 0)
             montant_tpe = float(p.get('tpe_da') or 0)
             montant_euro = float(p.get('montant_euro') or 0)
@@ -651,10 +663,13 @@ class VersementsView(QWidget):
                 else:
                     item_desig = "Paiement Espèces / TPE"
 
+            alloc_info = per_payment_map.get(idx, {})
             raw_payment_entry = {
                 "id": p.get('id', ''),
                 "payment_date": p.get('payment_date'),
                 "amount": total_money,
+                "allocated_da": float(p.get('allocated_da') if p.get('allocated_da') is not None else alloc_info.get('allocated_da', total_money)),
+                "surplus_da": float(p.get('surplus_da') if p.get('surplus_da') is not None else alloc_info.get('surplus_da', 0.0)),
                 "tpe_da": montant_tpe,
                 "montant_euro": montant_euro,
                 "taux_change_euro": taux,
@@ -706,6 +721,10 @@ class VersementsView(QWidget):
         pdf_data['old_gold_weight_g'] = payment_summary['old_gold_weight_g']
         pdf_data['deducted_weight_g'] = payment_summary['deducted_weight_g']
         pdf_data['total_amount'] = total_estimated_price if total_estimated_price > 0 else pdf_data['total_paid']
+        pdf_data['net_due_da'] = float(v_data.get('net_due_da') if v_data.get('net_due_da') is not None else financials['net_due_da'])
+        pdf_data['allocated_paid_da'] = float(v_data.get('allocated_paid_da') if v_data.get('allocated_paid_da') is not None else financials['allocated_paid_da'])
+        pdf_data['surplus_da'] = float(v_data.get('surplus_da') if v_data.get('surplus_da') is not None else financials['surplus_da'])
+        pdf_data['reste_montant_da'] = float(v_data.get('reste_montant_da') if v_data.get('reste_montant_da') is not None else financials['remaining_due_da'])
         pdf_data['total_quantity'] = sum(int(item.get('reserved_quantity') or 1) for item in pdf_data['items'])
 
         return pdf_data, v_data
@@ -1528,9 +1547,16 @@ class VersementsView(QWidget):
                         self.create_and_set_item(row, 7, "Paiement", p_data, bg_color="#fff8e8", text_color="#27ae60")
                         
                         clean_notes = re.sub(r'\[Remise:[^\]]+\]', '', p_notes).strip(" |")
-                        obs_str = ""
-                        if remise > 0: obs_str += f"[Remise: {remise:,.0f} DA] "
-                        if clean_notes: obs_str += clean_notes
+                        obs_parts = []
+                        p_surplus = float(p.get('surplus_da') or 0)
+                        p_alloc = float(p.get('allocated_da') or 0)
+                        if p_surplus > 0.01:
+                            obs_parts.append(f"[Affecté: {p_alloc:,.0f} DA | Surplus/Crédit: +{p_surplus:,.0f} DA]")
+                        if remise > 0:
+                            obs_parts.append(f"[Remise: {remise:,.0f} DA]")
+                        if clean_notes:
+                            obs_parts.append(clean_notes)
+                        obs_str = " ".join(obs_parts)
                         self.create_and_set_item(row, 8, obs_str if obs_str.strip() else "-", p_data, align_center=False, bg_color="#fff8e8", text_color="#7a4d08")
                         self.table.setRowHeight(row, 28)
 
@@ -1540,14 +1566,22 @@ class VersementsView(QWidget):
                 total_remise = v.get('total_remise_da', 0)
                 total_deducted = v.get('total_paid_weight_g', 0)
                 reste_poids = v.get('reste_poids_g', 0)
+                surplus_da = float(v.get('surplus_da') or 0)
+                allocated_paid_da = float(v.get('allocated_paid_da') or 0)
+                total_active_weight = float(v.get('total_weight_g') or 0)
 
                 sum_text_1 = f"💰 Payé: {total_paid_da:,.0f} DA"
+                if surplus_da > 0.01:
+                    sum_text_1 += f" (Produit: {allocated_paid_da:,.0f} DA | Crédit: +{surplus_da:,.0f} DA)"
                 if total_tpe != 0: sum_text_1 += f"  |  TPE: {total_tpe:,.0f} DA"
                 if total_dollar > 0: sum_text_1 += f"  |  💵 {total_dollar:,.0f} $"
                 if total_remise > 0: sum_text_1 += f"  |  🎁 Remise: {total_remise:,.0f} DA"
                 sum_text_1 += f"  |  ⚖️ Déduit: - {total_deducted:.2f} g"
 
-                sum_text_2 = f"STATUT: {statut}  |  ⚖️ RESTE: {reste_poids:.3f} g"
+                display_statut = statut
+                if statut == 'EN_COURS' and total_active_weight > 0 and reste_poids <= 0.0005:
+                    display_statut = f"SOLDÉ (Crédit +{surplus_da:,.0f} DA)" if surplus_da > 0.01 else "SOLDÉ (À clôturer)"
+                sum_text_2 = f"STATUT: {display_statut}  |  ⚖️ RESTE: {reste_poids:.3f} g"
                 is_complete = (reste_poids <= 0) or (statut == 'CLOTURE')
                 bg_summary = "#d1e7dd"  # خلفية خضراء فاتحة مريحة دائماً للسطر الأخير
                 payment_summary_color = "#0f5132"

@@ -2004,9 +2004,6 @@ class ExcelJournalView(QWidget):
                     """, (v_id,))
                     v_payments = cursor.fetchall()
 
-                from database.versement import build_versement_payment_summary
-                payment_summary = build_versement_payment_summary(v_payments)
-
                 mapped_items = []
                 total_items_price = 0.0
                 for it in v_items:
@@ -2029,9 +2026,12 @@ class ExcelJournalView(QWidget):
                         'custom_note': str(it.get('notes') or ''),
                     })
 
+                from database.versement import build_versement_payment_summary
+                payment_summary = build_versement_payment_summary(v_payments, items_brut_total=total_items_price)
+
                 total_brut = total_items_price if total_items_price > 0 else float(payment_summary.get('total_brut_da', 0))
                 discount = float(payment_summary.get('total_remise_da', 0))
-                net = max(0.0, total_brut - discount) if total_brut > 0 else float(payment_summary.get('net_to_pay_da', 0))
+                net = float(payment_summary.get('net_to_pay_da', 0)) or (max(0.0, total_brut - discount) if total_brut > 0 else 0.0)
 
                 return {
                     'id': v_id,
@@ -2074,8 +2074,15 @@ class ExcelJournalView(QWidget):
         net = float(sale.get('net_to_pay_da', 0))
 
         v_summary = sale.get('versement_payment_summary') or {}
+        is_versement_sale = (
+            bool(v_summary)
+            or str(sale_id).startswith("VRS_")
+            or str(sale.get('receipt_number', '')).upper().startswith("VRS-")
+        )
         v_remise = float(v_summary.get('total_remise_da', 0))
-        if v_remise > discount:
+        if is_versement_sale and v_summary:
+            discount = v_remise
+        elif v_remise > discount:
             discount = v_remise
         
         cash = float(sale.get('cash_paid_da', 0))
@@ -2093,25 +2100,34 @@ class ExcelJournalView(QWidget):
             mapped['cart_line_total'] = float(it.get('total_price_da') or (it.get('unit_price_da', 0) * (mapped['cart_sold_weight'] or mapped['cart_sold_qty'])) or 0)
             mapped_items.append(mapped)
 
-        # ضبط Total Brut و Net في حال وجود تخفيض
-        if discount > 0 and total_brut <= net:
-            total_brut = net + discount
-        elif total_brut <= 0 and mapped_items:
-            total_brut = sum(float(it['cart_line_total']) for it in mapped_items)
-            if discount > 0 and net <= 0:
-                net = max(0.0, total_brut - discount)
-        elif net <= 0 and total_brut > 0:
-            net = max(0.0, total_brut - discount)
-
-        # التأكد من مطابقة إجمالي بنود الفاتورة مع Total Brut
         items_sum = sum(it['cart_line_total'] for it in mapped_items) if mapped_items else 0.0
-        if discount > 0 and total_brut > 0 and mapped_items:
-            if len(mapped_items) == 1 or items_sum <= 0.01:
-                mapped_items[0]['cart_line_total'] = total_brut
-            elif abs(items_sum - total_brut) > 0.01:
-                ratio = total_brut / items_sum
-                for it in mapped_items:
-                    it['cart_line_total'] = round(it['cart_line_total'] * ratio, 2)
+        if is_versement_sale and items_sum > 0.01:
+            # Conserver les prix réels des articles sans jamais les gonfler pour absorber des remises cumulées.
+            if net > 0 and items_sum >= net - 0.01:
+                total_brut = items_sum
+                if discount > 0:
+                    discount = max(0.0, items_sum - net)
+            elif total_brut <= net and discount > 0:
+                total_brut = net + discount
+        else:
+            # ضبط Total Brut و Net في حال وجود تخفيض
+            if discount > 0 and total_brut <= net:
+                total_brut = net + discount
+            elif total_brut <= 0 and mapped_items:
+                total_brut = items_sum
+                if discount > 0 and net <= 0:
+                    net = max(0.0, total_brut - discount)
+            elif net <= 0 and total_brut > 0:
+                net = max(0.0, total_brut - discount)
+
+            # التأكد من مطابقة إجمالي بنود الفاتورة مع Total Brut للمبيعات العادية فقط
+            if discount > 0 and total_brut > 0 and mapped_items:
+                if len(mapped_items) == 1 or items_sum <= 0.01:
+                    mapped_items[0]['cart_line_total'] = total_brut
+                elif abs(items_sum - total_brut) > 0.01:
+                    ratio = total_brut / items_sum
+                    for it in mapped_items:
+                        it['cart_line_total'] = round(it['cart_line_total'] * ratio, 2)
 
         try:
             from ui.tools.invoice_generator import generate_invoice_pdf, _clean_facture_number

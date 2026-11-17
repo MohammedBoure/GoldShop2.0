@@ -4,10 +4,13 @@ import logging
 import os
 import shutil
 import sys
+import threading
+import time
 from pathlib import Path
 
 
 logger = logging.getLogger(__name__)
+_CONFIG_LOCK = threading.RLock()
 
 def _app_root() -> Path:
     if getattr(sys, "frozen", False):
@@ -94,37 +97,54 @@ def _merge_dict(defaults: dict, data: dict) -> dict:
 def save_full_config(data: dict) -> bool:
     """
     حفظ الإعدادات بآلية الكتابة الذرية (Atomic Write) مع إنشاء نسخة احتياطية تلقائية (Backup)
-    لتجنب تلف الملف (Corruption) في حال انقطاع الكهرباء أثناء الكتابة.
+    لتجنب تلف الملف (Corruption) في حال انقطاع الكهرباء أو تزامن الخيوط أثناء الكتابة.
     """
-    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp_file = CONFIG_FILE.with_suffix(".json.tmp")
-    bak_file = CONFIG_FILE.with_suffix(".json.bak")
-    
-    try:
-        with tmp_file.open("w", encoding="utf-8") as file:
-            json.dump(data, file, indent=4, ensure_ascii=False)
-            file.flush()
-            os.fsync(file.fileno())
-            
-        if CONFIG_FILE.exists():
-            try:
-                with CONFIG_FILE.open("r", encoding="utf-8") as check_f:
-                    json.load(check_f)
-                shutil.copyfile(CONFIG_FILE, bak_file)
-            except Exception as exc:
-                logger.warning(f"الملف الحالي غير سليم، لن يتم استبدال النسخة الاحتياطية السابقة: {exc}")
-
-        os.replace(tmp_file, CONFIG_FILE)
-        logger.info("تم حفظ الإعدادات بنجاح بآلية الكتابة الذرية الآمنة.")
-        return True
-    except Exception as exc:
-        logger.error(f"فشل في حفظ الإعدادات بآلية الكتابة الذرية: {exc}")
-        if tmp_file.exists():
-            try:
-                tmp_file.unlink()
-            except OSError:
-                pass
+    if not isinstance(data, dict) or not data:
+        logger.warning("Refusing to overwrite config.json with empty or invalid data.")
         return False
+
+    with _CONFIG_LOCK:
+        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp_file = CONFIG_FILE.with_suffix(".json.tmp")
+        bak_file = CONFIG_FILE.with_suffix(".json.bak")
+
+        try:
+            with tmp_file.open("w", encoding="utf-8") as file:
+                json.dump(data, file, indent=4, ensure_ascii=False)
+                file.flush()
+                os.fsync(file.fileno())
+
+            if CONFIG_FILE.exists():
+                try:
+                    with CONFIG_FILE.open("r", encoding="utf-8") as check_f:
+                        existing = json.load(check_f)
+                    if isinstance(existing, dict) and existing:
+                        shutil.copyfile(CONFIG_FILE, bak_file)
+                except Exception as exc:
+                    logger.warning(f"الملف الحالي غير سليم، لن يتم استبدال النسخة الاحتياطية السابقة: {exc}")
+
+            last_exc = None
+            for attempt in range(5):
+                try:
+                    os.replace(tmp_file, CONFIG_FILE)
+                    last_exc = None
+                    break
+                except PermissionError as exc:
+                    last_exc = exc
+                    time.sleep(0.05 * (attempt + 1))
+            if last_exc is not None:
+                raise last_exc
+
+            logger.info("تم حفظ الإعدادات بنجاح بآلية الكتابة الذرية الآمنة.")
+            return True
+        except Exception as exc:
+            logger.error(f"فشل في حفظ الإعدادات بآلية الكتابة الذرية: {exc}")
+            if tmp_file.exists():
+                try:
+                    tmp_file.unlink()
+                except OSError:
+                    pass
+            return False
 
 
 def _write_default_config() -> None:
@@ -132,39 +152,68 @@ def _write_default_config() -> None:
 
 
 def load_full_config() -> dict:
-    bak_file = CONFIG_FILE.with_suffix(".json.bak")
-    
-    if not CONFIG_FILE.exists():
-        if bak_file.exists():
-            logger.info("ملف config.json مفقود، جاري استعادته من النسخة الاحتياطية (config.json.bak).")
-            try:
-                shutil.copyfile(bak_file, CONFIG_FILE)
-            except Exception as exc:
-                logger.warning(f"فشل استعادة النسخة الاحتياطية: {exc}")
-        else:
-            try:
-                _write_default_config()
-                logger.info("config.json was missing and has been created with default settings.")
-            except OSError as exc:
-                logger.warning(f"Could not create config.json, using in-memory defaults: {exc}")
-                return copy.deepcopy(DEFAULT_CONFIG)
+    with _CONFIG_LOCK:
+        bak_file = CONFIG_FILE.with_suffix(".json.bak")
 
-    try:
-        with CONFIG_FILE.open("r", encoding="utf-8") as file:
-            return _merge_dict(DEFAULT_CONFIG, json.load(file))
-    except (json.JSONDecodeError, OSError) as exc:
-        logger.error(f"تلف ملف config.json مكتشف ({exc}). جاري محاولة الاستعادة من النسخة الاحتياطية (config.json.bak)...")
-        if bak_file.exists():
+        if not CONFIG_FILE.exists():
+            default_template = CONFIG_FILE.with_name("config.default.json")
+            if bak_file.exists():
+                logger.info("ملف config.json مفقود، جاري استعادته من النسخة الاحتياطية (config.json.bak).")
+                try:
+                    shutil.copyfile(bak_file, CONFIG_FILE)
+                except Exception as exc:
+                    logger.warning(f"فشل استعادة النسخة الاحتياطية: {exc}")
+            elif default_template.exists():
+                logger.info("ملف config.json مفقود، جاري إنشاؤه من القالب الافتراضي (config.default.json).")
+                try:
+                    shutil.copyfile(default_template, CONFIG_FILE)
+                except Exception as exc:
+                    logger.warning(f"فشل نسخ القالب الافتراضي: {exc}")
+            else:
+                try:
+                    _write_default_config()
+                    logger.info("config.json was missing and has been created with default settings.")
+                except OSError as exc:
+                    logger.warning(f"Could not create config.json, using in-memory defaults: {exc}")
+                    return copy.deepcopy(DEFAULT_CONFIG)
+
+        for attempt in range(3):
             try:
-                with bak_file.open("r", encoding="utf-8") as b_file:
-                    backup_data = json.load(b_file)
-                shutil.copyfile(bak_file, CONFIG_FILE)
-                logger.info("تم استعادة إعدادات config.json بنجاح من النسخة الاحتياطية.")
-                return _merge_dict(DEFAULT_CONFIG, backup_data)
-            except Exception as backup_exc:
-                logger.error(f"فشل استعادة النسخة الاحتياطية، سيتم استخدام الإعدادات الافتراضية: {backup_exc}")
-        
+                with CONFIG_FILE.open("r", encoding="utf-8") as file:
+                    loaded = json.load(file)
+                if isinstance(loaded, dict):
+                    return _merge_dict(DEFAULT_CONFIG, loaded)
+                raise ValueError("config.json root is not a JSON object")
+            except (json.JSONDecodeError, ValueError, OSError) as exc:
+                if isinstance(exc, PermissionError) and attempt < 2:
+                    time.sleep(0.05 * (attempt + 1))
+                    continue
+                logger.error(f"تلف ملف config.json مكتشف ({exc}). جاري محاولة الاستعادة من النسخة الاحتياطية (config.json.bak)...")
+                if bak_file.exists():
+                    try:
+                        with bak_file.open("r", encoding="utf-8") as b_file:
+                            backup_data = json.load(b_file)
+                        if isinstance(backup_data, dict):
+                            shutil.copyfile(bak_file, CONFIG_FILE)
+                            logger.info("تم استعادة إعدادات config.json بنجاح من النسخة الاحتياطية.")
+                            return _merge_dict(DEFAULT_CONFIG, backup_data)
+                    except Exception as backup_exc:
+                        logger.error(f"فشل استعادة النسخة الاحتياطية، سيتم استخدام الإعدادات الافتراضية: {backup_exc}")
+                return copy.deepcopy(DEFAULT_CONFIG)
         return copy.deepcopy(DEFAULT_CONFIG)
+
+
+def update_config_values(updater) -> bool:
+    """Safely read-modify-write config.json under lock without dropping unrelated settings."""
+    with _CONFIG_LOCK:
+        current = load_full_config()
+        if callable(updater):
+            updated = updater(copy.deepcopy(current))
+            if isinstance(updated, dict):
+                current = updated
+        elif isinstance(updater, dict):
+            current = _merge_dict(current, updater)
+        return save_full_config(current)
 
 
 def load_config():

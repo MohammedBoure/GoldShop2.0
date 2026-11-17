@@ -565,16 +565,38 @@ class EditPaymentDialog(QDialog):
             item_price = float(self.item_prices[selected_item_id] or 0)
             item_weight = float(self.item_weights[selected_item_id] or 0)
             if item_price > 0 and item_weight > 0:
-                unit_ppg = item_price / item_weight
-                rem_weight = balances.get(selected_item_id, {}).get('remaining_g', item_weight)
+                bal = balances.get(selected_item_id, {})
+                rem_weight = bal.get('remaining_g', item_weight)
+                item_paid = float(bal.get('paid_da', 0.0) or 0.0)
+                direct_remise = sum(
+                    float(p.get('remise_da') or 0)
+                    for p in other_payments
+                    if p.get('versement_item_id') == selected_item_id
+                )
+                global_remise = sum(
+                    float(p.get('remise_da') or 0)
+                    for p in other_payments
+                    if not p.get('versement_item_id')
+                )
+                total_active_w = sum(
+                    float(it.get('display_weight') or it.get('weight') or 0)
+                    for it in items
+                    if it.get('item_status') != 'ANNULE'
+                )
+                item_global_remise = (global_remise * (item_weight / total_active_w)) if total_active_w > 0 else 0.0
+                remaining_net_da = max(0.0, item_price - item_paid - direct_remise - item_global_remise)
+                unit_ppg = (remaining_net_da / rem_weight) if (rem_weight > 1e-6 and remaining_net_da > 0) else (item_price / item_weight)
                 return unit_ppg, rem_weight
 
         if self.v_data:
             total_est = float(self.v_data.get('total_estimated_price_da') or 0)
             total_weight = float(self.v_data.get('total_weight_g') or 0)
             if total_est > 0 and total_weight > 0:
-                unit_ppg = total_est / total_weight
                 rem_weight = sum(bal.get('remaining_g', 0.0) for bal in balances.values())
+                other_paid = sum(calculate_payment_value_da(p) for p in other_payments)
+                other_remise = sum(float(p.get('remise_da') or 0) for p in other_payments)
+                remaining_net_da = max(0.0, total_est - other_paid - other_remise)
+                unit_ppg = (remaining_net_da / rem_weight) if (rem_weight > 1e-6 and remaining_net_da > 0) else (total_est / total_weight)
                 return unit_ppg, max(0.0, rem_weight)
 
         return 0.0, 0.0
@@ -725,11 +747,24 @@ class EditPaymentDialog(QDialog):
 
         reste_g = max(0.0, base_weight - poids_deduit)
         montant_reste = reste_g * effective_ppg
+        surplus_da = max(0.0, acompte_da - net) if net > 0 else 0.0
 
         self.lbl_summary_brut.setText(f"{total_brut:,.2f} DA  (Base: {base_weight:,.2f} g)")
         self.lbl_summary_remise.setText(f"- {remise:,.2f} DA ({remise_pct:.1f}%)" if remise > 0 else "0.00 DA")
-        self.lbl_summary_paye.setText(f"{acompte_da:,.2f} DA  (Poids déduit: {poids_deduit:,.3f} g)")
-        self.lbl_summary_reste.setText(f"{reste_g:,.3f} g  (≈ {montant_reste:,.0f} DA)")
+        if surplus_da > 0.01:
+            self.lbl_summary_paye.setText(
+                f"{acompte_da:,.2f} DA  (Produit: {net:,.0f} DA | Surplus: +{surplus_da:,.0f} DA)"
+            )
+            self.lbl_summary_reste.setStyleSheet("font-size: 15px; font-weight: bold; color: #27ae60;")
+            self.lbl_summary_reste.setText(f"0.000 g (Soldé) | Crédit Client: +{surplus_da:,.2f} DA")
+        else:
+            self.lbl_summary_paye.setText(f"{acompte_da:,.2f} DA  (Poids déduit: {poids_deduit:,.3f} g)")
+            self.lbl_summary_reste.setStyleSheet(
+                "font-size: 16px; font-weight: bold; color: #27ae60;"
+                if reste_g <= 0.0005 and acompte_da > 0
+                else "font-size: 16px; font-weight: bold; color: #c0392b;"
+            )
+            self.lbl_summary_reste.setText(f"{reste_g:,.3f} g  (≈ {montant_reste:,.0f} DA)")
 
     @staticmethod
     def _parse_safe_float(val):

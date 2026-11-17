@@ -76,27 +76,33 @@ class MainWindowBackgroundMixin:
             self._duckdns_update_running = False
 
     def _load_json_config(self):
-        if not os.path.exists(self.config_file):
-            return {}
         try:
-            with open(self.config_file, "r", encoding="utf-8") as handle:
-                return json.load(handle)
+            from config import load_full_config
+            return load_full_config()
         except Exception:
-            return {}
+            if not os.path.exists(self.config_file):
+                return {}
+            try:
+                with open(self.config_file, "r", encoding="utf-8") as handle:
+                    return json.load(handle)
+            except Exception:
+                return {}
 
     def _persist_duckdns_result(self, result):
         from services.duckdns import normalize_duckdns_config
 
-        config = self._load_json_config()
-        duckdns_config = normalize_duckdns_config(config.get("duckdns"))
-        duckdns_config["last_status"] = result.get("status", "error")
-        duckdns_config["last_message"] = result.get("message", "")
-        duckdns_config["last_ip"] = result.get("ip") or duckdns_config.get("last_ip", "")
-        duckdns_config["last_update_at"] = result.get("updated_at", "")
-        config["duckdns"] = duckdns_config
+        def _apply_duckdns(config):
+            duckdns_config = normalize_duckdns_config(config.get("duckdns"))
+            duckdns_config["last_status"] = result.get("status", "error")
+            duckdns_config["last_message"] = result.get("message", "")
+            duckdns_config["last_ip"] = result.get("ip") or duckdns_config.get("last_ip", "")
+            duckdns_config["last_update_at"] = result.get("updated_at", "")
+            config["duckdns"] = duckdns_config
+            return config
+
         try:
-            from config import save_full_config
-            save_full_config(config)
+            from config import update_config_values
+            update_config_values(_apply_duckdns)
         except Exception as exc:
             logging.warning("Could not persist DuckDNS update result: %s", exc)
 

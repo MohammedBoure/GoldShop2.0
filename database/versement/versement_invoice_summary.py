@@ -22,11 +22,17 @@ def versement_id_from_receipt_number(receipt_number: Any) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def build_versement_payment_summary(payments: Iterable[dict[str, Any]]) -> dict[str, Any]:
+def build_versement_payment_summary(
+    payments: Iterable[dict[str, Any]],
+    items_brut_total: float | None = None,
+) -> dict[str, Any]:
     """Normalize all payment methods into the invoice amounts and history.
 
     Foreign-currency payments are kept in their original currency and also
     converted to DA using the rate captured at the time of the payment without double-counting.
+    When ``items_brut_total`` (> 0) is supplied, the effective discount and gross total
+    are bounded by the real catalog total of the items so repeated per-installment discounts
+    cannot inflate item prices on the final invoice.
     """
     totals = {
         "cash_paid_da": 0.0,
@@ -118,6 +124,15 @@ def build_versement_payment_summary(payments: Iterable[dict[str, Any]]) -> dict[
         + totals["old_gold_equivalent_da"]
         + totals["old_silver_equivalent_da"]
     )
+    items_total = _number(items_brut_total)
+    if items_total > 0 and totals["total_remise_da"] > 0:
+        if totals["total_paid_da"] <= items_total:
+            totals["total_remise_da"] = min(
+                totals["total_remise_da"],
+                max(0.0, items_total - totals["total_paid_da"]),
+            )
+        else:
+            totals["total_remise_da"] = 0.0
     totals["total_brut_da"] = totals["total_paid_da"] + totals["total_remise_da"]
     totals["net_to_pay_da"] = totals["total_paid_da"]
     totals["payment_count"] = len(totals["payment_history"])

@@ -7,6 +7,7 @@ from .versement_pricing import (
     discount_for_target_price,
     price_after_discount,
     calculate_versement_item_balances,
+    calculate_versement_financial_summary,
 )
 from .versement_reservation import (
     normalize_reserved_quantity,
@@ -30,6 +31,7 @@ __all__ = [
     "discount_for_target_price",
     "price_after_discount",
     "calculate_versement_item_balances",
+    "calculate_versement_financial_summary",
     "normalize_reserved_quantity",
     "available_piece_quantity",
     "is_piece_sellable",

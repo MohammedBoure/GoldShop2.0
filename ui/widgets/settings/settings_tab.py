@@ -201,7 +201,7 @@ class SettingsTab(QWidget):
         self.tabs.addTab(self.tab_db, qta.icon("fa5s.database"), "Base de Données")
 
         layout.addWidget(self.tabs)
-        self.tabs.currentChanged.connect(self._load_lazy_tab_at)
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
     def _create_thermal_printer_tab(self):
         from .thermal_printer_tab import ThermalPrinterTab
@@ -248,6 +248,22 @@ class SettingsTab(QWidget):
         self.tabs.setCurrentIndex(index)
         self.tabs.blockSignals(False)
         return built
+
+    def _on_tab_changed(self, index):
+        widget = self._load_lazy_tab_at(index)
+        if widget is getattr(self, "tab_pdf_printer", None):
+            self._sync_shop_fields_into_config()
+            if hasattr(widget, "generate_preview"):
+                widget.generate_preview()
+
+    def _sync_shop_fields_into_config(self):
+        if hasattr(self, "inp_shop_name"):
+            self.config["shop_name"] = self.inp_shop_name.text()
+            self.config["shop_address"] = self.inp_shop_address.text()
+            self.config["shop_phone"] = self.inp_shop_phone.text()
+            self.config["shop_rc"] = self.inp_shop_rc.text()
+            self.config["shop_nif"] = self.inp_shop_nif.text()
+            self.config["currency"] = self.inp_currency.text()
 
     def get_system_printers(self):
         try: return QPrinterInfo.availablePrinterNames()
@@ -784,12 +800,23 @@ class SettingsTab(QWidget):
         return widget # 🟢 السطر الذي كان مفقوداً وتمت إضافته
 
     def load_config(self):
-        if os.path.exists(CONFIG_FILE):
-            try:
+        data = {}
+        try:
+            from config import get_config_path, load_full_config
+            if os.path.abspath(CONFIG_FILE) == os.path.abspath(str(get_config_path())):
+                data = load_full_config()
+            elif os.path.exists(CONFIG_FILE):
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    self._update_dict_recursive(self.config, data)
-            except: pass
+        except Exception:
+            if os.path.exists(CONFIG_FILE):
+                try:
+                    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                except Exception:
+                    data = {}
+        if isinstance(data, dict) and data:
+            self._update_dict_recursive(self.config, data)
         self.config["duckdns"] = normalize_duckdns_config(self.config.get("duckdns"))
         ensure_ui_customization(self.config)
 
@@ -856,8 +883,23 @@ class SettingsTab(QWidget):
 
     def _write_config(self, show_success=True):
         try:
-            from config import save_full_config
-            save_full_config(self.config)
+            from config import update_config_values
+
+            def _merge_before_save(disk_cfg):
+                merged = copy.deepcopy(disk_cfg) if isinstance(disk_cfg, dict) else {}
+                # Preserve live background DuckDNS status fields if updated asynchronously
+                disk_duckdns = normalize_duckdns_config(merged.get("duckdns"))
+                new_duckdns = normalize_duckdns_config(self.config.get("duckdns"))
+                for status_key in ("last_ip", "last_status", "last_message", "last_update_at"):
+                    if not new_duckdns.get(status_key) and disk_duckdns.get(status_key):
+                        new_duckdns[status_key] = disk_duckdns[status_key]
+                merged.update(copy.deepcopy(self.config))
+                merged["duckdns"] = new_duckdns
+                self.config = merged
+                return merged
+
+            if not update_config_values(_merge_before_save):
+                raise IOError("Impossible d'ecrire dans config.json")
             if hasattr(self, "spin_zoom"):
                 self.apply_graphics_live()
 

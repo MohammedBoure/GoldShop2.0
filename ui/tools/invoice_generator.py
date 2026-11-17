@@ -378,12 +378,16 @@ class PdfHelper:
     @staticmethod
     def load_pdf_config():
         config = {}
-        if os.path.exists("config.json"):
-            try:
-                with open("config.json", 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-            except Exception:
-                pass
+        try:
+            from config import load_full_config
+            config = load_full_config()
+        except Exception:
+            if os.path.exists("config.json"):
+                try:
+                    with open("config.json", 'r', encoding='utf-8') as f:
+                        config = json.load(f)
+                except Exception:
+                    pass
         return config, PdfHelper.normalize_pdf_config(config.get("pdf_config", {}))
 
     @staticmethod
@@ -1100,6 +1104,14 @@ class ReceiptGenerator:
 
                 amount_color = c_red if amount < 0 else c_grn
                 amount_str = f"{amount:,.2f} {currency}"
+                p_surplus = _safe_float(v.get('surplus_da'))
+                p_alloc = _safe_float(v.get('allocated_da'))
+                v_name_html = escape(v_name)
+                if p_surplus > 0.01:
+                    v_name_html += (
+                        f"<br><span style='font-size:{int(f_norm*0.8)}px; color:{c_grn};'>"
+                        f"Affecté: {p_alloc:,.2f} {currency} | Crédit client: +{p_surplus:,.2f} {currency}</span>"
+                    )
 
                 if weight > 0:
                     weight_str = f"+ {weight:.3f} g"
@@ -1114,7 +1126,7 @@ class ReceiptGenerator:
                 versements_html += f"""
                 <tr>
                     <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#333333;">{date_str}</td>
-                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#2c3e50; font-weight:bold;">{v_name}</td>
+                    <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:#2c3e50; font-weight:bold;">{v_name_html}</td>
                     {code_td_v}
                     <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:{amount_color}; text-align:center; font-weight:bold;">{amount_str}</td>
                     <td style="padding:6px 5px; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px; color:{weight_color}; text-align:center;">{weight_str}</td>
@@ -1166,7 +1178,33 @@ class ReceiptGenerator:
         total_remise = _safe_float(
             payment_summary_data.get("total_remise_da", data.get("total_remise_da", 0.0))
         )
-        montant_du = total_paid + total_remise
+        article_total_amount = _safe_float(data.get("total_estimated_price_da"))
+        if article_total_amount <= 0 and items:
+            article_total_amount = sum(
+                _safe_float(it.get("selling_price", it.get("total_amount", 0.0)))
+                for it in items
+            )
+        if article_total_amount <= 0:
+            article_total_amount = _safe_float(data.get("total_amount"))
+
+        if article_total_amount > 0:
+            if total_remise > 0 and total_paid <= article_total_amount:
+                effective_remise = min(total_remise, max(0.0, article_total_amount - total_paid))
+            else:
+                effective_remise = 0.0 if total_paid > article_total_amount else total_remise
+            net_due = max(0.0, article_total_amount - effective_remise)
+            montant_du = article_total_amount
+            surplus_da = _safe_float(data.get("surplus_da"))
+            if surplus_da <= 0 and total_paid > net_due + 0.01:
+                surplus_da = total_paid - net_due
+            allocated_paid_da = min(max(0.0, total_paid), net_due)
+            reste_montant_da = max(0.0, net_due - max(0.0, total_paid))
+        else:
+            effective_remise = total_remise
+            montant_du = total_paid + total_remise
+            surplus_da = 0.0
+            allocated_paid_da = total_paid
+            reste_montant_da = 0.0
 
         lbl_summary_invoice = _label("versement_summary_invoice_amount", "Montant dû")
         if lbl_summary_invoice in ("Montant facture", "Montant Facture"):
@@ -1180,12 +1218,19 @@ class ReceiptGenerator:
         
         summary_rows += f"<tr><td style='padding:5px; text-align:right; font-size:{int(f_norm*0.9)}px;'>{lbl_summary_total_weight} :</td><td style='padding:5px; text-align:right; font-weight:bold;'>{total_weight:.3f} g</td></tr>"
         summary_rows += f"<tr><td style='padding:5px; text-align:right; font-size:{int(f_norm*0.9)}px;'>{lbl_summary_total_paid} :</td><td style='padding:5px; text-align:right; color:{c_grn}; font-weight:bold;'>{total_paid:,.2f} {currency}</td></tr>"
+
+        if surplus_da > 0.01:
+            summary_rows += f"<tr><td style='padding:5px; text-align:right; font-size:{int(f_norm*0.9)}px;'>Montant affecté (Article) :</td><td style='padding:5px; text-align:right; font-weight:bold;'>{allocated_paid_da:,.2f} {currency}</td></tr>"
+            summary_rows += f"<tr><td style='padding:5px; text-align:right; font-size:{int(f_norm*0.9)}px; color:{c_grn}; font-weight:bold;'>Surplus / Crédit Client :</td><td style='padding:5px; text-align:right; color:{c_grn}; font-weight:bold; background-color:#f0fdf4; border:1px solid #bbf7d0;'>+ {surplus_da:,.2f} {currency}</td></tr>"
         
         arabic_text = f" ({txt_arabic_paid})" if txt_arabic_paid else ""
         summary_rows += f"<tr><td style='padding:5px; text-align:right; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px;'>{lbl_summary_paid_weight}{arabic_text} :</td><td style='padding:5px; text-align:right; color:#2980b9; font-weight:bold; border-bottom:1px solid #eee;'>{total_paid_weight:.3f} g</td></tr>"
         
-        if total_remise > 0:
-            summary_rows += f"<tr><td style='padding:5px; text-align:right; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px;'>Remise totale :</td><td style='padding:5px; text-align:right; font-weight:bold; color:{c_red}; border-bottom:1px solid #eee;'>{total_remise:,.2f} {currency}</td></tr>"
+        if effective_remise > 0:
+            summary_rows += f"<tr><td style='padding:5px; text-align:right; border-bottom:1px solid #eee; font-size:{int(f_norm*0.9)}px;'>Remise totale :</td><td style='padding:5px; text-align:right; font-weight:bold; color:{c_red}; border-bottom:1px solid #eee;'>{effective_remise:,.2f} {currency}</td></tr>"
+
+        if reste_montant_da > 0.01 and surplus_da <= 0.01 and not pdf_cfg["display"].get("reste_in_weight", True):
+            summary_rows += f"<tr><td style='padding:5px; text-align:right; font-size:{int(f_norm*0.9)}px; color:{c_red};'>Reste à payer :</td><td style='padding:5px; text-align:right; font-weight:bold; color:{c_red};'>{reste_montant_da:,.2f} {currency}</td></tr>"
             
         summary_rows += f"<tr><td style='padding:8px 5px; text-align:right; font-weight:bold; color:{c_red};'>{lbl_summary_remaining_weight} :</td><td style='padding:8px 5px; text-align:right; font-weight:bold; background-color:#fdf5f5; border:1px solid #eee; color:{c_red};'>{remainder_weight:.3f} g</td></tr>"
 

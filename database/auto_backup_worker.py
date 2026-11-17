@@ -11,8 +11,11 @@ class AutoBackupWorker(QThread):
     مؤقت يعمل في الخلفية (Background Thread) للتحقق من إعدادات الحفظ التلقائي
     وتنفيذ النسخ الاحتياطي دون تجميد واجهة المستخدم.
     """
-    def __init__(self, data_manager, config_file="config.json", parent=None):
+    def __init__(self, data_manager, config_file=None, parent=None):
         super().__init__(parent)
+        if config_file is None:
+            from config import get_config_path
+            config_file = str(get_config_path())
         self.data_manager = data_manager
         self.config_file = config_file
         self.running = True
@@ -20,12 +23,15 @@ class AutoBackupWorker(QThread):
     def run(self):
         while self.running:
             try:
-                if not os.path.exists(self.config_file):
-                    self._sleep_check(60)
-                    continue
-
-                with open(self.config_file, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
+                from config import get_config_path, load_full_config
+                if os.path.abspath(self.config_file) == os.path.abspath(str(get_config_path())):
+                    config = load_full_config()
+                else:
+                    if not os.path.exists(self.config_file):
+                        self._sleep_check(60)
+                        continue
+                    with open(self.config_file, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
 
                 is_enabled = config.get("auto_backup_enabled", False)
                 interval_mins = config.get("auto_backup_interval", 60)

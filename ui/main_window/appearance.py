@@ -45,13 +45,12 @@ class MainWindowAppearanceMixin:
     """Zoom, stylesheet, and sidebar composition behavior."""
 
     def load_saved_zoom(self):
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, "r", encoding="utf-8") as handle:
-                    config = json.load(handle)
-                    self.zoom_scale = float(config.get("zoom_level", 100)) / 100.0
-            except Exception:
-                self.zoom_scale = 1.0
+        try:
+            from config import load_full_config
+            config = load_full_config()
+            self.zoom_scale = float(config.get("zoom_level", 100)) / 100.0
+        except Exception:
+            self.zoom_scale = 1.0
 
     def get_ui_customization_config(self):
         mtime = self._config_mtime()
@@ -59,12 +58,16 @@ class MainWindowAppearanceMixin:
             return self._ui_customization_cache
 
         config = {}
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, "r", encoding="utf-8") as handle:
-                    config = json.load(handle)
-            except Exception:
-                config = {}
+        try:
+            from config import load_full_config
+            config = load_full_config()
+        except Exception:
+            if os.path.exists(self.config_file):
+                try:
+                    with open(self.config_file, "r", encoding="utf-8") as handle:
+                        config = json.load(handle)
+                except Exception:
+                    config = {}
         self._ui_customization_cache = ensure_ui_customization(config)
         self._ui_customization_cache_mtime = mtime
         return self._ui_customization_cache
@@ -138,18 +141,10 @@ class MainWindowAppearanceMixin:
         self.refresh_ui_scaling()
 
     def save_zoom_setting(self):
-        current_config = {}
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, "r", encoding="utf-8") as handle:
-                    current_config = json.load(handle)
-            except Exception:
-                pass
-
-        current_config["zoom_level"] = int(self.zoom_scale * 100)
+        zoom_pct = int(self.zoom_scale * 100)
         try:
-            from config import save_full_config
-            save_full_config(current_config)
+            from config import update_config_values
+            update_config_values(lambda cfg: {**cfg, "zoom_level": zoom_pct})
         except Exception as exc:
             logging.error("Erreur sauvegarde zoom: %s", exc)
 

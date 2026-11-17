@@ -638,11 +638,24 @@ class NewVersementDialog(QDialog):
 
         reste_g = max(0.0, total_weight - poids_deduit)
         montant_reste = reste_g * effective_ppg
+        surplus_da = max(0.0, acompte_da - net) if net > 0 else 0.0
         
         self.lbl_summary_brut.setText(f"{total_brut:,.2f} DA  (Poids: {total_weight:,.2f} g)")
         self.lbl_summary_remise.setText(f"- {remise:,.2f} DA ({remise_pct:.1f}%)" if remise > 0 else "0.00 DA")
-        self.lbl_summary_paye.setText(f"{acompte_da:,.2f} DA  (Poids déduit: {poids_deduit:,.3f} g)")
-        self.lbl_summary_reste.setText(f"{reste_g:,.3f} g  (≈ {montant_reste:,.0f} DA)")
+        if surplus_da > 0.01:
+            self.lbl_summary_paye.setText(
+                f"{acompte_da:,.2f} DA  (Produit: {net:,.0f} DA | Surplus: +{surplus_da:,.0f} DA)"
+            )
+            self.lbl_summary_reste.setStyleSheet("font-size: 15px; font-weight: bold; color: #27ae60;")
+            self.lbl_summary_reste.setText(f"0.000 g (Soldé) | Crédit Client: +{surplus_da:,.2f} DA")
+        else:
+            self.lbl_summary_paye.setText(f"{acompte_da:,.2f} DA  (Poids déduit: {poids_deduit:,.3f} g)")
+            self.lbl_summary_reste.setStyleSheet(
+                "font-size: 16px; font-weight: bold; color: #27ae60;"
+                if reste_g <= 0.0005 and acompte_da > 0
+                else "font-size: 16px; font-weight: bold; color: #c0392b;"
+            )
+            self.lbl_summary_reste.setText(f"{reste_g:,.3f} g  (≈ {montant_reste:,.0f} DA)")
 
     # ========================================================
     # الحسابات الخاصة بطرق الدفع

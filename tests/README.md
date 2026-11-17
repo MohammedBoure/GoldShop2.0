@@ -13,6 +13,7 @@
 * `test_versement_custom_notes.py`: اختبارات الملاحظات المخصصة لعمليات العربون.
 * `test_versement_idempotency_and_weight.py`: اختبارات موثوقية دفعات وأوزان العربون.
 * `test_versement_pricing.py`: اختبارات تسعير وتخفيضات دفعات العربون.
+* `test_versement_and_settings_fixes.py`: اختبارات منع تضخم أسعار القطع في فواتير العربون، حساب الفائض/الرصيد الدائن عند الدفع الزائد (`Surplus / Crédit Client`)، وحفظ واستعادة `config.json` ومعاينة ترويسة المتجر.
 * `test_versement_quantity_manager.py`: اختبارات حجز وإدارة كميات قطع العربون.
 * `test_versement_quantity_ui.py`: اختبارات واجهة المستخدم لإدارة كميات العربون.
 * `test_versement_reservation.py`: اختبارات حجز المخزون لملفات العربون.

@@ -650,17 +650,35 @@ class SalesManager:
 
                 payments = [payment for payment in payments if paid_on_or_before_delivery(payment)]
 
+        cursor.execute("""
+            SELECT vi.inventory_id,
+                   COALESCE(i.weight, 0) AS inventory_weight,
+                   COALESCE(i.quantity, 0) AS inventory_quantity,
+                   COALESCE(i.selling_price, 0) AS selling_price,
+                   COALESCE(vi.reserved_quantity, 1) AS reserved_quantity,
+                   COALESCE(i.item_type, 'WEIGHT') AS item_type
+            FROM Versement_Items vi
+            LEFT JOIN Inventory i ON i.id = vi.inventory_id
+            WHERE vi.versement_id = %s AND vi.item_status != 'ANNULE'
+        """, (versement_id,))
+        source_items = cursor.fetchall()
+        items_brut_total = sum(
+            float(it.get("selling_price") or 0.0)
+            * (max(1, int(it.get("reserved_quantity") or 1)) if str(it.get("item_type") or "WEIGHT").upper() == "PIECE" else 1)
+            for it in source_items
+        )
+        if items_brut_total <= 0:
+            items_brut_total = sum(float(it.get("total_price_da") or 0.0) for it in (sale.get("items") or []))
+
         sale["source_versement_id"] = versement_id
-        summary = build_versement_payment_summary(payments)
+        summary = build_versement_payment_summary(payments, items_brut_total=items_brut_total)
         sale["versement_payment_summary"] = summary
         sale["payments_history"] = summary.get("payment_history", [])
 
         versement_remise = float(summary.get("total_remise_da") or 0.0)
         current_discount = float(sale.get("discount_da") or 0.0)
-        final_discount = max(current_discount, versement_remise)
-        sale["discount_da"] = final_discount
-
         if is_final_versement_invoice:
+            sale["discount_da"] = versement_remise
             sale["total_amount_da"] = summary["total_brut_da"]
             sale["net_to_pay_da"] = summary["net_to_pay_da"]
             sale["cash_paid_da"] = summary["cash_paid_da"]
@@ -668,21 +686,14 @@ class SalesManager:
             sale["old_gold_weight_g"] = summary["old_gold_weight_g"]
             sale["impos_weight_g"] = summary["deducted_weight_g"]
         else:
+            final_discount = max(current_discount, versement_remise)
+            sale["discount_da"] = final_discount
             if final_discount > 0:
                 cur_net = float(sale.get("net_to_pay_da") or sale.get("total_amount_da") or 0.0)
                 cur_brut = float(sale.get("total_amount_da") or 0.0)
                 if cur_brut <= cur_net:
                     sale["total_amount_da"] = cur_net + final_discount
 
-        cursor.execute("""
-            SELECT vi.inventory_id,
-                   COALESCE(i.weight, 0) AS inventory_weight,
-                   COALESCE(i.quantity, 0) AS inventory_quantity
-            FROM Versement_Items vi
-            LEFT JOIN Inventory i ON i.id = vi.inventory_id
-            WHERE vi.versement_id = %s AND vi.item_status != 'ANNULE'
-        """, (versement_id,))
-        source_items = cursor.fetchall()
         revenue_by_inventory = versement_revenues_by_inventory(source_items, payments)
         for item in sale.get("items") or []:
             item["paid_amount_da"] = number(revenue_by_inventory.get(item.get("inventory_id")))

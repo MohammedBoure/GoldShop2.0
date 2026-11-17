@@ -263,11 +263,16 @@ def generate_barcode_image(data, width, height, with_text=False):
 
 def get_thermal_config():
     tc = {}
-    if os.path.exists("config.json"):
-        try:
-            with open("config.json", 'r', encoding='utf-8') as f:
-                tc = json.load(f).get("thermal_config", {})
-        except: pass
+    try:
+        from config import load_full_config
+        tc = load_full_config().get("thermal_config", {})
+    except Exception:
+        if os.path.exists("config.json"):
+            try:
+                with open("config.json", 'r', encoding='utf-8') as f:
+                    tc = json.load(f).get("thermal_config", {})
+            except Exception:
+                pass
     if not isinstance(tc, dict):
         return {}
 

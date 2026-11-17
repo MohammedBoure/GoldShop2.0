@@ -227,3 +227,87 @@ def calculate_versement_item_balances(
 
     return result
 
+
+def calculate_versement_financial_summary(
+    items: Iterable[dict[str, Any]],
+    payments: Iterable[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compute dossier-level totals, net due, customer surplus/credit, and per-payment allocation."""
+    active_items = [row for row in (items or []) if row.get("item_status") != "ANNULE"]
+    total_weight_g = 0.0
+    total_estimated_price_da = 0.0
+    for item in active_items:
+        item_type = str(item.get("item_type") or "WEIGHT").upper()
+        qty = max(1, int(item.get("reserved_quantity") or 1)) if item_type == "PIECE" else 1
+        w = number(item.get("display_weight"))
+        if w <= 0:
+            w = number(item.get("weight")) * (qty if item_type == "PIECE" else 1)
+        p = number(item.get("display_price"))
+        if p <= 0:
+            p = number(item.get("selling_price")) * (qty if item_type == "PIECE" else 1)
+        total_weight_g += max(0.0, w)
+        total_estimated_price_da += max(0.0, p)
+
+    payment_list = list(payments or [])
+    total_paid_da = sum(payment_value_da(p) for p in payment_list)
+    raw_remise_da = sum(number(p.get("remise_da")) for p in payment_list)
+
+    if total_estimated_price_da > 0:
+        if raw_remise_da > 0 and total_paid_da <= total_estimated_price_da:
+            effective_remise_da = min(raw_remise_da, max(0.0, total_estimated_price_da - total_paid_da))
+        else:
+            effective_remise_da = 0.0
+        net_due_da = max(0.0, total_estimated_price_da - effective_remise_da)
+        allocated_paid_da = min(max(0.0, total_paid_da), net_due_da)
+        remaining_due_da = max(0.0, net_due_da - max(0.0, total_paid_da))
+        surplus_da = max(0.0, total_paid_da - net_due_da)
+    else:
+        effective_remise_da = raw_remise_da
+        net_due_da = max(0.0, total_paid_da)
+        allocated_paid_da = max(0.0, total_paid_da)
+        remaining_due_da = 0.0
+        surplus_da = 0.0
+
+    per_payment: list[dict[str, Any]] = []
+    remaining_net = net_due_da
+    cum_surplus = 0.0
+    for p in payment_list:
+        val = payment_value_da(p)
+        if total_estimated_price_da > 0:
+            if val >= 0:
+                alloc = min(val, remaining_net)
+                surp = max(0.0, val - alloc)
+                remaining_net = max(0.0, remaining_net - alloc)
+                cum_surplus += surp
+            else:
+                refund = abs(val)
+                from_surplus = min(refund, cum_surplus)
+                from_alloc = refund - from_surplus
+                cum_surplus -= from_surplus
+                remaining_net += from_alloc
+                alloc = -from_alloc
+                surp = -from_surplus
+        else:
+            alloc = val
+            surp = 0.0
+        per_payment.append({
+            "payment_id": p.get("id"),
+            "value_da": val,
+            "allocated_da": alloc,
+            "surplus_da": surp,
+        })
+
+    return {
+        "total_weight_g": total_weight_g,
+        "total_estimated_price_da": total_estimated_price_da,
+        "total_paid_da": total_paid_da,
+        "raw_remise_da": raw_remise_da,
+        "effective_remise_da": effective_remise_da,
+        "net_due_da": net_due_da,
+        "allocated_paid_da": allocated_paid_da,
+        "remaining_due_da": remaining_due_da,
+        "surplus_da": surplus_da,
+        "per_payment": per_payment,
+    }
+
+

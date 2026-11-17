@@ -113,7 +113,8 @@ class MainWindow(
         self.user_permissions_set = set(self.user_permissions)
         self._skip_exit_confirmation = False
 
-        self.config_file = "config.json"
+        from config import get_config_path
+        self.config_file = str(get_config_path())
         self._ui_customization_cache = None
         self._ui_customization_cache_mtime = None
 

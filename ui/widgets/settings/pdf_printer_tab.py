@@ -14,6 +14,7 @@ from PySide6.QtGui import QPixmap, QPainter, QTextDocument, QColor, QImage
 from PySide6.QtPrintSupport import QPrinterInfo
 
 from ui.tools.invoice_generator import PdfHelper
+from html import escape
 
 # ==========================================
 # 1. LOGO SETTINGS DIALOG
@@ -817,6 +818,21 @@ class PdfPrinterTab(QWidget):
         
         bc_w = display.get("item_barcode_w", 70)
         bc_h = display.get("item_barcode_h", 20)
+
+        shop_name = escape(str(self.config.get("shop_name") or "BIJOUTERIE GOLDSHOP"))
+        shop_address = escape(str(self.config.get("shop_address") or "Adresse du Magasin"))
+        shop_phone = escape(str(self.config.get("shop_phone") or ""))
+        shop_rc = escape(str(self.config.get("shop_rc") or ""))
+        shop_nif = escape(str(self.config.get("shop_nif") or ""))
+        rc_nif_parts = []
+        if shop_rc:
+            rc_nif_parts.append(f"RC: {shop_rc}")
+        if shop_nif:
+            rc_nif_parts.append(f"NIF: {shop_nif}")
+        rc_nif_line = " | ".join(rc_nif_parts) if cfg['display']['show_rc_nif'] else ""
+        phone_line = f"<br>Tél: {shop_phone}" if shop_phone else ""
+        rc_nif_html = f"<br>{rc_nif_line}" if rc_nif_line else ""
+        shop_details_html = f"{shop_address}{phone_line}{rc_nif_html}"
         
         is_paid = "Facture" in self.cmb_preview_type.currentText()
         title = (
@@ -951,8 +967,8 @@ class PdfPrinterTab(QWidget):
                     <tr>
                         {cell_logo_l}
                         <td style="border:none; padding:0; vertical-align:top;">
-                            <div style="margin:0; font-weight:bold; font-size:{f_shop}px; color:{c_header_txt};">BIJOUTERIE GOLDSHOP</div>
-                            <div style="margin-top:5px; font-size:{f_norm}px;">Adresse du Magasin<br>{'RC: 1234567 | NIF: 987654321' if cfg['display']['show_rc_nif'] else ''}</div>
+                            <div style="margin:0; font-weight:bold; font-size:{f_shop}px; color:{c_header_txt};">{shop_name}</div>
+                            <div style="margin-top:5px; font-size:{f_norm}px;">{shop_details_html}</div>
                             {qr_html}
                         </td>
                         {cell_logo_r}
@@ -999,8 +1015,8 @@ class PdfPrinterTab(QWidget):
                     <tr>
                         {cell_logo_l}
                         <td style="border:none; padding:0; vertical-align:top;">
-                            <div style="margin:0; font-weight:bold; font-size:{f_shop}px; color:{c_header_txt};">BIJOUTERIE GOLDSHOP</div>
-                            <div style="margin-top:5px; font-size:{f_norm}px;">Adresse du Magasin<br>{'RC: 1234567 | NIF: 987654321' if cfg['display']['show_rc_nif'] else ''}</div>
+                            <div style="margin:0; font-weight:bold; font-size:{f_shop}px; color:{c_header_txt};">{shop_name}</div>
+                            <div style="margin-top:5px; font-size:{f_norm}px;">{shop_details_html}</div>
                             {qr_html}
                         </td>
                         {cell_logo_r}

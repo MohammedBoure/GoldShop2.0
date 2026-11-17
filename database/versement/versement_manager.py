@@ -281,7 +281,12 @@ class VersementManager:
                 WHERE p.versement_id = %s
                 ORDER BY p.payment_date ASC, p.id ASC
             """, (versement_id,))
-            payment_summary = build_versement_payment_summary(cursor.fetchall())
+            items_brut_total = sum(
+                float(it.get("selling_price") or 0.0)
+                * (max(1, int(it.get("reserved_quantity") or 1)) if str(it.get("item_type") or "WEIGHT").upper() == "PIECE" else 1)
+                for it in items_to_retire
+            )
+            payment_summary = build_versement_payment_summary(cursor.fetchall(), items_brut_total=items_brut_total)
             cursor.execute("UPDATE Versements SET status = 'CLOTURE' WHERE id = %s", (versement_id,))
             cursor.execute(
                 "UPDATE Versement_Items SET item_status = 'RETIRE' "
@@ -691,10 +696,17 @@ class VersementManager:
                         SELECT p.*, vi.designation as item_designation 
                         FROM Versement_Payments p
                         LEFT JOIN Versement_Items vi ON p.versement_item_id = vi.id
-                        WHERE p.versement_id = %s ORDER BY p.payment_date ASC
+                        WHERE p.versement_id = %s ORDER BY p.payment_date ASC, p.id ASC
                     """, (v_id,))
                     payments = cursor.fetchall()
                     v['payments'] = payments
+
+                    from .versement_pricing import calculate_versement_financial_summary
+                    financials = calculate_versement_financial_summary(items, payments)
+                    for p, alloc_info in zip(payments, financials.get("per_payment", [])):
+                        p["value_da"] = alloc_info["value_da"]
+                        p["allocated_da"] = alloc_info["allocated_da"]
+                        p["surplus_da"] = alloc_info["surplus_da"]
                     
                     total_paid_money = 0.0
                     total_deducted_weight = 0.0
@@ -716,7 +728,7 @@ class VersementManager:
                         oc_ag = float(p.get('argent_casse_g') or 0)
                         p_deduit = float(p['poids_deduit_g'] or 0)
                         
-                        total_paid_money += money_da + money_tpe
+                        total_paid_money += float(p.get('value_da') if p.get('value_da') is not None else (money_da + money_tpe))
                         total_tpe += money_tpe
                         total_deducted_weight += p_deduit
                         total_remise += remise
@@ -729,7 +741,12 @@ class VersementManager:
                     v['total_paid_money_da'] = total_paid_money
                     v['total_tpe_da'] = total_tpe
                     v['total_paid_weight_g'] = total_deducted_weight
-                    v['total_remise_da'] = total_remise
+                    v['total_remise_da'] = financials['effective_remise_da']
+                    v['raw_remise_da'] = total_remise
+                    v['net_due_da'] = financials['net_due_da']
+                    v['allocated_paid_da'] = financials['allocated_paid_da']
+                    v['surplus_da'] = financials['surplus_da']
+                    v['reste_montant_da'] = financials['remaining_due_da']
                     v['total_dollar'] = total_dollar
                     v['total_or_casse_g'] = total_or_casse_g
                     v['total_argent_casse_g'] = total_argent_casse_g

@@ -70,10 +70,10 @@ class LabelPrinterSettingsTab(QWidget):
 
     def _element_defaults(self):
         return {
-            "product_name": {"show": True, "center_x_mm": 20, "y_pos_mm": 3, "font_size": 12, "font_family": "arial.ttf"},
+            "product_name": {"show": True, "center_x_mm": 20, "y_pos_mm": 3.5, "font_size": 12, "font_family": "arial.ttf"},
             "category": {"show": True, "center_x_mm": 10, "y_pos_mm": 9, "font_size": 10, "font_family": "arial.ttf"},
             "price": {"show": True, "center_x_mm": 20, "y_pos_mm": 8, "font_size": 14, "font_family": "arial.ttf"},
-            "static_text": {"show": True, "text": "Moussi", "center_x_mm": 20, "y_pos_mm": 1, "font_size": 10, "font_family": "arial.ttf"},
+            "static_text": {"show": True, "text": "Mon Magasin", "center_x_mm": 20, "y_pos_mm": 0.5, "font_size": 8, "font_family": "arial.ttf"},
             "model_name": {"show": True, "center_x_mm": 10, "y_pos_mm": 12, "font_size": 10, "font_family": "arial.ttf"},
             "metal_type": {"show": True, "center_x_mm": 30, "y_pos_mm": 12, "font_size": 10, "font_family": "arial.ttf"},
             "barcode": {"show": True, "center_x_mm": 20, "y_pos_mm": 16, "module_width_mm": 0.2, "height_mm": 6},
@@ -264,7 +264,7 @@ class LabelPrinterSettingsTab(QWidget):
 
         # تعريف كل عنصر لضمان وجود الـ Attributes المطلوبة في دالة الرسم
         self.chk_static_show, self.static_cx, self.static_y, self.static_font, self.static_font_family = make_row("static_text", "En-tête (Magasin)")
-        self.static_text_input = QLineEdit(self.cfg["elements"]["static_text"].get("text", "Moussi"))
+        self.static_text_input = QLineEdit(self.cfg["elements"]["static_text"].get("text", "Mon Magasin"))
         v_el.insertWidget(v_el.count()-1, self.static_text_input)
 
         self.chk_name_show, self.name_cx, self.name_y, self.name_font, self.name_font_family = make_row("product_name", "Produit")
