@@ -9,8 +9,19 @@ import app
 class TestWebApiEndpoints(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        from werkzeug.security import generate_password_hash
+
         cls.client = app.flask_app.test_client()
         cls.auth_headers = {"X-GoldShop-Password": "test-password"}
+        cls._web_access_patcher = patch(
+            "web.security._load_web_access",
+            return_value={"password_hash": generate_password_hash("test-password", method="pbkdf2:sha256:1000")},
+        )
+        cls._web_access_patcher.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._web_access_patcher.stop()
 
     def test_health_and_catalog(self):
         with patch("app.verify_web_password", return_value=True):

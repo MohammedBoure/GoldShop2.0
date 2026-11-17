@@ -1553,12 +1553,16 @@ class ExcelJournalView(QWidget):
     def _read_config_json():
         """قراءة config.json بأمان"""
         try:
-            import json
-            if os.path.exists("config.json"):
-                with open("config.json", "r", encoding="utf-8") as f:
-                    return json.load(f)
+            from config import load_full_config
+            return load_full_config()
         except Exception:
-            pass
+            try:
+                import json
+                if os.path.exists("config.json"):
+                    with open("config.json", "r", encoding="utf-8") as f:
+                        return json.load(f)
+            except Exception:
+                pass
         return {}
 
     @classmethod
@@ -2205,23 +2209,58 @@ class ExcelJournalView(QWidget):
         from ui.tools.invoice_generator import _clean_facture_number
         clean_fac_num = _clean_facture_number(sale.get('receipt_number', ''), sale_id=sale_id)
         v_summary = sale.get('versement_payment_summary') or {}
+        is_versement_sale = (
+            bool(v_summary)
+            or str(sale_id).startswith("VRS_")
+            or str(sale.get('receipt_number', '')).upper().startswith("VRS-")
+        )
         v_remise = float(v_summary.get('total_remise_da', 0))
-        t_disc = max(float(sale.get('discount_da', 0)), v_remise)
+        t_disc = v_remise if (is_versement_sale and v_summary) else max(float(sale.get('discount_da', 0)), v_remise)
         t_brut = float(sale.get('total_amount_da', 0))
         t_net = float(sale.get('net_to_pay_da', 0))
-        # ضبط Total Brut و Net في حال وجود تخفيض
-        if t_disc > 0 and t_brut <= t_net:
-            t_brut = t_net + t_disc
-        elif t_brut <= 0 and thermal_items:
-            t_brut = sum(float(it['cart_line_total']) for it in thermal_items)
-            if t_disc > 0 and t_net <= 0:
-                t_net = max(0.0, t_brut - t_disc)
-        elif t_net <= 0 and t_brut > 0:
-            t_net = max(0.0, t_brut - t_disc)
 
-        if t_disc > 0 and t_brut > 0 and len(thermal_items) == 1:
-            thermal_items[0]['cart_line_total'] = t_brut
-            thermal_items[0]['amount'] = t_brut
+        thermal_items = []
+        total_weight = 0.0
+        for it in sale.get('items', []):
+            item_type = str(it.get('item_type') or 'WEIGHT').upper()
+            sold_w = float(it.get('sold_weight_g') or 0.0)
+            sold_q = int(it.get('sold_quantity') or 1)
+            unit_p = float(it.get('unit_price_da') or 0.0)
+            line_total = float(it.get('total_price_da') or (unit_p * (sold_w or sold_q)) or 0.0)
+            if item_type == 'WEIGHT':
+                total_weight += sold_w
+            mapped = dict(it)
+            mapped['name'] = it.get('name', '')
+            mapped['item_type'] = item_type
+            mapped['cart_sold_weight'] = sold_w
+            mapped['cart_sold_qty'] = sold_q
+            mapped['cart_line_total'] = line_total
+            mapped['amount'] = line_total
+            mapped['custom_note'] = str(it.get('custom_note') or '')
+            thermal_items.append(mapped)
+
+        items_sum = sum(float(it['cart_line_total']) for it in thermal_items) if thermal_items else 0.0
+        if is_versement_sale and items_sum > 0.01:
+            if t_net > 0 and items_sum >= t_net - 0.01:
+                t_brut = items_sum
+                if t_disc > 0:
+                    t_disc = max(0.0, items_sum - t_net)
+            elif t_brut <= t_net and t_disc > 0:
+                t_brut = t_net + t_disc
+        else:
+            # ضبط Total Brut و Net في حال وجود تخفيض
+            if t_disc > 0 and t_brut <= t_net:
+                t_brut = t_net + t_disc
+            elif t_brut <= 0 and thermal_items:
+                t_brut = items_sum
+                if t_disc > 0 and t_net <= 0:
+                    t_net = max(0.0, t_brut - t_disc)
+            elif t_net <= 0 and t_brut > 0:
+                t_net = max(0.0, t_brut - t_disc)
+
+            if t_disc > 0 and t_brut > 0 and len(thermal_items) == 1:
+                thermal_items[0]['cart_line_total'] = t_brut
+                thermal_items[0]['amount'] = t_brut
 
         total_paid = float(v_summary.get('total_paid_da', 0)) if v_summary else (float(sale.get('cash_paid_da', 0)) + float(sale.get('tpe_paid_da', 0)))
 

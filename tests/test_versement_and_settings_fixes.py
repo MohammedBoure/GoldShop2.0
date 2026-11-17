@@ -21,6 +21,7 @@ from database.versement import (
 from ui.main_window.appearance import MainWindowAppearanceMixin
 from ui.main_window.background import MainWindowBackgroundMixin
 from ui.tools.invoice_generator import ReceiptGenerator
+from ui.tools.print_functions import _thermal_versement_item_rows, _thermal_versement_summary_lines
 from ui.widgets.reports.excel_journal_view import ExcelJournalView
 from ui.widgets.settings.pdf_printer_tab import PdfPrinterTab
 from ui.widgets.versements.versements_view import VersementsView
@@ -266,6 +267,87 @@ class VersementAndSettingsFixesTests(unittest.TestCase):
             self.assertNotIn("1234567", preview_html)
             self.assertNotIn("987654321", preview_html)
             tab.close()
+
+    def test_print_invoice_thermal_builds_items_and_avoids_versement_inflation(self):
+        sale_payload = {
+            "id": 68,
+            "receipt_number": "VRS-00068",
+            "client_name": "haddad ahmed nadji",
+            "total_amount_da": 506470.95,
+            "discount_da": 152720.95,
+            "net_to_pay_da": 353750.0,
+            "cash_paid_da": 353750.0,
+            "tpe_paid_da": 0.0,
+            "old_gold_weight_g": 0.0,
+            "created_at": "2026-11-10 10:00:00",
+            "items": [
+                {"name": "Gourmette", "item_type": "WEIGHT", "sold_weight_g": 2.26, "sold_quantity": 1, "unit_price_da": 85880.0, "total_price_da": 85880.0},
+                {"name": "Bague", "item_type": "WEIGHT", "sold_weight_g": 0.87, "sold_quantity": 1, "unit_price_da": 33060.0, "total_price_da": 33060.0},
+            ],
+            "versement_payment_summary": {
+                "total_paid_da": 353750.0,
+                "total_remise_da": 51710.0,
+                "total_brut_da": 405460.0,
+                "net_to_pay_da": 353750.0,
+            },
+            "payments_history": [],
+        }
+        view = SimpleNamespace(
+            _get_sale_or_versement_details=Mock(return_value=sale_payload),
+            _get_thermal_printer_name=Mock(return_value="XP-80C"),
+        )
+        with patch("ui.tools.print_functions.print_thermal_facture") as mock_thermal, patch(
+            "ui.widgets.reports.excel_journal_view.QMessageBox.information"
+        ):
+            ExcelJournalView.print_invoice_thermal(view, "VRS_68")
+        self.assertTrue(mock_thermal.called)
+        payload = mock_thermal.call_args[0][0]
+        self.assertEqual(len(payload["items"]), 2)
+        self.assertAlmostEqual(payload["total_weight"], 3.13)
+        self.assertAlmostEqual(payload["net"], 353750.0)
+
+    def test_thermal_versement_piece_and_surplus_summary(self):
+        rows = _thermal_versement_item_rows({
+            "items": [{"barcode": "P-1", "item_name": "Bracelet", "item_type": "PIECE", "remaining_weight": 0.0, "remaining_quantity": 2, "custom_note": ""}]
+        })
+        self.assertEqual(rows[0][2], "2 Pcs")
+
+        lines = _thermal_versement_summary_lines({
+            "total_estimated_price_da": 35000.0,
+            "total_paid": 85000.0,
+            "exact_paid_weight": 1.11,
+            "remaining_weight": 0.0,
+            "surplus_da": 50000.0,
+        }, "DA")
+        labels = dict(lines)
+        self.assertEqual(labels["Montant du :"], "35,000.00 DA")
+        self.assertEqual(labels["Surplus / Credit :"], "+50,000.00 DA")
+
+    def test_user_manager_pbkdf2_and_legacy_sha256_migration(self):
+        import hashlib
+        from database.user_manager import UserManager
+
+        legacy_hash = hashlib.sha256(b"secret123").hexdigest()
+        cursor = Mock()
+        cursor.fetchone.return_value = {
+            "id": 5, "username": "cashier", "full_name": "Cashier",
+            "role": "User", "is_active": 1, "permissions": "[]", "password_hash": legacy_hash,
+        }
+        conn = Mock()
+        conn.cursor.return_value = cursor
+        conn_ctx = Mock()
+        conn_ctx.__enter__ = Mock(return_value=conn)
+        conn_ctx.__exit__ = Mock(return_value=False)
+        db = SimpleNamespace(get_db_connection=Mock(return_value=conn_ctx))
+
+        um = UserManager(db)
+        new_hash = um._hash_password("secret123")
+        self.assertTrue(new_hash.startswith("pbkdf2:sha256:"))
+
+        user = um.authenticate("cashier", "secret123")
+        self.assertIsNotNone(user)
+        self.assertNotIn("password_hash", user)
+        self.assertTrue(any("UPDATE Users SET password_hash" in str(call.args[0]) for call in cursor.execute.call_args_list))
 
 
 if __name__ == "__main__":

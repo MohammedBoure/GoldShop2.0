@@ -1,5 +1,6 @@
 # ui/dialogs/price_update.py
 
+import logging
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QComboBox,
     QDoubleSpinBox, QLabel, QFrame, QGroupBox, QRadioButton,
@@ -371,7 +372,8 @@ class PriceUpdateDialog(QDialog):
         try:
             cats = self.manager.categories.get_all_categories()
             for c in cats: self.combo_cats.addItem(c['name'], c['id'])
-        except: pass
+        except Exception as exc:
+            logging.warning(f"Failed to load categories in PriceUpdateDialog: {exc}")
 
         try:
             self.metals = self.manager.metal_types.get_all_metal_types()

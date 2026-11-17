@@ -355,7 +355,19 @@ def _thermal_versement_summary_lines(data, currency):
         paid_weight = sum(_thermal_payment_weight(payment) for payment in payments)
 
     lines = []
+    article_total = _thermal_safe_float(_thermal_first_value(data, "total_estimated_price_da", "total_amount", default=0))
+    net_due = _thermal_safe_float(data.get("net_due_da")) if data.get("net_due_da") is not None else article_total
+    surplus_da = _thermal_safe_float(data.get("surplus_da"))
+    if surplus_da <= 0 and article_total > 0 and total_paid > net_due + 0.01:
+        surplus_da = total_paid - net_due
+
+    if article_total > 0 and surplus_da > 0.01:
+        lines.append(("Montant du :", f"{article_total:,.2f} {currency}"))
     lines.append(("Total paye :", f"{total_paid:,.2f} {currency}"))
+    if surplus_da > 0.01:
+        allocated_da = _thermal_safe_float(data.get("allocated_paid_da")) or min(total_paid, net_due)
+        lines.append(("Affecte produit :", f"{allocated_da:,.2f} {currency}"))
+        lines.append(("Surplus / Credit :", f"+{surplus_da:,.2f} {currency}"))
 
     if paid_weight > 0 or _thermal_has_value(data, "exact_paid_weight", "paid_weight", "paid_weight_equiv"):
         lines.append(("Poids acquis :", f"{paid_weight:.2f} Gr"))
@@ -466,11 +478,17 @@ def _thermal_versement_item_rows(data):
             _thermal_first_value(item, "item_name", "name", "description", default="Article")
             or "Article"
         ).strip()
+        item_type = str(item.get("item_type") or "WEIGHT").upper()
         remaining_weight = _thermal_safe_float(
             _thermal_first_value(item, "remaining_weight", "weight", "total_weight", default=0)
         )
+        if item_type == "PIECE" and remaining_weight <= 0:
+            qty = int(_thermal_first_value(item, "remaining_quantity", "reserved_quantity", default=1) or 1)
+            reste_label = f"{qty} Pcs"
+        else:
+            reste_label = f"{remaining_weight:.2f} Gr"
         custom_note = str(_thermal_first_value(item, "custom_note", "note", default="") or "").strip()
-        rows.append([code, name, f"{remaining_weight:.2f} Gr", custom_note])
+        rows.append([code, name, reste_label, custom_note])
     return rows
 
 

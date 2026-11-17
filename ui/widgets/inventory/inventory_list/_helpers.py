@@ -151,12 +151,19 @@ def load_label_config(parent_widget=None) -> dict | None:
     تقرأ إعدادات الطباعة من config.json.
     تُعيد None وتعرض تحذيراً في حالة الخطأ.
     """
-    config_file = "config.json"
+    try:
+        from config import get_config_path
+        config_file = str(get_config_path())
+    except Exception:
+        config_file = "config.json"
     if not os.path.exists(config_file):
         if parent_widget:
             QMessageBox.warning(parent_widget, "Erreur", "Fichier de configuration introuvable.")
         return None
     try:
+        if config_file != "config.json":
+            from config import load_full_config
+            return load_full_config().get("label_config", {})
         with open(config_file, 'r', encoding='utf-8') as f:
             config = json.load(f)
         return config.get("label_config", {})

@@ -2,8 +2,12 @@
 
 import logging
 import hashlib
+import hmac
 import json
 from typing import List, Dict, Tuple, Optional
+
+from werkzeug.security import check_password_hash, generate_password_hash
+
 
 class UserManager:
     """
@@ -14,35 +18,68 @@ class UserManager:
         self.db = db_instance
 
     def _hash_password(self, password: str) -> str:
-        """تشفير كلمة المرور باستخدام SHA256"""
-        return hashlib.sha256(password.encode()).hexdigest()
+        """تشفير كلمة المرور باستخدام PBKDF2-SHA256 مع salt عشوائي."""
+        return generate_password_hash(str(password or ""), method="pbkdf2:sha256")
+
+    @staticmethod
+    def _legacy_sha256(password: str) -> str:
+        return hashlib.sha256(str(password or "").encode()).hexdigest()
+
+    def _verify_password_hash(self, stored_hash: str, password: str) -> tuple[bool, bool]:
+        """التحقق من كلمة المرور مع دعم الترقية التلقائية من SHA-256 القديم إلى PBKDF2.
+        Returns (is_valid, needs_rehash).
+        """
+        stored = str(stored_hash or "")
+        plain = str(password or "")
+        if not stored:
+            return False, False
+        if stored.startswith(("pbkdf2:", "scrypt:")):
+            return check_password_hash(stored, plain), False
+        return hmac.compare_digest(stored, self._legacy_sha256(plain)), True
 
     def authenticate(self, username, password) -> Optional[Dict]:
         """التحقق من صحة بيانات الدخول."""
         try:
-            password_hash = self._hash_password(password)
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
                 query = """
-                    SELECT id, username, full_name, role, is_active, permissions 
-                    FROM Users 
-                    WHERE username = %s AND password_hash = %s
+                    SELECT id, username, full_name, role, is_active, permissions, password_hash
+                    FROM Users
+                    WHERE username = %s
                 """
-                cursor.execute(query, (username, password_hash))
+                cursor.execute(query, (username,))
                 user = cursor.fetchone()
 
-                if user:
-                    if not user['is_active']:
-                        logging.warning(f"محاولة دخول لمستخدم معطل: {username}")
-                        return None
-                    logging.info(f"تسجيل دخول ناجح: {username}")
-                    
-                    if not user.get('permissions'):
-                        user['permissions'] = '[]'
-                    return user
-                else:
+                if not user:
                     logging.warning(f"فشل تسجيل الدخول: {username}")
                     return None
+
+                is_valid, needs_rehash = self._verify_password_hash(user.get("password_hash"), password)
+                if not is_valid:
+                    logging.warning(f"فشل تسجيل الدخول: {username}")
+                    return None
+
+                if not user['is_active']:
+                    logging.warning(f"محاولة دخول لمستخدم معطل: {username}")
+                    return None
+
+                if needs_rehash:
+                    try:
+                        upgraded_hash = self._hash_password(password)
+                        cursor.execute(
+                            "UPDATE Users SET password_hash = %s WHERE id = %s",
+                            (upgraded_hash, user["id"]),
+                        )
+                        conn.commit()
+                    except Exception as rehash_exc:
+                        logging.warning(f"Could not upgrade password hash for {username}: {rehash_exc}")
+
+                user.pop("password_hash", None)
+                logging.info(f"تسجيل دخول ناجح: {username}")
+
+                if not user.get('permissions'):
+                    user['permissions'] = '[]'
+                return user
         except Exception as e:
             logging.error(f"Error during authentication: {e}")
             return None
@@ -169,16 +206,29 @@ class UserManager:
     def verify_admin_password(self, password_text):
         """التحقق من كلمة مرور المسؤول (للعمليات الحساسة)"""
         try:
-            pwd_hash = self._hash_password(password_text)
             with self.db.get_db_connection() as conn:
-                cursor = conn.cursor()
+                cursor = conn.cursor(dictionary=True)
                 query = """
-                    SELECT id FROM Users 
-                    WHERE password_hash = %s AND role = 'Admin' AND is_active = 1
+                    SELECT id, password_hash FROM Users
+                    WHERE role = 'Admin' AND is_active = 1
                 """
-                cursor.execute(query, (pwd_hash,))
-                return cursor.fetchone() is not None
-        except Exception:
+                cursor.execute(query)
+                for row in cursor.fetchall():
+                    is_valid, needs_rehash = self._verify_password_hash(row.get("password_hash"), password_text)
+                    if is_valid:
+                        if needs_rehash:
+                            try:
+                                cursor.execute(
+                                    "UPDATE Users SET password_hash = %s WHERE id = %s",
+                                    (self._hash_password(password_text), row["id"]),
+                                )
+                                conn.commit()
+                            except Exception as rehash_exc:
+                                logging.warning(f"Could not upgrade admin password hash: {rehash_exc}")
+                        return True
+                return False
+        except Exception as exc:
+            logging.error(f"Error verifying admin password: {exc}")
             return False
     
     def get_user_by_username(self, username):

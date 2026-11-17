@@ -1,5 +1,6 @@
 # ui/widgets/inventory/Product_edit.py
 
+import logging
 import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
@@ -353,7 +354,8 @@ class ProductEditDialog(QDialog):
                 self.combo_metal.addItem(f"{m['name']} ({m['purity_value']})", m['id'])
             for l in self.manager.storage_locations.get_all_locations():
                 self.combo_location.addItem(l['name'], l['id'])
-        except: pass
+        except Exception as exc:
+            logging.warning(f"Failed to load combos in ProductEditDialog: {exc}")
 
     def populate_data(self):
         self.inp_barcode.setText(str(self.item_data.get('barcode') or ''))

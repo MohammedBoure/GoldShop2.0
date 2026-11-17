@@ -367,12 +367,9 @@ class SessionTableSection(QGroupBox):
         return container
 
     def _print(self, item: dict):
-        config_file = "config.json"
-        if not os.path.exists(config_file):
-            return
         try:
-            with open(config_file, "r", encoding="utf-8") as f:
-                config = json.load(f)
+            from config import load_full_config
+            config = load_full_config()
         except Exception:
             return
         lc = config.get("label_config", {})

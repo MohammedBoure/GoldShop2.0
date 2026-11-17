@@ -1,3 +1,4 @@
+import logging
 from PySide6.QtWidgets import QWidget, QMessageBox, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFormLayout, QApplication, QComboBox
 from PySide6.QtCore import Qt, QTimer
 import qtawesome as qta
@@ -412,13 +413,17 @@ class POSCheckoutDialog(QDialog):
         # تم إزالة التأخير (QTimer) والتركيز العنيف لمنع انهيار البرنامج
 
     def accept(self):
-        try: self.inp_cash.clearFocus()
-        except: pass
+        try:
+            self.inp_cash.clearFocus()
+        except Exception as exc:
+            logging.debug(f"Could not clear cash input focus on accept: {exc}")
         super().accept()
 
     def reject(self):
-        try: self.inp_cash.clearFocus()
-        except: pass
+        try:
+            self.inp_cash.clearFocus()
+        except Exception as exc:
+            logging.debug(f"Could not clear cash input focus on reject: {exc}")
         super().reject()
 
 
@@ -538,7 +543,7 @@ class POSInterfaceWidget(POSUIBuilder, POSClientManager, POSInventoryLoader, POS
                 remaining -= deduct
                 
                 if avail - deduct <= 0:
-                    self.manager.versements.cloture_versement(v['id'])
+                    self.manager.versements.cloture_versement(v['id'], journee_id=journee_id)
                     
         except Exception as e:
             print(f"Erreur deduction versement: {e}")

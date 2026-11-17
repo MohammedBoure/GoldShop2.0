@@ -500,11 +500,19 @@ class BackupManager:
                 from sqlalchemy import text
                 import pandas as pd
                 inspector = sqlalchemy.inspect(self._db.engine)
-                for table_name in inspector.get_table_names():
+                table_names = inspector.get_table_names()
+                failed_tables = []
+                exported_tables = 0
+                for table_name in table_names:
                     try:
                         df = pd.read_sql_query(text(f"SELECT * FROM `{table_name}`"), conn_sa)
                         df.to_csv(os.path.join(temp_csv_dir, f"{table_name}.csv"), index=False, encoding='utf-8')
-                    except: pass
+                        exported_tables += 1
+                    except Exception as table_exc:
+                        failed_tables.append(table_name)
+                        logging.warning(f"⚠️ Auto-backup skipped table {table_name}: {table_exc}")
+                if table_names and exported_tables == 0:
+                    raise RuntimeError(f"Export failed for all tables: {', '.join(failed_tables)}")
 
             # 3. ضغط وتشفير الملف الماستر
             if has_pyzipper and password:
@@ -538,8 +546,10 @@ class BackupManager:
                     if is_auto:
                         for file_name in os.listdir(dest_dir):
                             if file_name.endswith('.zip') and file_name.startswith('AutoBackup'):
-                                try: os.remove(os.path.join(dest_dir, file_name))
-                                except: pass
+                                try:
+                                    os.remove(os.path.join(dest_dir, file_name))
+                                except Exception as rm_exc:
+                                    logging.warning(f"⚠️ Impossible de supprimer l'ancienne sauvegarde {file_name}: {rm_exc}")
                                 
                     # النسخ النهائي
                     final_path = os.path.join(dest_dir, zip_filename)
