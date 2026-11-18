@@ -23,6 +23,13 @@ class MainWindowBackgroundMixin:
         self.auto_backup_thread = AutoBackupWorker(self.data_manager, **kwargs)
         self.auto_backup_thread.start()
 
+    def setup_auto_backup_timer(self):
+        thread = getattr(self, "auto_backup_thread", None)
+        if thread is None or not thread.isRunning():
+            self._start_auto_backup()
+        else:
+            thread.wake()
+
     def setup_duckdns_timer(self):
         from services.duckdns import normalize_duckdns_config
 

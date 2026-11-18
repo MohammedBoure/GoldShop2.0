@@ -17,6 +17,10 @@ import qtawesome as qta
 import sys 
 
 from config import get_config_path
+from database.base.backup_manager import (
+    DEFAULT_AUTO_BACKUP_MAX_COPIES,
+    normalize_max_backups,
+)
 from duckdns_updater import (
     default_duckdns_config,
     normalize_duckdns_config,
@@ -78,6 +82,7 @@ class SettingsTab(QWidget):
             # إعدادات الحفظ التلقائي 
             "auto_backup_enabled": False,
             "auto_backup_interval": 60.0,
+            "auto_backup_max_copies": DEFAULT_AUTO_BACKUP_MAX_COPIES,
             "auto_backup_password": "",
             "duckdns": default_duckdns_config(),
             
@@ -730,6 +735,17 @@ class SettingsTab(QWidget):
         self.spin_interval.setSuffix(" minutes")
         self.spin_interval.setValue(float(self.config.get("auto_backup_interval", 60.0)))
 
+        self.spin_max_copies = QSpinBox()
+        self.spin_max_copies.setRange(1, 1000)
+        self.spin_max_copies.setSuffix(" copie(s)")
+        self.spin_max_copies.setValue(
+            normalize_max_backups(
+                self.config.get("auto_backup_max_copies", DEFAULT_AUTO_BACKUP_MAX_COPIES),
+                default=DEFAULT_AUTO_BACKUP_MAX_COPIES,
+            )
+        )
+        apply_touch_input_defaults(self.spin_max_copies)
+
         self.inp_backup_password = QLineEdit(self.config.get("auto_backup_password", ""))
         self.inp_backup_password.setEchoMode(QLineEdit.Password) 
         apply_touch_input_defaults(self.inp_backup_password)
@@ -753,23 +769,26 @@ class SettingsTab(QWidget):
         self.inp_backup_password.setPlaceholderText("Optionnel: Mot de passe pour protéger le fichier ZIP")
 
         self.spin_interval.setEnabled(self.chk_auto_backup.isChecked())
+        self.spin_max_copies.setEnabled(self.chk_auto_backup.isChecked())
         self.inp_backup_password.setEnabled(self.chk_auto_backup.isChecked())
         self.btn_backup_toggle_password.setEnabled(self.chk_auto_backup.isChecked())
         self.btn_backup_password_keyboard.setEnabled(self.chk_auto_backup.isChecked())
         self.chk_auto_backup.toggled.connect(self.spin_interval.setEnabled)
+        self.chk_auto_backup.toggled.connect(self.spin_max_copies.setEnabled)
         self.chk_auto_backup.toggled.connect(self.inp_backup_password.setEnabled)
         self.chk_auto_backup.toggled.connect(self.btn_backup_toggle_password.setEnabled)
         self.chk_auto_backup.toggled.connect(self.btn_backup_password_keyboard.setEnabled)
 
         form_auto_backup.addRow(self.chk_auto_backup)
         form_auto_backup.addRow("Intervalle d'exécution:", self.spin_interval)
+        form_auto_backup.addRow("Nombre de copies à conserver:", self.spin_max_copies)
         backup_password_row = QHBoxLayout()
         backup_password_row.addWidget(self.inp_backup_password, 1)
         backup_password_row.addWidget(self.btn_backup_toggle_password)
         backup_password_row.addWidget(self.btn_backup_password_keyboard)
         form_auto_backup.addRow("Mot de passe ZIP:", backup_password_row)
         
-        lbl_info = QLabel("<i>* Le système conservera uniquement la dernière sauvegarde automatique pour économiser l'espace.</i>")
+        lbl_info = QLabel("<i>* Le système conservera les N dernières sauvegardes automatiques dans chaque dossier et supprimera les plus anciennes.</i>")
         lbl_info.setStyleSheet("color: #7f8c8d; font-size: 11px;")
         form_auto_backup.addRow(lbl_info)
 
@@ -870,6 +889,7 @@ class SettingsTab(QWidget):
         if hasattr(self, "chk_auto_backup"):
             self.config["auto_backup_enabled"] = self.chk_auto_backup.isChecked()
             self.config["auto_backup_interval"] = float(self.spin_interval.value()) # 🟢 تحويل لـ Float
+            self.config["auto_backup_max_copies"] = int(self.spin_max_copies.value())
             self.config["auto_backup_password"] = self.inp_backup_password.text()
 
         # تحديث بيانات الطابعات من الكلاسات المستقلة

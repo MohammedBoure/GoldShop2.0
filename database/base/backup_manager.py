@@ -21,6 +21,66 @@ from .config import TABLE_IMPORT_ORDER
 
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_]+$")
+DEFAULT_AUTO_BACKUP_MAX_COPIES = 5
+
+
+def normalize_max_backups(value, default: int = DEFAULT_AUTO_BACKUP_MAX_COPIES) -> int:
+    """تطبيع عدد النسخ الاحتياطية المطلوب الاحتفاظ بها (بحد أدنى 1)."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = int(default)
+    return max(1, parsed)
+
+
+def _unique_zip_target(dest_dir: str, base_filename: str) -> tuple[str, str]:
+    """تجنب استبدال ملف بنفس الثانية عند تنفيذ نسخ متقاربة جداً."""
+    stem, ext = os.path.splitext(base_filename)
+    candidate_name = base_filename
+    candidate_path = os.path.join(dest_dir, candidate_name)
+    counter = 1
+    while os.path.exists(candidate_path):
+        candidate_name = f"{stem}_{counter}{ext}"
+        candidate_path = os.path.join(dest_dir, candidate_name)
+        counter += 1
+    return candidate_name, candidate_path
+
+
+def _prune_old_auto_backups(
+    dest_dir: str,
+    max_backups: int,
+    protected_filename: str | None = None,
+) -> list[str]:
+    """الاحتفاظ بأحدث max_backups من النسخ التلقائية وحذف الأقدم فقط."""
+    keep_limit = normalize_max_backups(max_backups, default=1)
+    other_backups: list[tuple[float, str, str]] = []
+
+    for file_name in os.listdir(dest_dir):
+        if not (file_name.lower().endswith(".zip") and file_name.startswith("AutoBackup")):
+            continue
+        if protected_filename and file_name == protected_filename:
+            continue
+        full_path = os.path.join(dest_dir, file_name)
+        if not os.path.isfile(full_path):
+            continue
+        try:
+            mtime = os.path.getmtime(full_path)
+        except OSError:
+            mtime = 0.0
+        other_backups.append((mtime, file_name, full_path))
+
+    # ترتيب تنازلي من الأحدث إلى الأقدم
+    other_backups.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    keep_others = max(0, keep_limit - (1 if protected_filename else 0))
+
+    deleted = []
+    for _, file_name, full_path in other_backups[keep_others:]:
+        try:
+            os.remove(full_path)
+            deleted.append(full_path)
+        except Exception as rm_exc:
+            logging.warning(f"⚠️ Impossible de supprimer l'ancienne sauvegarde {file_name}: {rm_exc}")
+    return deleted
 
 
 def _load_pandas():
@@ -496,10 +556,15 @@ class BackupManager:
             logging.error(f"restore_table_from_file error: {e}")
             return False
 
-    def create_auto_backup(self, base_backup_path: str, password: str = ""):
+    def create_auto_backup(
+        self,
+        base_backup_path: str,
+        password: str = "",
+        max_backups: int = DEFAULT_AUTO_BACKUP_MAX_COPIES,
+    ):
         """
         يُنشئ نسخة احتياطية في مجلد Auto_Backups.
-        يقوم بإنشاء النسخة الجديدة أولاً ثم يحذف النسخ القديمة لضمان عدم ضياع النسخة السابقة عند الفشل.
+        يقوم بإنشاء النسخة الجديدة أولاً ثم يحذف النسخ الأقدم التي تتجاوز max_backups.
         """
         import datetime
 
@@ -514,16 +579,16 @@ class BackupManager:
 
             os.makedirs(auto_backup_dir, exist_ok=True)
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            final_zip_path = os.path.join(auto_backup_dir, f"AutoBackup_{timestamp}.zip")
+            zip_filename, final_zip_path = _unique_zip_target(
+                auto_backup_dir, f"AutoBackup_{timestamp}.zip"
+            )
             shutil.copy2(temp_zip_path, final_zip_path)
 
-            for file_name in os.listdir(auto_backup_dir):
-                if file_name.endswith(".zip") and file_name != os.path.basename(final_zip_path):
-                    file_path = os.path.join(auto_backup_dir, file_name)
-                    try:
-                        os.remove(file_path)
-                    except Exception as e:
-                        logging.warning(f"⚠️ Impossible de supprimer l'ancienne sauvegarde: {e}")
+            _prune_old_auto_backups(
+                auto_backup_dir,
+                max_backups=max_backups,
+                protected_filename=zip_filename,
+            )
 
             logging.info(f"✅ Sauvegarde Automatique réussie : {final_zip_path}")
             return True
@@ -541,10 +606,16 @@ class BackupManager:
                     pass
 
     # ─── Multi-Path Backup (Manual & Auto) ──────────────────────────────────
-    def create_multi_backup(self, target_paths: list, password: str = "", is_auto: bool = True):
+    def create_multi_backup(
+        self,
+        target_paths: list,
+        password: str = "",
+        is_auto: bool = True,
+        max_backups: int = DEFAULT_AUTO_BACKUP_MAX_COPIES,
+    ):
         """
         يقوم بتوليد النسخة الاحتياطية ونسخها إلى جميع المسارات المحددة في القائمة.
-        إذا كان is_auto=True: يضعها في مجلد Auto_Backups ويحذف النسخ القديمة بعد نجاح النسخة الجديدة.
+        إذا كان is_auto=True: يضعها في مجلد Auto_Backups ويحتفظ بأحدث max_backups نسخ بعد نجاح النسخة الجديدة.
         إذا كان is_auto=False: يضعها مباشرة في المسار المحدد بدون حذف القديم.
         """
         import datetime
@@ -554,7 +625,7 @@ class BackupManager:
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         prefix = "AutoBackup" if is_auto else "ManualBackup"
-        zip_filename = f"{prefix}_{timestamp}.zip"
+        base_zip_filename = f"{prefix}_{timestamp}.zip"
 
         temp_csv_dir = tempfile.mkdtemp(prefix="goldshop_multi_backup_")
         temp_zip_fd, master_zip_path = tempfile.mkstemp(prefix=f"{prefix}_", suffix=".zip")
@@ -574,20 +645,15 @@ class BackupManager:
                     dest_dir = os.path.join(base_path, "Auto_Backups") if is_auto else base_path
                     os.makedirs(dest_dir, exist_ok=True)
 
-                    final_path = os.path.join(dest_dir, zip_filename)
+                    zip_filename, final_path = _unique_zip_target(dest_dir, base_zip_filename)
                     shutil.copy2(master_zip_path, final_path)
 
                     if is_auto:
-                        for file_name in os.listdir(dest_dir):
-                            if (
-                                file_name.endswith(".zip")
-                                and file_name.startswith("AutoBackup")
-                                and file_name != zip_filename
-                            ):
-                                try:
-                                    os.remove(os.path.join(dest_dir, file_name))
-                                except Exception as rm_exc:
-                                    logging.warning(f"⚠️ Impossible de supprimer l'ancienne sauvegarde {file_name}: {rm_exc}")
+                        _prune_old_auto_backups(
+                            dest_dir,
+                            max_backups=max_backups,
+                            protected_filename=zip_filename,
+                        )
 
                     success_count += 1
                     logging.info(f"✅ Sauvegarde copiée vers : {final_path}")

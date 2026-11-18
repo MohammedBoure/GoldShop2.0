@@ -1,21 +1,31 @@
 import builtins
 import io
+import json
 import os
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pandas as pd
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import pandas as pd
+from PySide6.QtWidgets import QApplication
+
+from database.auto_backup_worker import AutoBackupWorker
 from database.base.backup_manager import (
     BackupManager,
+    _prune_old_auto_backups,
+    normalize_max_backups,
     safe_extract_zip,
     validate_sql_identifier,
     write_zip_from_dir,
 )
 from database.base.connection import ConnectionManager
+from ui.widgets.settings.settings_tab import SettingsTab
 
 
 class _FakeRestoreCursor:
@@ -290,6 +300,102 @@ class TestConnectionAndBackupEngine(unittest.TestCase):
                 zf.setpassword(b"MyStrongPassword123")
                 content = zf.read("Categories.csv").decode("utf-8")
             self.assertIn("Bague", content)
+
+    def test_auto_backup_retention_keeps_n_newest_copies_and_deletes_oldest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dir1 = os.path.join(tmp, "dest1")
+            dir2 = os.path.join(tmp, "dest2")
+            auto1 = os.path.join(dir1, "Auto_Backups")
+            os.makedirs(auto1)
+
+            # Seed 3 older backups with distinct mtimes
+            old_names = [
+                "AutoBackup_20260101_010000.zip",
+                "AutoBackup_20260102_010000.zip",
+                "AutoBackup_20260103_010000.zip",
+            ]
+            base_ts = time.time() - 1000
+            for idx, name in enumerate(old_names):
+                p = os.path.join(auto1, name)
+                Path(p).write_bytes(b"zip")
+                os.utime(p, (base_ts + idx * 10, base_ts + idx * 10))
+
+            mgr = BackupManager(MagicMock())
+
+            def fake_export(temp_dir, fmt="csv", format_datetimes=True):
+                Path(temp_dir, "Categories.csv").write_text("id,name\n1,Bague\n", encoding="utf-8")
+                return ["Categories"]
+
+            with patch.object(mgr, "_export_tables_to_dir", side_effect=fake_export):
+                ok1, _ = mgr.create_multi_backup([dir1, dir2], is_auto=True, max_backups=3)
+                ok2, _ = mgr.create_multi_backup([dir1, dir2], is_auto=True, max_backups=3)
+
+            self.assertTrue(ok1)
+            self.assertTrue(ok2)
+
+            files1 = sorted(os.listdir(auto1))
+            files2 = sorted(os.listdir(os.path.join(dir2, "Auto_Backups")))
+            self.assertEqual(len(files1), 3)
+            self.assertEqual(len(files2), 2)
+            # Two oldest seeded backups must have been pruned, third oldest + 2 new kept
+            self.assertNotIn("AutoBackup_20260101_010000.zip", files1)
+            self.assertNotIn("AutoBackup_20260102_010000.zip", files1)
+            self.assertIn("AutoBackup_20260103_010000.zip", files1)
+
+    def test_auto_backup_worker_passes_configured_max_copies_and_interval(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = os.path.join(tmp, "config.json")
+            Path(cfg_path).write_text(
+                json.dumps(
+                    {
+                        "auto_backup_enabled": True,
+                        "auto_backup_interval": 15.0,
+                        "auto_backup_max_copies": 7,
+                        "auto_backup_password": "",
+                        "backup_paths": [tmp],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            fake_backup = MagicMock()
+            fake_dm = SimpleNamespace(db=SimpleNamespace(_backup=fake_backup))
+            worker = AutoBackupWorker(fake_dm, config_file=cfg_path)
+
+            sleep_secs = worker.run_once()
+
+            self.assertEqual(sleep_secs, 900)
+            fake_backup.create_multi_backup.assert_called_once_with(
+                [tmp], "", is_auto=True, max_backups=7
+            )
+
+    def test_settings_tab_exposes_and_syncs_auto_backup_max_copies(self):
+        app = QApplication.instance() or QApplication([])
+        self.assertIsNotNone(app)
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = os.path.join(tmp, "config.json")
+            Path(cfg_path).write_text(
+                json.dumps(
+                    {
+                        "auto_backup_enabled": True,
+                        "auto_backup_interval": 30.0,
+                        "auto_backup_max_copies": 8,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("ui.widgets.settings.settings_tab.CONFIG_FILE", cfg_path):
+                tab = SettingsTab(SimpleNamespace(db=MagicMock()))
+                self.assertEqual(tab.spin_max_copies.value(), 8)
+                self.assertTrue(tab.spin_max_copies.isEnabled())
+
+                tab.spin_max_copies.setValue(12)
+                tab.chk_auto_backup.setChecked(False)
+                self.assertFalse(tab.spin_max_copies.isEnabled())
+
+                self.assertTrue(tab._sync_config_from_controls())
+                self.assertEqual(tab.config["auto_backup_max_copies"], 12)
+                self.assertEqual(normalize_max_backups(0), 1)
+                tab.close()
 
 
 if __name__ == "__main__":
