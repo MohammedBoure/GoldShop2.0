@@ -6,15 +6,21 @@ backup_manager.py
 """
 
 import os
+import re
 import shutil
 import logging
+import tempfile
 import zipfile
 from datetime import date, timedelta
+from pathlib import Path
 
 import sqlalchemy
 from sqlalchemy import text
 
-from .config import TABLE_IMPORT_ORDER, ARCHIVE_VIEW_FLAG_FILE
+from .config import TABLE_IMPORT_ORDER
+
+
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 
 def _load_pandas():
@@ -27,13 +33,152 @@ def _load_numpy():
     return np
 
 
+def validate_sql_identifier(name: str, kind: str = "identifier") -> str:
+    """التحقق الصارم من صلاحية اسم الجدول أو العمود لمنع حقن SQL."""
+    text_name = str(name or "").strip()
+    if not text_name or not _IDENTIFIER_RE.fullmatch(text_name):
+        raise ValueError(f"Invalid {kind} name: {name!r}")
+    return text_name
+
+
+def safe_extract_zip(input_zip_path: str, dest_dir: str, password: str | None = None) -> None:
+    """فك ضغط أرشيف ZIP بأمان مع منع هجمات اجتياز المسار (Zip Slip)."""
+    base_dir = Path(dest_dir).resolve()
+
+    def _extract_archive(archive):
+        if password:
+            pwd = password.encode("utf-8") if isinstance(password, str) else password
+            archive.setpassword(pwd)
+        for info in archive.infolist():
+            member_name = info.filename
+            if not member_name:
+                continue
+            # Reject symbolic links inside ZIP archives
+            if (info.external_attr >> 16) & 0o170000 == 0o120000:
+                raise ValueError(f"Unsafe symlink entry in archive: {member_name!r}")
+            target_path = (base_dir / member_name).resolve()
+            if not target_path.is_relative_to(base_dir):
+                raise ValueError(f"Unsafe archive entry path (Zip Slip): {member_name!r}")
+            if info.is_dir():
+                target_path.mkdir(parents=True, exist_ok=True)
+                continue
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(info, "r") as src, open(target_path, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+
+    try:
+        with zipfile.ZipFile(input_zip_path, "r") as zip_ref:
+            _extract_archive(zip_ref)
+    except (RuntimeError, NotImplementedError):
+        import pyzipper
+
+        with pyzipper.AESZipFile(input_zip_path, "r") as zip_ref:
+            _extract_archive(zip_ref)
+
+
+def write_zip_from_dir(source_dir: str, output_zip_path: str, password: str = "") -> None:
+    """ضغط محتويات مجلد إلى أرشيف ZIP، مع إلزام pyzipper عند تفعيل التشفير."""
+    if password:
+        try:
+            import pyzipper
+        except ImportError as exc:
+            raise RuntimeError(
+                "Le module 'pyzipper' est requis pour créer une sauvegarde chiffrée."
+            ) from exc
+
+        with pyzipper.AESZipFile(
+            output_zip_path,
+            "w",
+            compression=pyzipper.ZIP_DEFLATED,
+            encryption=pyzipper.WZ_AES,
+        ) as zipf:
+            zipf.setpassword(password.encode("utf-8"))
+            for root, _, files in os.walk(source_dir):
+                for file in files:
+                    full_path = os.path.join(root, file)
+                    arcname = os.path.relpath(full_path, source_dir)
+                    zipf.write(full_path, arcname)
+        return
+
+    with zipfile.ZipFile(output_zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for root, _, files in os.walk(source_dir):
+            for file in files:
+                full_path = os.path.join(root, file)
+                arcname = os.path.relpath(full_path, source_dir)
+                zipf.write(full_path, arcname)
+
+
+def _get_table_columns_info(cursor, canonical_table: str) -> tuple[set[str], set[str]]:
+    """جلب أسماء الأعمدة الفعلية والأعمدة المولّدة للجدول من قاعدة البيانات."""
+    validate_sql_identifier(canonical_table, "table")
+    cursor.execute(f"SHOW COLUMNS FROM `{canonical_table}`")
+    db_cols = {row[0] for row in cursor.fetchall()}
+
+    cursor.execute(
+        "SELECT COLUMN_NAME, EXTRA FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
+        (canonical_table,),
+    )
+    generated_cols = {
+        row[0]
+        for row in cursor.fetchall()
+        if row and len(row) >= 2 and "GENERATED" in str(row[1]).upper()
+    }
+    return db_cols, generated_cols
+
+
+def _validate_and_filter_columns(
+    df_columns,
+    db_cols: set[str],
+    generated_cols: set[str],
+    table_name: str,
+) -> list[str]:
+    """التحقق من أسماء الأعمدة ضد مخطط الجدول واستبعاد الأعمدة المولّدة."""
+    unknown_cols = []
+    valid_cols = []
+    for raw_col in df_columns:
+        col = validate_sql_identifier(str(raw_col), "column")
+        if col not in db_cols:
+            unknown_cols.append(col)
+        elif col not in generated_cols:
+            valid_cols.append(col)
+
+    if unknown_cols:
+        raise ValueError(
+            f"Unknown columns for table '{table_name}': {', '.join(unknown_cols)}"
+        )
+    return valid_cols
+
+
+def _clean_dataframe_rows(df, np_module) -> list[tuple]:
+    """تحويل صفوف DataFrame إلى tuples متوافقة مع mysql-connector."""
+    cleaned_data = []
+    for row_tuple in df.itertuples(index=False, name=None):
+        cleaned_row = tuple(
+            None
+            if (v is None or (isinstance(v, float) and np_module.isnan(v)))
+            else bool(v)
+            if isinstance(v, (bool, np_module.bool_))
+            else int(v)
+            if isinstance(v, (np_module.integer,))
+            else float(v)
+            if isinstance(v, (np_module.floating,))
+            else str(v)
+            if not isinstance(v, (int, float, str, type(None)))
+            else v
+            for v in row_tuple
+        )
+        cleaned_data.append(cleaned_row)
+    return cleaned_data
+
+
 class BackupManager:
     """
     يُقدّم عمليات:
       - backup_database_csv   → تصدير كامل إلى ZIP/CSV
-      - restore_database_csv  → استعادة من ZIP/CSV
+      - restore_database_csv  → استعادة ذرية من ZIP/CSV
       - export_to_excel       → تصدير إلى Excel
-      - restore_from_excel    → استعادة من Excel
+      - restore_from_excel    → استعادة ذرية من Excel
       - export_and_purge_tables → أرشفة وحذف السجلات القديمة
       - restore_table_from_file → استعادة جدول واحد
     """
@@ -42,415 +187,343 @@ class BackupManager:
         """
         Parameters
         ----------
-        db_connection : DatabaseConnection
+        db_connection : ConnectionManager / DatabaseConnection
             الكائن الذي يمتلك get_db_connection() وget_raw_connection() وengine.
         """
         self._db = db_connection
 
-    # ─── CSV Backup ───────────────────────────────────────────────────────────
-    def backup_database_csv(self, output_zip_path: str):
-        temp_dir = os.path.abspath('temp_backup_csv')
-        conn_sa = None
-        try:
-            pd = _load_pandas()
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-            os.makedirs(temp_dir, exist_ok=True)
+    def _export_tables_to_dir(self, temp_dir: str, fmt: str = "csv", format_datetimes: bool = True) -> list[str]:
+        """تصدير جميع جداول قاعدة البيانات إلى ملفات CSV أو Excel في مجلد مؤقت."""
+        if self._db.engine is None:
+            raise RuntimeError("SQLAlchemy engine is not initialized.")
 
-            try:
-                conn_sa = self._db.engine.connect()
-            except Exception as e:
-                logging.error(f"❌ SQLAlchemy Connection Failed: {e}")
-                return False, str(e)
+        pd = _load_pandas()
+        failed_tables = []
+        exported_tables = []
 
+        with self._db.engine.connect() as conn_sa:
             inspector = sqlalchemy.inspect(self._db.engine)
-            all_db_tables = inspector.get_table_names()
+            all_db_tables = [validate_sql_identifier(t, "table") for t in inspector.get_table_names()]
 
-            tables_to_export = [t for t in TABLE_IMPORT_ORDER if t in all_db_tables]
+            ordered = [t for t in TABLE_IMPORT_ORDER if t in all_db_tables]
             for t in all_db_tables:
-                if t not in tables_to_export:
-                    tables_to_export.append(t)
+                if t not in ordered:
+                    ordered.append(t)
 
-            exported_count = 0
-            for table_name in tables_to_export:
-                csv_path = os.path.join(temp_dir, f"{table_name}.csv")
+            for table_name in ordered:
                 try:
                     df = pd.read_sql_query(text(f"SELECT * FROM `{table_name}`"), conn_sa)
-                    for col in df.select_dtypes(include=['datetime64[ns]', 'datetime']).columns:
-                        df[col] = df[col].dt.strftime('%Y-%m-%d %H:%M:%S').replace('NaT', None)
-                    df.to_csv(csv_path, index=False, encoding='utf-8', na_rep='<NULL>')
-                    if not df.empty:
-                        exported_count += 1
-                except Exception as e:
-                    logging.warning(f"⚠️ Export error {table_name}: {e}")
+                    if fmt == "csv":
+                        if format_datetimes:
+                            for col in df.select_dtypes(include=["datetime64[ns]", "datetime"]).columns:
+                                df[col] = df[col].dt.strftime("%Y-%m-%d %H:%M:%S").replace("NaT", None)
+                        df.to_csv(
+                            os.path.join(temp_dir, f"{table_name}.csv"),
+                            index=False,
+                            encoding="utf-8",
+                            na_rep="<NULL>",
+                        )
+                    elif fmt == "xlsx":
+                        df.to_excel(os.path.join(temp_dir, f"{table_name}.xlsx"), index=False)
+                    else:
+                        raise ValueError(f"Unsupported export format: {fmt}")
+                    exported_tables.append(table_name)
+                except Exception as exc:
+                    failed_tables.append(f"{table_name}: {exc}")
+                    logging.error(f"❌ Export error {table_name}: {exc}")
 
-            with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for root, _, files in os.walk(temp_dir):
-                    for file in files:
-                        zipf.write(os.path.join(root, file), file)
-            return True, f"Backup created: {os.path.basename(output_zip_path)}"
+        if failed_tables:
+            raise RuntimeError(
+                f"Export failed for {len(failed_tables)} table(s): {'; '.join(failed_tables)}"
+            )
+        return exported_tables
 
-        except Exception as e:
-            return False, str(e)
-        finally:
-            if conn_sa:
-                conn_sa.close()
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-
-    # ─── CSV Restore ──────────────────────────────────────────────────────────
-    def restore_database_csv(self, input_zip_path: str):
-        temp_dir = 'temp_restore_csv'
+    def _restore_from_archive(
+        self,
+        input_zip_path: str,
+        extension: str,
+        dataframe_loader,
+        password: str | None = None,
+    ) -> tuple[bool, str]:
+        """استعادة ذرية لقاعدة البيانات من أرشيف ZIP مع التراجع الكامل عند أي خطأ."""
+        temp_dir = tempfile.mkdtemp(prefix=f"goldshop_restore_{extension.lstrip('.')}_")
         conn = None
+        cursor = None
         try:
             pd = _load_pandas()
             np = _load_numpy()
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-            os.makedirs(temp_dir)
 
-            with zipfile.ZipFile(input_zip_path, 'r') as zip_ref:
-                zip_ref.extractall(temp_dir)
+            safe_extract_zip(input_zip_path, temp_dir, password=password)
+
+            archive_files: dict[str, str] = {}
+            for file_name in sorted(os.listdir(temp_dir)):
+                if not file_name.lower().endswith(extension):
+                    continue
+                raw_table = file_name[: -len(extension)]
+                validate_sql_identifier(raw_table, "table")
+                archive_files[raw_table] = os.path.join(temp_dir, file_name)
+
+            if not archive_files:
+                return False, "Backup file is empty."
+
+            # قراءة وتجهيز البيانات قبل فتح معاملة الحذف/الإدراج
+            prepared_frames: dict[str, object] = {}
+            for raw_table, file_path in archive_files.items():
+                df = dataframe_loader(pd, file_path)
+                df.columns = df.columns.astype(str)
+                df = df.loc[:, ~df.columns.str.contains("^Unnamed", na=False)]
+                df = df.where(pd.notnull(df), None)
+                prepared_frames[raw_table] = df
+
+            if all(df.empty for df in prepared_frames.values()):
+                return False, "Backup file is empty."
 
             conn = self._db.get_raw_connection()
-            conn.start_transaction()
             cursor = conn.cursor()
-            cursor.execute("SET FOREIGN_KEY_CHECKS = 0;")
-
-            backup_files = [f for f in os.listdir(temp_dir) if f.endswith('.csv')]
-            tables_to_restore = []
-            for file_name in backup_files:
-                table_name = file_name.replace('.csv', '')
-                csv_path = os.path.join(temp_dir, file_name)
-                try:
-                    df_check = pd.read_csv(csv_path, nrows=1)
-                    if not df_check.empty:
-                        tables_to_restore.append(table_name)
-                except Exception:
-                    continue
-
-            if not tables_to_restore:
-                cursor.execute("SET FOREIGN_KEY_CHECKS = 1;")
-                return False, "Backup file is empty."
 
             cursor.execute("SHOW TABLES")
             existing_tables = [row[0] for row in cursor.fetchall()]
+            existing_map = {t.lower(): validate_sql_identifier(t, "table") for t in existing_tables}
 
-            for table_to_clean in tables_to_restore:
-                match = next((t for t in existing_tables if t.lower() == table_to_clean.lower()), None)
-                if match:
-                    try:
-                        cursor.execute(f"DELETE FROM `{match}`")
-                    except Exception as e:
-                        logging.warning(f"Failed to clear {match}: {e}")
+            canonical_files: dict[str, object] = {}
+            for raw_table, df in prepared_frames.items():
+                canonical = existing_map.get(raw_table.lower())
+                if canonical is None:
+                    raise ValueError(f"Unknown table in backup archive: {raw_table!r}")
+                canonical_files[canonical] = df
 
-            ordered = [t for t in TABLE_IMPORT_ORDER if t in tables_to_restore]
-            remaining = [t for t in tables_to_restore if t not in TABLE_IMPORT_ORDER]
+            ordered = [t for t in TABLE_IMPORT_ORDER if t in canonical_files]
+            remaining = [t for t in canonical_files if t not in TABLE_IMPORT_ORDER]
             final_list = ordered + remaining
 
-            for table_name in final_list:
-                csv_file = os.path.join(temp_dir, f"{table_name}.csv")
+            # التحقق المسبق من الأعمدة قبل بدء المسح
+            validated_payloads: list[tuple[str, list[str], list[tuple]]] = []
+            for canonical_table in final_list:
+                df = canonical_files[canonical_table]
+                db_cols, generated_cols = _get_table_columns_info(cursor, canonical_table)
+                valid_cols = _validate_and_filter_columns(
+                    df.columns, db_cols, generated_cols, canonical_table
+                )
+                if df.empty or not valid_cols:
+                    validated_payloads.append((canonical_table, [], []))
+                    continue
+                df_filtered = df[valid_cols]
+                cleaned_data = _clean_dataframe_rows(df_filtered, np)
+                validated_payloads.append((canonical_table, valid_cols, cleaned_data))
+
+            # بدء معاملة الاستعادة الذرية الحقيقية
+            conn.start_transaction()
+            cursor.execute("SET FOREIGN_KEY_CHECKS = 0;")
+            try:
+                for canonical_table in reversed(final_list):
+                    cursor.execute(f"DELETE FROM `{canonical_table}`")
+
+                for canonical_table, valid_cols, cleaned_data in validated_payloads:
+                    if not cleaned_data or not valid_cols:
+                        continue
+                    cols_sql = ",".join(f"`{c}`" for c in valid_cols)
+                    placeholders = ",".join(["%s"] * len(valid_cols))
+                    sql = f"INSERT INTO `{canonical_table}` ({cols_sql}) VALUES ({placeholders})"
+                    cursor.executemany(sql, cleaned_data)
+
+                cursor.execute("SET FOREIGN_KEY_CHECKS = 1;")
+                conn.commit()
+            except Exception:
                 try:
-                    df = pd.read_csv(csv_file, na_values=['<NULL>'], keep_default_na=True)
-                    df.columns = df.columns.astype(str)
-                    df = df.loc[:, ~df.columns.str.contains('^Unnamed', na=False)]
-                    df = df.where(pd.notnull(df), None)
+                    conn.rollback()
+                except Exception as rb_exc:
+                    logging.error(f"Rollback error during restore: {rb_exc}")
+                try:
+                    cursor.execute("SET FOREIGN_KEY_CHECKS = 1;")
+                except Exception:
+                    pass
+                raise
 
-                    if df.empty:
-                        continue
-
-                    cursor.execute(f"SHOW COLUMNS FROM `{table_name}`")
-                    db_cols = {row[0] for row in cursor.fetchall()}
-                    generated_cols = set()
-                    for col in db_cols:
-                        try:
-                            cursor.execute(
-                                f"SELECT EXTRA FROM information_schema.COLUMNS "
-                                f"WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s AND COLUMN_NAME=%s",
-                                (table_name, col)
-                            )
-                            row = cursor.fetchone()
-                            if row and 'GENERATED' in str(row[0]).upper():
-                                generated_cols.add(col)
-                        except Exception:
-                            pass
-
-                    valid_cols = [c for c in df.columns if c in db_cols and c not in generated_cols]
-                    if not valid_cols:
-                        continue
-                    df = df[valid_cols]
-
-                    cleaned_data = []
-                    for row_tuple in df.itertuples(index=False, name=None):
-                        cleaned_row = tuple(
-                            None if (v is None or (isinstance(v, float) and np.isnan(v)))
-                            else bool(v) if isinstance(v, (bool, np.bool_))
-                            else int(v) if isinstance(v, (np.integer,))
-                            else float(v) if isinstance(v, (np.floating,))
-                            else str(v) if not isinstance(v, (int, float, str, type(None)))
-                            else v
-                            for v in row_tuple
-                        )
-                        cleaned_data.append(cleaned_row)
-
-                    if cleaned_data:
-                        cols = ",".join([f"`{c}`" for c in valid_cols])
-                        placeholders = ",".join(["%s"] * len(valid_cols))
-                        sql = f"INSERT INTO `{table_name}` ({cols}) VALUES ({placeholders})"
-                        cursor.executemany(sql, cleaned_data)
-
-                except Exception as e:
-                    logging.error(f"❌ Error restoring {table_name}: {e}")
-
-            cursor.execute("SET FOREIGN_KEY_CHECKS = 1;")
-            conn.commit()
-            return True, "CSV Restore Success."
+            label = "CSV" if extension == ".csv" else "Excel"
+            return True, f"{label} Restore Success."
 
         except Exception as e:
-            if conn:
-                conn.rollback()
+            logging.error(f"❌ Restore failed and was rolled back: {e}")
             return False, f"Restore failed: {str(e)}"
         finally:
-            if conn and conn.is_connected():
-                conn.close()
+            if cursor is not None:
+                try:
+                    cursor.close()
+                except Exception:
+                    pass
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
             if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
-    # ─── Excel Export ─────────────────────────────────────────────────────────
-    def export_to_excel(self, output_zip_path: str):
-        temp_dir = 'temp_backup_excel'
+    # ─── CSV Backup ───────────────────────────────────────────────────────────
+    def backup_database_csv(self, output_zip_path: str, password: str = ""):
+        temp_dir = tempfile.mkdtemp(prefix="goldshop_backup_csv_")
         try:
-            pd = _load_pandas()
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-            os.makedirs(temp_dir)
-
-            with self._db.engine.connect() as conn_sa:
-                inspector = sqlalchemy.inspect(self._db.engine)
-                all_tables = inspector.get_table_names()
-
-                for table_name in all_tables:
-                    try:
-                        df = pd.read_sql_query(text(f"SELECT * FROM `{table_name}`"), conn_sa)
-                        excel_path = os.path.join(temp_dir, f"{table_name}.xlsx")
-                        df.to_excel(excel_path, index=False)
-                    except Exception as e:
-                        logging.warning(f"⚠️ Export error {table_name}: {e}")
-
-            with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for root, _, files in os.walk(temp_dir):
-                    for file in files:
-                        zipf.write(os.path.join(root, file), file)
-            return True, f"Excel backup created: {os.path.basename(output_zip_path)}"
-
+            self._export_tables_to_dir(temp_dir, fmt="csv", format_datetimes=True)
+            write_zip_from_dir(temp_dir, output_zip_path, password=password)
+            return True, f"Backup created: {os.path.basename(output_zip_path)}"
         except Exception as e:
+            logging.error(f"❌ CSV backup failed: {e}")
             return False, str(e)
         finally:
             if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+    # ─── CSV Restore ──────────────────────────────────────────────────────────
+    def restore_database_csv(self, input_zip_path: str, password: str | None = None):
+        return self._restore_from_archive(
+            input_zip_path,
+            extension=".csv",
+            dataframe_loader=lambda pd, p: pd.read_csv(
+                p, na_values=["<NULL>"], keep_default_na=True
+            ),
+            password=password,
+        )
+
+    # ─── Excel Export ─────────────────────────────────────────────────────────
+    def export_to_excel(self, output_zip_path: str, password: str = ""):
+        temp_dir = tempfile.mkdtemp(prefix="goldshop_backup_xlsx_")
+        try:
+            self._export_tables_to_dir(temp_dir, fmt="xlsx", format_datetimes=False)
+            write_zip_from_dir(temp_dir, output_zip_path, password=password)
+            return True, f"Excel backup created: {os.path.basename(output_zip_path)}"
+        except Exception as e:
+            logging.error(f"❌ Excel backup failed: {e}")
+            return False, str(e)
+        finally:
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
     # ─── Excel Restore ────────────────────────────────────────────────────────
-    def restore_from_excel(self, input_zip_path: str):
-        temp_dir = 'temp_restore_excel'
-        conn = None
-        try:
-            pd = _load_pandas()
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-            os.makedirs(temp_dir)
-
-            with zipfile.ZipFile(input_zip_path, 'r') as zip_ref:
-                zip_ref.extractall(temp_dir)
-
-            conn = self._db.get_raw_connection()
-            conn.start_transaction()
-            cursor = conn.cursor()
-            cursor.execute("SET FOREIGN_KEY_CHECKS = 0;")
-
-            excel_files = [f for f in os.listdir(temp_dir) if f.endswith('.xlsx')]
-            tables_to_restore = [f.replace('.xlsx', '') for f in excel_files]
-
-            cursor.execute("SHOW TABLES")
-            existing_tables = [row[0] for row in cursor.fetchall()]
-            for table_name in tables_to_restore:
-                match = next((t for t in existing_tables if t.lower() == table_name.lower()), None)
-                if match:
-                    try:
-                        cursor.execute(f"DELETE FROM `{match}`")
-                    except Exception as e:
-                        logging.warning(f"Failed to clear {match}: {e}")
-
-            ordered = [t for t in TABLE_IMPORT_ORDER if t in tables_to_restore]
-            remaining = [t for t in tables_to_restore if t not in TABLE_IMPORT_ORDER]
-
-            for table_name in ordered + remaining:
-                excel_file = os.path.join(temp_dir, f"{table_name}.xlsx")
-                try:
-                    df = pd.read_excel(excel_file)
-                    df.columns = df.columns.astype(str)
-                    df = df.loc[:, ~df.columns.str.contains('^Unnamed', na=False)]
-                    df = df.where(pd.notnull(df), None)
-
-                    if df.empty:
-                        continue
-
-                    cols = ",".join([f"`{c}`" for c in df.columns])
-                    placeholders = ",".join(["%s"] * len(df.columns))
-                    sql = f"INSERT INTO `{table_name}` ({cols}) VALUES ({placeholders})"
-                    cleaned_data = [tuple(x) for x in df.to_numpy()]
-
-                    if cleaned_data:
-                        cursor.executemany(sql, cleaned_data)
-
-                except Exception as e:
-                    logging.error(f"❌ Error restoring {table_name}: {e}")
-
-            cursor.execute("SET FOREIGN_KEY_CHECKS = 1;")
-            conn.commit()
-            return True, "Excel Restore Success."
-
-        except Exception as e:
-            if conn:
-                conn.rollback()
-            return False, f"Restore failed: {str(e)}"
-        finally:
-            if conn and conn.is_connected():
-                conn.close()
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
+    def restore_from_excel(self, input_zip_path: str, password: str | None = None):
+        return self._restore_from_archive(
+            input_zip_path,
+            extension=".xlsx",
+            dataframe_loader=lambda pd, p: pd.read_excel(p),
+            password=password,
+        )
 
     # ─── Archive Old Logs ─────────────────────────────────────────────────────
     def export_and_purge_tables(self, output_zip_path: str, days_to_keep: int = 365):
         """يُصدّر السجلات القديمة ويحذفها من قاعدة البيانات."""
-        tables_to_archive = ['SupplierTransactions', 'MoneyTransactions']
+        tables_to_archive = ("SupplierTransactions", "MoneyTransactions")
         cutoff_date = date.today() - timedelta(days=days_to_keep)
-        temp_dir = 'temp_archive_logs'
+        temp_dir = tempfile.mkdtemp(prefix="goldshop_archive_logs_")
 
         try:
-            pd = _load_pandas()
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-            os.makedirs(temp_dir)
+            if self._db.engine is None:
+                raise RuntimeError("SQLAlchemy engine is not initialized.")
 
+            pd = _load_pandas()
             has_data = False
             with self._db.engine.connect() as conn_sa:
                 for table in tables_to_archive:
-                    query = text(f"SELECT * FROM {table} WHERE transaction_date < :cutoff")
+                    safe_table = validate_sql_identifier(table, "table")
+                    query = text(f"SELECT * FROM `{safe_table}` WHERE transaction_date < :cutoff")
                     df = pd.read_sql(query, conn_sa, params={"cutoff": cutoff_date})
                     if not df.empty:
                         has_data = True
-                        df.to_csv(os.path.join(temp_dir, f"{table}.csv"), index=False, encoding='utf-8')
+                        df.to_csv(os.path.join(temp_dir, f"{safe_table}.csv"), index=False, encoding="utf-8")
 
             if has_data:
                 with self._db.get_db_connection() as del_conn:
                     del_cursor = del_conn.cursor()
-                    for table in tables_to_archive:
-                        del_cursor.execute(
-                            f"DELETE FROM {table} WHERE transaction_date < %s",
-                            (cutoff_date,)
-                        )
-                    del_conn.commit()
+                    try:
+                        for table in tables_to_archive:
+                            safe_table = validate_sql_identifier(table, "table")
+                            del_cursor.execute(
+                                f"DELETE FROM `{safe_table}` WHERE transaction_date < %s",
+                                (cutoff_date,),
+                            )
+                    finally:
+                        del_cursor.close()
 
-                with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                    for root, _, files in os.walk(temp_dir):
-                        for file in files:
-                            zipf.write(os.path.join(root, file), file)
+                write_zip_from_dir(temp_dir, output_zip_path)
                 return True, f"Archived old logs to:\n{output_zip_path}"
-            else:
-                return False, "No old records found to archive."
+            return False, "No old records found to archive."
 
         except Exception as e:
             return False, str(e)
         finally:
             if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
     # ─── Single Table Restore ─────────────────────────────────────────────────
     def restore_table_from_file(self, table_name: str, file_path: str) -> bool:
         try:
+            if self._db.engine is None:
+                raise RuntimeError("SQLAlchemy engine is not initialized.")
+
+            safe_table = validate_sql_identifier(table_name, "table")
+            inspector = sqlalchemy.inspect(self._db.engine)
+            existing_map = {t.lower(): validate_sql_identifier(t, "table") for t in inspector.get_table_names()}
+            canonical_table = existing_map.get(safe_table.lower())
+            if canonical_table is None:
+                raise ValueError(f"Unknown table: {table_name!r}")
+
             pd = _load_pandas()
-            if file_path.endswith('.csv'):
-                df = pd.read_csv(file_path)
+            if file_path.lower().endswith(".csv"):
+                df = pd.read_csv(file_path, na_values=["<NULL>"], keep_default_na=True)
             else:
                 df = pd.read_excel(file_path)
 
             df.columns = df.columns.astype(str)
-            df = df.loc[:, ~df.columns.str.contains('^Unnamed', na=False)]
+            df = df.loc[:, ~df.columns.str.contains("^Unnamed", na=False)]
             df = df.where(pd.notnull(df), None)
 
+            with self._db.get_db_connection() as conn:
+                cursor = conn.cursor()
+                try:
+                    db_cols, generated_cols = _get_table_columns_info(cursor, canonical_table)
+                finally:
+                    cursor.close()
+
+            valid_cols = _validate_and_filter_columns(
+                df.columns, db_cols, generated_cols, canonical_table
+            )
+            if not valid_cols or df.empty:
+                return True
+
+            df = df[valid_cols]
             with self._db.engine.begin() as conn_sa:
-                df.to_sql(name=table_name, con=conn_sa, if_exists='append', index=False)
+                df.to_sql(name=canonical_table, con=conn_sa, if_exists="append", index=False)
             return True
         except Exception as e:
             logging.error(f"restore_table_from_file error: {e}")
             return False
-        
+
     def create_auto_backup(self, base_backup_path: str, password: str = ""):
         """
         يُنشئ نسخة احتياطية في مجلد Auto_Backups.
-        يقوم بحذف النسخ القديمة لترك أحدث نسخة فقط، ويشفرها بكلمة مرور إذا طُلب ذلك.
+        يقوم بإنشاء النسخة الجديدة أولاً ثم يحذف النسخ القديمة لضمان عدم ضياع النسخة السابقة عند الفشل.
         """
         import datetime
-        try:
-            import pyzipper
-            has_pyzipper = True
-        except ImportError:
-            has_pyzipper = False
-            logging.warning("⚠️ Module 'pyzipper' non installé. Le mot de passe ne sera pas appliqué. (pip install pyzipper)")
 
         auto_backup_dir = os.path.join(base_backup_path, "Auto_Backups")
-        
-        try:
-            # 1. إنشاء المجلد إذا لم يكن موجوداً
-            os.makedirs(auto_backup_dir, exist_ok=True)
+        temp_dir = tempfile.mkdtemp(prefix="goldshop_auto_backup_")
+        temp_zip_fd, temp_zip_path = tempfile.mkstemp(prefix="AutoBackup_", suffix=".zip")
+        os.close(temp_zip_fd)
 
-            # 2. حذف الملفات القديمة (نحتفظ بملف واحد فقط لتوفير المساحة)
+        try:
+            self._export_tables_to_dir(temp_dir, fmt="csv", format_datetimes=True)
+            write_zip_from_dir(temp_dir, temp_zip_path, password=password)
+
+            os.makedirs(auto_backup_dir, exist_ok=True)
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            final_zip_path = os.path.join(auto_backup_dir, f"AutoBackup_{timestamp}.zip")
+            shutil.copy2(temp_zip_path, final_zip_path)
+
             for file_name in os.listdir(auto_backup_dir):
-                if file_name.endswith('.zip'):
+                if file_name.endswith(".zip") and file_name != os.path.basename(final_zip_path):
                     file_path = os.path.join(auto_backup_dir, file_name)
                     try:
                         os.remove(file_path)
                     except Exception as e:
                         logging.warning(f"⚠️ Impossible de supprimer l'ancienne sauvegarde: {e}")
-
-            # 3. تحضير اسم الملف الجديد
-            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-            final_zip_path = os.path.join(auto_backup_dir, f"AutoBackup_{timestamp}.zip")
-            
-            # 4. تصدير الجداول إلى مجلد مؤقت (نستخدم نفس منطق CSV)
-            temp_dir = os.path.abspath('temp_auto_backup_csv')
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-            os.makedirs(temp_dir)
-            pd = _load_pandas()
-
-            with self._db.engine.connect() as conn_sa:
-                inspector = sqlalchemy.inspect(self._db.engine)
-                all_tables = inspector.get_table_names()
-                
-                for table_name in all_tables:
-                    try:
-                        df = pd.read_sql_query(text(f"SELECT * FROM `{table_name}`"), conn_sa)
-                        for col in df.select_dtypes(include=['datetime64[ns]', 'datetime']).columns:
-                            df[col] = df[col].dt.strftime('%Y-%m-%d %H:%M:%S').replace('NaT', None)
-                        df.to_csv(os.path.join(temp_dir, f"{table_name}.csv"), index=False, encoding='utf-8', na_rep='<NULL>')
-                    except Exception:
-                        pass
-
-            # 5. ضغط الملفات وتشفيرها إذا لزم الأمر
-            if has_pyzipper and password:
-                with pyzipper.AESZipFile(final_zip_path, 'w', compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES) as zipf:
-                    zipf.setpassword(password.encode('utf-8'))
-                    for root, _, files in os.walk(temp_dir):
-                        for file in files:
-                            zipf.write(os.path.join(root, file), file)
-            else:
-                # ضغط عادي بدون كلمة مرور
-                import zipfile
-                with zipfile.ZipFile(final_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                    for root, _, files in os.walk(temp_dir):
-                        for file in files:
-                            zipf.write(os.path.join(root, file), file)
 
             logging.info(f"✅ Sauvegarde Automatique réussie : {final_zip_path}")
             return True
@@ -459,101 +532,63 @@ class BackupManager:
             logging.error(f"❌ Échec de la Sauvegarde Automatique : {e}")
             return False
         finally:
-            if 'temp_dir' in locals() and os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            if os.path.exists(temp_zip_path):
+                try:
+                    os.remove(temp_zip_path)
+                except OSError:
+                    pass
+
     # ─── Multi-Path Backup (Manual & Auto) ──────────────────────────────────
     def create_multi_backup(self, target_paths: list, password: str = "", is_auto: bool = True):
         """
         يقوم بتوليد النسخة الاحتياطية ونسخها إلى جميع المسارات المحددة في القائمة.
-        إذا كان is_auto=True: يضعها في مجلد Auto_Backups ويحذف النسخ القديمة.
+        إذا كان is_auto=True: يضعها في مجلد Auto_Backups ويحذف النسخ القديمة بعد نجاح النسخة الجديدة.
         إذا كان is_auto=False: يضعها مباشرة في المسار المحدد بدون حذف القديم.
         """
         import datetime
-        import shutil
-        import os
-        
+
         if not target_paths:
             return False, "Aucun chemin de sauvegarde spécifié."
-            
-        try:
-            import pyzipper
-            has_pyzipper = True
-        except ImportError:
-            has_pyzipper = False
-            logging.warning("⚠️ Module 'pyzipper' non installé. Le mot de passe ne sera pas appliqué.")
 
-        # 1. تحضير اسم الملف الأساسي
-        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         prefix = "AutoBackup" if is_auto else "ManualBackup"
         zip_filename = f"{prefix}_{timestamp}.zip"
-        
-        master_zip_path = os.path.abspath(f'temp_{zip_filename}')
-        temp_csv_dir = os.path.abspath('temp_export_csv')
+
+        temp_csv_dir = tempfile.mkdtemp(prefix="goldshop_multi_backup_")
+        temp_zip_fd, master_zip_path = tempfile.mkstemp(prefix=f"{prefix}_", suffix=".zip")
+        os.close(temp_zip_fd)
 
         try:
-            # 2. توليد ملفات CSV
-            if os.path.exists(temp_csv_dir): shutil.rmtree(temp_csv_dir)
-            os.makedirs(temp_csv_dir)
+            self._export_tables_to_dir(temp_csv_dir, fmt="csv", format_datetimes=True)
+            write_zip_from_dir(temp_csv_dir, master_zip_path, password=password)
 
-            with self._db.engine.connect() as conn_sa:
-                import sqlalchemy
-                from sqlalchemy import text
-                import pandas as pd
-                inspector = sqlalchemy.inspect(self._db.engine)
-                table_names = inspector.get_table_names()
-                failed_tables = []
-                exported_tables = 0
-                for table_name in table_names:
-                    try:
-                        df = pd.read_sql_query(text(f"SELECT * FROM `{table_name}`"), conn_sa)
-                        df.to_csv(os.path.join(temp_csv_dir, f"{table_name}.csv"), index=False, encoding='utf-8')
-                        exported_tables += 1
-                    except Exception as table_exc:
-                        failed_tables.append(table_name)
-                        logging.warning(f"⚠️ Auto-backup skipped table {table_name}: {table_exc}")
-                if table_names and exported_tables == 0:
-                    raise RuntimeError(f"Export failed for all tables: {', '.join(failed_tables)}")
-
-            # 3. ضغط وتشفير الملف الماستر
-            if has_pyzipper and password:
-                with pyzipper.AESZipFile(master_zip_path, 'w', compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES) as zipf:
-                    zipf.setpassword(password.encode('utf-8'))
-                    for root, _, files in os.walk(temp_csv_dir):
-                        for file in files:
-                            zipf.write(os.path.join(root, file), file)
-            else:
-                import zipfile
-                with zipfile.ZipFile(master_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                    for root, _, files in os.walk(temp_csv_dir):
-                        for file in files:
-                            zipf.write(os.path.join(root, file), file)
-
-            # 4. توزيع الملف الماستر على جميع المسارات المحددة
             success_count = 0
             for base_path in target_paths:
                 try:
-                    # 🟢 الحل الذكي لمشكلة الصلاحيات في قرص C
-                    # إذا كان المسار هو C:\ أو C:/ بالضبط، نضيف مجلد فرعي
                     if os.path.abspath(base_path) == os.path.abspath("C:\\"):
                         base_path = os.path.join("C:\\", "GoldShop_Backups")
                         logging.info(f"⚠️ Redirection automatique vers {base_path} pour éviter l'erreur de permission.")
 
-                    # تحديد المجلد الوجهة
                     dest_dir = os.path.join(base_path, "Auto_Backups") if is_auto else base_path
                     os.makedirs(dest_dir, exist_ok=True)
-                    
-                    # حذف النسخ التلقائية القديمة
+
+                    final_path = os.path.join(dest_dir, zip_filename)
+                    shutil.copy2(master_zip_path, final_path)
+
                     if is_auto:
                         for file_name in os.listdir(dest_dir):
-                            if file_name.endswith('.zip') and file_name.startswith('AutoBackup'):
+                            if (
+                                file_name.endswith(".zip")
+                                and file_name.startswith("AutoBackup")
+                                and file_name != zip_filename
+                            ):
                                 try:
                                     os.remove(os.path.join(dest_dir, file_name))
                                 except Exception as rm_exc:
                                     logging.warning(f"⚠️ Impossible de supprimer l'ancienne sauvegarde {file_name}: {rm_exc}")
-                                
-                    # النسخ النهائي
-                    final_path = os.path.join(dest_dir, zip_filename)
-                    shutil.copy2(master_zip_path, final_path)
+
                     success_count += 1
                     logging.info(f"✅ Sauvegarde copiée vers : {final_path}")
                 except Exception as e:
@@ -567,11 +602,17 @@ class BackupManager:
             logging.error(f"❌ Backup Error: {e}")
             return False, str(e)
         finally:
-            if os.path.exists(temp_csv_dir): shutil.rmtree(temp_csv_dir)
-            if os.path.exists(master_zip_path): os.remove(master_zip_path)
+            if os.path.exists(temp_csv_dir):
+                shutil.rmtree(temp_csv_dir, ignore_errors=True)
+            if os.path.exists(master_zip_path):
+                try:
+                    os.remove(master_zip_path)
+                except OSError:
+                    pass
+
     # ─── Convenience Aliases ──────────────────────────────────────────────────
-    def export_all_tables_to_csv_zip(self, output_zip_path='backup_csv.zip'):
+    def export_all_tables_to_csv_zip(self, output_zip_path: str = "backup_csv.zip"):
         return self.backup_database_csv(output_zip_path)
 
-    def restore_from_archive_zip_destructive(self, input_zip_path, tables_to_restore=None):
+    def restore_from_archive_zip_destructive(self, input_zip_path: str, tables_to_restore=None):
         return self.restore_database_csv(input_zip_path)

@@ -440,4 +440,4 @@ for _register_routes in (
     globals().update(_register_routes(flask_app, _route_context))
 
 if __name__ == "__main__":
-    flask_app.run(debug=True, host="0.0.0.0", port=8000)
+    flask_app.run(debug=os.getenv("FLASK_DEBUG", "").strip() == "1", host="0.0.0.0", port=8000)

@@ -8,8 +8,14 @@ archive_view_manager.py
 import os
 import shutil
 import logging
-import zipfile
+import tempfile
 
+from .backup_manager import (
+    _get_table_columns_info,
+    _validate_and_filter_columns,
+    safe_extract_zip,
+    validate_sql_identifier,
+)
 from .config import ARCHIVE_VIEW_FLAG_FILE
 
 
@@ -38,80 +44,122 @@ class ArchiveViewManager:
         يستخرج CSV من ZIP ويُنشئ جداول ARCHIVE_VIEW_* مؤقتة.
         يُعيد (True, message) أو (False, error_message).
         """
-        temp_dir = 'temp_view_archive'
+        temp_dir = tempfile.mkdtemp(prefix="goldshop_archive_view_")
+        conn = None
+        cursor = None
 
         try:
             pd = _load_pandas()
             if self.is_archive_mode:
                 return False, "Archive mode already active."
 
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-            os.makedirs(temp_dir)
-
-            with zipfile.ZipFile(input_zip_path, 'r') as zip_ref:
-                zip_ref.extractall(temp_dir)
+            safe_extract_zip(input_zip_path, temp_dir)
 
             conn = self._db.get_raw_connection()
             cursor = conn.cursor()
 
-            csv_files = [f for f in os.listdir(temp_dir) if f.endswith('.csv')]
+            csv_files = [f for f in sorted(os.listdir(temp_dir)) if f.endswith(".csv")]
             if not csv_files:
                 return False, "No CSV files found."
+
+            cursor.execute("SHOW TABLES")
+            existing_map = {
+                row[0].lower(): validate_sql_identifier(row[0], "table")
+                for row in cursor.fetchall()
+            }
 
             self.table_map = {}
 
             for csv_file in csv_files:
-                original_table = os.path.splitext(csv_file)[0]
-                archive_table = f"{self.ARCHIVE_PREFIX}{original_table}"
+                raw_table = os.path.splitext(csv_file)[0]
+                validate_sql_identifier(raw_table, "table")
+                original_table = existing_map.get(raw_table.lower())
+                if original_table is None:
+                    raise ValueError(f"Unknown table in archive: {raw_table!r}")
+                archive_table = validate_sql_identifier(
+                    f"{self.ARCHIVE_PREFIX}{original_table}", "table"
+                )
 
-                cursor.execute(f"DROP TABLE IF EXISTS {archive_table}")
-                cursor.execute(f"CREATE TABLE {archive_table} LIKE {original_table}")
+                cursor.execute(f"DROP TABLE IF EXISTS `{archive_table}`")
+                cursor.execute(f"CREATE TABLE `{archive_table}` LIKE `{original_table}`")
 
                 csv_path = os.path.join(temp_dir, csv_file)
                 df = pd.read_csv(csv_path)
                 df.columns = df.columns.astype(str)
-                df = df.loc[:, ~df.columns.str.contains('^Unnamed', na=False)]
+                df = df.loc[:, ~df.columns.str.contains("^Unnamed", na=False)]
                 df = df.where(pd.notnull(df), None)
 
-                if not df.empty:
-                    cols = ",".join([f"`{col}`" for col in df.columns])
-                    placeholders = ",".join(["%s"] * len(df.columns))
-                    sql = f"INSERT INTO {archive_table} ({cols}) VALUES ({placeholders})"
+                db_cols, generated_cols = _get_table_columns_info(cursor, original_table)
+                valid_cols = _validate_and_filter_columns(
+                    df.columns, db_cols, generated_cols, original_table
+                )
+
+                if not df.empty and valid_cols:
+                    df = df[valid_cols]
+                    cols = ",".join([f"`{col}`" for col in valid_cols])
+                    placeholders = ",".join(["%s"] * len(valid_cols))
+                    sql = f"INSERT INTO `{archive_table}` ({cols}) VALUES ({placeholders})"
                     data = [tuple(x) for x in df.to_numpy()]
                     cursor.executemany(sql, data)
 
                 self.table_map[original_table] = archive_table
 
             conn.commit()
-            conn.close()
 
             self.is_archive_mode = True
-            with open(ARCHIVE_VIEW_FLAG_FILE, 'w') as f:
-                f.write('1')
+            with open(ARCHIVE_VIEW_FLAG_FILE, "w", encoding="utf-8") as f:
+                f.write("1")
             return True, "Archive View Activated (Read-Only)."
 
         except Exception as e:
+            if conn is not None:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             self.deactivate_archive_view()
             return False, f"Failed to load archive: {e}"
         finally:
+            if cursor is not None:
+                try:
+                    cursor.close()
+                except Exception:
+                    pass
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
             if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
     # ─── Deactivate ───────────────────────────────────────────────────────────
     def deactivate_archive_view(self):
         """يحذف جداول ARCHIVE_VIEW_* ويُعيد النظام إلى الوضع الطبيعي."""
+        conn = None
+        cursor = None
         try:
             conn = self._db.get_raw_connection()
             cursor = conn.cursor()
             cursor.execute(f"SHOW TABLES LIKE '{self.ARCHIVE_PREFIX}%'")
             tables = cursor.fetchall()
             for (tbl,) in tables:
-                cursor.execute(f"DROP TABLE IF EXISTS {tbl}")
+                safe_tbl = validate_sql_identifier(tbl, "table")
+                cursor.execute(f"DROP TABLE IF EXISTS `{safe_tbl}`")
             conn.commit()
-            conn.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.warning(f"Archive view deactivation error: {exc}")
+        finally:
+            if cursor is not None:
+                try:
+                    cursor.close()
+                except Exception:
+                    pass
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
         self.table_map = {}
         self.is_archive_mode = False

@@ -55,25 +55,33 @@ def qt_message_handler(mode, context, message):
 
 
 def run_flask_server():
-    try:
-        from app import flask_app
-        logging.info("🌐 Lancement du serveur Web Flask sur http://0.0.0.0:8000 ...")
-        flask_app.run(host='0.0.0.0', port=8000, debug=False, use_reloader=False)
-    except Exception as e:
-        logging.error(f"❌ Échec du démarrage du serveur Web Flask: {e}", exc_info=True)
+    from services.web_server import WebServerManager
+
+    manager = WebServerManager()
+    manager._run_loop()
 
 
 def start_flask_server(qt_app):
-    if hasattr(qt_app, "flask_thread"):
-        return
-    logging.info("🚀 Starting Flask Web Server in background...")
-    flask_thread = threading.Thread(
-        target=run_flask_server,
-        name="FlaskWebServer",
-        daemon=True,
-    )
-    flask_thread.start()
-    qt_app.flask_thread = flask_thread
+    from services.web_server import WebServerManager
+
+    manager = getattr(qt_app, "web_server_manager", None)
+    if manager is None:
+        manager = WebServerManager(host="0.0.0.0", port=8000)
+        qt_app.web_server_manager = manager
+        qt_app.aboutToQuit.connect(manager.stop)
+
+    if not manager.is_running():
+        logging.info("🚀 Starting persistent Flask Web Server...")
+        manager.start()
+
+    if not hasattr(qt_app, "web_server_watchdog"):
+        watchdog = QTimer(qt_app)
+        watchdog.setInterval(5000)
+        watchdog.timeout.connect(manager.ensure_running)
+        watchdog.start()
+        qt_app.web_server_watchdog = watchdog
+
+    qt_app.flask_thread = manager._thread
 
 
 def main():
@@ -108,6 +116,8 @@ def main():
     except Exception as e:
         QMessageBox.critical(None, "Error", f"Manager Init Error:\n{e}")
         sys.exit(1)
+
+    start_flask_server(qt_app)
 
     current_user = None
 
@@ -149,6 +159,8 @@ def main():
             current_user = login_dialog.authenticated_user
         else:
             logging.info("Login cancelled. Exiting.")
+            if hasattr(qt_app, "web_server_manager"):
+                qt_app.web_server_manager.stop()
             sys.exit(0)
 
     logging.info(f"User Logged In: {current_user['username']} ({current_user['role']})")
@@ -156,7 +168,7 @@ def main():
     from ui.main_window import MainWindow
     window = MainWindow(data_manager, current_user)
     window.show()
-    QTimer.singleShot(1500, lambda: start_flask_server(qt_app))
+    start_flask_server(qt_app)
     
     sys.exit(qt_app.exec())
 

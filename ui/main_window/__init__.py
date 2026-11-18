@@ -279,6 +279,9 @@ class MainWindow(
                 if os.path.exists(LEGACY_SESSION_FILE): os.remove(LEGACY_SESSION_FILE)
                 
                 if self.close():
+                    app = QApplication.instance()
+                    if app is not None and hasattr(app, "web_server_manager"):
+                        app.web_server_manager.stop()
                     os.execl(sys.executable, sys.executable, *sys.argv)
             finally:
                 self._skip_exit_confirmation = False

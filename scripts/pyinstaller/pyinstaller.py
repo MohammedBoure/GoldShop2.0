@@ -74,11 +74,12 @@ def build_production():
 
         # Mandatory collections
         "--collect-all=mysql.connector",
-        "--collect-all=reportlab",
         "--collect-all=qtawesome",
         "--collect-all=flask",
         "--collect-all=jinja2",
         "--collect-all=werkzeug",
+        "--collect-all=qrcode",
+        "--collect-all=pyzipper",
         "--collect-all=web",
 
         # Hidden imports
@@ -87,6 +88,7 @@ def build_production():
         "--hidden-import=duckdns_updater",
         "--hidden-import=services.duckdns",
         "--hidden-import=services.runtime_control",
+        "--hidden-import=services.web_server",
         "--hidden-import=mysql.connector.plugins.mysql_native_password",
         "--hidden-import=sqlalchemy",
         "--hidden-import=pandas",
@@ -113,13 +115,10 @@ def build_production():
         print(f"Building {exe_name} for production...\n")
         subprocess.check_call(command, cwd=project_dir)
 
-        # 3. Post-build: copy external config files and guarantee web & translation assets
+        # 3. Post-build: copy default config template and guarantee web & translation assets
+        # Note: Do NOT bundle local .env into the distribution directory.
         dist_path = os.path.join(output_root, exe_name)
-
-        env_path = os.path.join(project_dir, ".env")
-        if os.path.exists(env_path):
-            shutil.copy(env_path, dist_path)
-            print("[OK] Copied external config: .env")
+        print("[INFO] Local .env is excluded from the distribution package; provide target .env next to GOLDSHOP.exe.")
 
         cfg_path = os.path.join(project_dir, "config.json")
         if os.path.exists(cfg_path):

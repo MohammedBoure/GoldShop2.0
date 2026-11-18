@@ -15,6 +15,7 @@ database.py
 """
 
 import logging
+import threading
 
 import mysql.connector
 
@@ -40,31 +41,37 @@ class Database:
     """
 
     _instance = None
+    _lock = threading.Lock()
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
-            cls._instance = super().__new__(cls)
+            with cls._lock:
+                if not cls._instance:
+                    cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self):
         # تجنّب إعادة التهيئة عند استدعاء Database() أكثر من مرة
         if hasattr(self, '_initialized'):
             return
+        with Database._lock:
+            if hasattr(self, '_initialized'):
+                return
 
-        db_config = load_db_config()
-        ensure_database_exists(db_config)
+            db_config = load_db_config()
+            ensure_database_exists(db_config)
 
-        # ── المكوّنات الداخلية ──────────────────────────────────────────────
-        self._conn_mgr   = ConnectionManager(db_config)
-        self._schema     = SchemaInitializer(self._conn_mgr)
-        self._backup     = BackupManager(self._conn_mgr)
-        self._archive    = ArchiveViewManager(self._conn_mgr)
+            # ── المكوّنات الداخلية ──────────────────────────────────────────────
+            self._conn_mgr   = ConnectionManager(db_config)
+            self._schema     = SchemaInitializer(self._conn_mgr)
+            self._backup     = BackupManager(self._conn_mgr)
+            self._archive    = ArchiveViewManager(self._conn_mgr)
 
-        # كشف مباشر لـ engine (يحتاجه بعض الـ managers القديمة مثل reports_manager)
-        self.engine = self._conn_mgr.engine
+            # كشف مباشر لـ engine (يحتاجه بعض الـ managers القديمة مثل reports_manager)
+            self.engine = self._conn_mgr.engine
 
-        self._schema.initialize()
-        self._initialized = True
+            self._schema.initialize()
+            self._initialized = True
 
     # ==========================================================
     # واجهة الاتصال (تُعاد كما كانت في base.py الأصلي)
