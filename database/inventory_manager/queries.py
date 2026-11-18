@@ -67,8 +67,8 @@ class InventoryQueryMixin:
             try:
                 while cursor.nextset():
                     pass
-            except:
-                pass
+            except Exception as exc:
+                logging.debug(f"nextset cleanup warning: {exc}")
             
             return result
         except Exception as e:

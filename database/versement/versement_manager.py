@@ -1,6 +1,8 @@
 import logging
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 
+from database.decimal_utils import WEIGHT_QUANT, ZERO, to_decimal, to_money_float
 from .versement_reservation import (
     derived_inventory_status,
     normalize_reserved_quantity,
@@ -165,6 +167,11 @@ class VersementManager:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
+                cursor.execute("SELECT status FROM Versements WHERE id = %s FOR UPDATE", (versement_id,))
+                v_row = cursor.fetchone()
+                if v_row and v_row.get("status") != "EN_COURS":
+                    logging.warning(f"add_payment refusé: versement {versement_id} en statut {v_row.get('status')}")
+                    return False
                 cursor.execute("""
                     INSERT INTO Versement_Payments 
                     (versement_id, versement_item_id, journee_id, montant_da, tpe_da, montant_euro, taux_change_euro, montant_dollar, taux_change_dollar, remise_da, or_casse_g, argent_casse_g, poids_deduit_g, prix_gramme_jour_da, prix_gramme_argent_jour_da, notes)
@@ -180,6 +187,16 @@ class VersementManager:
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
+                cursor.execute(
+                    "SELECT v.status FROM Versement_Payments vp "
+                    "JOIN Versements v ON v.id = vp.versement_id "
+                    "WHERE vp.id = %s FOR UPDATE",
+                    (payment_id,),
+                )
+                row = cursor.fetchone()
+                if row and row.get("status") != "EN_COURS":
+                    logging.warning(f"delete_payment refusé: paiement {payment_id} sur dossier {row.get('status')}")
+                    return False
                 cursor.execute("DELETE FROM Versement_Payments WHERE id = %s", (payment_id,))
                 conn.commit()
                 return True
@@ -243,10 +260,31 @@ class VersementManager:
             logging.error(f"Erreur retirer_versement_item: {e}")
             return False
 
+    @staticmethod
+    def _resolve_user_id(cursor, journee_id: int | None, user_id: int | None) -> int:
+        if user_id is not None:
+            try:
+                uid = int(user_id)
+                if uid > 0:
+                    return uid
+            except (TypeError, ValueError):
+                pass
+        if journee_id:
+            cursor.execute("SELECT opened_by_user_id FROM DailySessions WHERE id = %s", (journee_id,))
+            sess_row = cursor.fetchone()
+            if sess_row and sess_row.get("opened_by_user_id"):
+                try:
+                    uid = int(sess_row["opened_by_user_id"])
+                    if uid > 0:
+                        return uid
+                except (TypeError, ValueError):
+                    pass
+        return 1
+
     # ============================================================
     # 4. إنهاء أو إلغاء الملف بالكامل
     # ============================================================
-    def cloture_versement(self, versement_id: int, journee_id: int = 1) -> bool:
+    def cloture_versement(self, versement_id: int, journee_id: int = 1, user_id: int | None = None) -> bool:
         conn = None
         cursor = None
         try:
@@ -254,13 +292,17 @@ class VersementManager:
             cursor = conn.cursor(dictionary=True)
             conn.autocommit = False
 
-            cursor.execute("SELECT client_id, status FROM Versements WHERE id = %s", (versement_id,))
+            cursor.execute("SELECT client_id, status FROM Versements WHERE id = %s FOR UPDATE", (versement_id,))
             v_data = cursor.fetchone()
             if v_data and v_data.get("status") == "CLOTURE":
                 conn.commit()
                 return True
+            if v_data and v_data.get("status") == "ANNULE":
+                conn.rollback()
+                return False
 
             client_id = (v_data or {}).get("client_id") or 1
+            resolved_user_id = self._resolve_user_id(cursor, journee_id, user_id)
 
             cursor.execute("""
                 SELECT vi.inventory_id, vi.designation, vi.notes AS custom_note,
@@ -281,12 +323,18 @@ class VersementManager:
                 WHERE p.versement_id = %s
                 ORDER BY p.payment_date ASC, p.id ASC
             """, (versement_id,))
-            items_brut_total = sum(
-                float(it.get("selling_price") or 0.0)
-                * (max(1, int(it.get("reserved_quantity") or 1)) if str(it.get("item_type") or "WEIGHT").upper() == "PIECE" else 1)
-                for it in items_to_retire
+            items_brut_dec = sum(
+                (
+                    to_decimal(it.get("selling_price"))
+                    * (max(1, int(it.get("reserved_quantity") or 1)) if str(it.get("item_type") or "WEIGHT").upper() == "PIECE" else 1)
+                    for it in items_to_retire
+                ),
+                ZERO,
             )
-            payment_summary = build_versement_payment_summary(cursor.fetchall(), items_brut_total=items_brut_total)
+            payment_summary = build_versement_payment_summary(
+                cursor.fetchall(),
+                items_brut_total=to_money_float(items_brut_dec),
+            )
             cursor.execute("UPDATE Versements SET status = 'CLOTURE' WHERE id = %s", (versement_id,))
             cursor.execute(
                 "UPDATE Versement_Items SET item_status = 'RETIRE' "
@@ -311,13 +359,13 @@ class VersementManager:
                 else:
                     item_qty = int(it.get("quantity") or 1)
                     sold_quantity = 1
-                    original_weight = float(it.get("weight") or 0.0)
-                    rem_w = float(it.get("remaining_weight") if it.get("remaining_weight") is not None else original_weight)
+                    original_weight = to_decimal(it.get("weight"))
+                    rem_w = to_decimal(it.get("remaining_weight") if it.get("remaining_weight") is not None else original_weight)
                     if item_qty > 1:
-                        sold_weight = round(original_weight / item_qty, 3)
-                        sold_weight = min(sold_weight, rem_w)
+                        sold_w_dec = (original_weight / Decimal(item_qty)).quantize(WEIGHT_QUANT, rounding=ROUND_HALF_UP)
+                        sold_weight = float(min(sold_w_dec, rem_w))
                     else:
-                        sold_weight = min(rem_w, original_weight) if original_weight > 0 else rem_w
+                        sold_weight = float(min(rem_w, original_weight) if original_weight > ZERO else rem_w)
 
                     cursor.execute("""
                         UPDATE Inventory
@@ -329,7 +377,7 @@ class VersementManager:
 
             if items_to_retire:
                 receipt_tag = f"VRS-{versement_id:05d}"
-                cursor.execute("SELECT id, status FROM Sales WHERE receipt_number = %s", (receipt_tag,))
+                cursor.execute("SELECT id, status FROM Sales WHERE receipt_number = %s FOR UPDATE", (receipt_tag,))
                 existing_sale = cursor.fetchone()
                 if existing_sale and existing_sale.get("status") == "CANCELLED":
                     cursor.execute("DELETE FROM SaleItems WHERE sale_id = %s", (existing_sale["id"],))
@@ -338,11 +386,12 @@ class VersementManager:
                 if not existing_sale:
                     cursor.execute("""
                         INSERT INTO Sales (receipt_number, journee_id, client_id, user_id, total_amount_da, discount_da, net_to_pay_da, cash_paid_da, tpe_paid_da, old_gold_weight_g, impos_weight_g, status, notes, created_at)
-                        VALUES (%s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s, 'COMPLETED', %s, NOW())
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'COMPLETED', %s, NOW())
                     """, (
                         receipt_tag,
                         journee_id,
                         client_id,
+                        resolved_user_id,
                         payment_summary["total_brut_da"],
                         payment_summary["total_remise_da"],
                         payment_summary["net_to_pay_da"],
@@ -357,23 +406,23 @@ class VersementManager:
                     for it in items_to_retire:
                         item_type = str(it.get("item_type") or "WEIGHT").upper()
                         quantity = max(1, int(it.get("reserved_quantity") or 1)) if item_type == "PIECE" else 1
-                        original_weight = float(it.get("weight") or 0.0)
-                        rem_w = float(it.get("remaining_weight") if it.get("remaining_weight") is not None else original_weight)
+                        original_weight = to_decimal(it.get("weight"))
+                        rem_w = to_decimal(it.get("remaining_weight") if it.get("remaining_weight") is not None else original_weight)
                         item_qty = int(it.get("quantity") or 1)
                         if item_type == "WEIGHT":
                             if item_qty > 1:
-                                sold_weight = round(original_weight / item_qty, 3)
-                                sold_weight = min(sold_weight, rem_w)
+                                sold_w_dec = (original_weight / Decimal(item_qty)).quantize(WEIGHT_QUANT, rounding=ROUND_HALF_UP)
+                                sold_weight = float(min(sold_w_dec, rem_w))
                             else:
-                                sold_weight = min(rem_w, original_weight) if original_weight > 0 else rem_w
+                                sold_weight = float(min(rem_w, original_weight) if original_weight > ZERO else rem_w)
                         else:
                             sold_weight = 0.0
 
                         barcode = str(it.get("barcode") or "")
                         desig = str(it.get("designation") or "Article Versement")
                         item_note = str(it.get("custom_note") or "").strip()[:MAX_CUSTOM_NOTE_LENGTH]
-                        unit_price = float(it.get("selling_price") or 0.0)
-                        total_price = unit_price * quantity if item_type == "PIECE" else unit_price
+                        unit_price = to_money_float(it.get("selling_price"))
+                        total_price = to_money_float(to_decimal(unit_price) * quantity) if item_type == "PIECE" else unit_price
 
                         if "item_type" not in it:
                             cursor.execute("""
@@ -480,7 +529,7 @@ class VersementManager:
             if cursor: cursor.close()
             if conn: conn.close()
 
-    def change_versement_status(self, versement_id: int, target_status: str, journee_id: int = 1) -> tuple[bool, str]:
+    def change_versement_status(self, versement_id: int, target_status: str, journee_id: int = 1, user_id: int | None = None) -> tuple[bool, str]:
         """Change l'etat du dossier en gardant les pieces et la facture de cloture coherentes."""
         if target_status not in {'EN_COURS', 'CLOTURE', 'ANNULE'}:
             return False, "Statut cible invalide."
@@ -507,7 +556,7 @@ class VersementManager:
             conn = cursor = None
 
             if current_status == 'EN_COURS' and target_status == 'CLOTURE':
-                return (True, "Succes") if self.cloture_versement(versement_id, journee_id) else (False, "Impossible de cloturer le dossier.")
+                return (True, "Succes") if self.cloture_versement(versement_id, journee_id, user_id=user_id) else (False, "Impossible de cloturer le dossier.")
             if current_status == 'EN_COURS' and target_status == 'ANNULE':
                 return (True, "Succes") if self.cancel_versement(versement_id) else (False, "Impossible d'annuler le dossier.")
             if current_status == 'CLOTURE' and target_status == 'ANNULE':
@@ -531,6 +580,15 @@ class VersementManager:
             conn = self.db.get_raw_connection()
             cursor = conn.cursor(dictionary=True)
             conn.autocommit = False
+
+            cursor.execute("SELECT status FROM Versements WHERE id = %s FOR UPDATE", (versement_id,))
+            v_row = cursor.fetchone()
+            if not v_row:
+                return False, "Dossier introuvable."
+            current_status = v_row.get("status") or current_status
+            if current_status == "EN_COURS":
+                conn.commit()
+                return True, "Dossier déjà en cours."
 
             receipt_number = f"VRS-{versement_id:05d}"
             closure_inventory_ids = []
@@ -889,7 +947,7 @@ class VersementManager:
 
             cursor.execute("""
                 SELECT versement_id, inventory_id, item_status, reserved_quantity
-                FROM Versement_Items WHERE id = %s
+                FROM Versement_Items WHERE id = %s FOR UPDATE
             """, (item_id,))
             item = cursor.fetchone()
             if not item:

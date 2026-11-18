@@ -180,8 +180,9 @@ class VersementCustomNoteTests(unittest.TestCase):
             if query.startswith("INSERT INTO SaleItems")
         ]
 
+        self.assertEqual(sale_params[3], 1)
         self.assertEqual(
-            sale_params[3:10],
+            sale_params[4:11],
             (42500.0, 2500.0, 40000.0, 500.0, 10000.0, 0.5, 0.9),
         )
         self.assertTrue(all(len(params) == 6 for params in sale_item_params))

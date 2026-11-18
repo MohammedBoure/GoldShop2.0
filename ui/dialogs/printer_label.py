@@ -33,7 +33,7 @@ class LocalLabelPrinter:
         if size <= 0: return None
         try:
             return ImageFont.truetype(font_name, size)
-        except:
+        except (OSError, IOError):
             return ImageFont.load_default()
 
     @staticmethod

@@ -58,6 +58,7 @@ class SchemaInitializer:
             fingerprint = self._schema_fingerprint()
             with self._cm.get_db_connection() as conn:
                 cursor = conn.cursor()
+                self._ensure_metadata_table(cursor)
                 if not force and self._is_schema_current(cursor, fingerprint):
                     self._create_default_admin(cursor)
                     logger.info("Schema already current; skipped startup checks.")

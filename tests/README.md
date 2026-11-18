@@ -23,3 +23,5 @@
 * `test_web_api.py`: اختبارات واجهة الويب الشاملة (REST API) وصفحات واجهة الهاتف المحمول وقوالب Jinja2 والأصول الثابتة، المطابقة لواجهات اليومية (`excel_journal_view.py`)، الحصيلة الشهرية (`monthly_summary_view.py`)، العربون (`versements_view.py`)، ورشة الحرفيين (`artisan_work_view.py`)، ودفتر الموردين (`suppliers_view.py`).
 * `test_backup_restore_and_engine.py`: اختبارات تهيئة محرك SQLAlchemy، التراجع الذري عند فشل الاستعادة (CSV/Excel)، التحقق الصارم من أسماء الجداول والأعمدة، حماية Zip Slip، وإلزام `pyzipper` عند التشفير.
 * `test_web_server_supervisor.py`: اختبارات مشرف خادم الويب (`WebServerManager`) وإعادة التشغيل التلقائي عند الأعطال، والتحقق من عدم تضمين `.env` في سكربت البناء.
+* `test_printing_pipeline.py`: اختبارات خط الطباعة الحرارية وطباعة ملصقات الباركود (`QPainter` و`win32print` وTSPL).
+* `test_mysql_live_concurrency_and_backup.py`: اختبارات تكاملية على MySQL معزول لتزامن عدة أجهزة بيع وإغلاق العربون والنسخ الاحتياطي والاستعادة الذرية.

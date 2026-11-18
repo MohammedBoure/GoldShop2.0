@@ -1003,11 +1003,23 @@ class VersementsView(QWidget):
             if success: self.load_data()
             else: QMessageBox.warning(self, "Erreur", msg)
 
+    def _current_user_id(self) -> int:
+        try:
+            app = QApplication.instance()
+            if app is not None and hasattr(app, "current_main_window"):
+                uid = (getattr(app.current_main_window, "current_user", None) or {}).get("id")
+                if uid:
+                    return int(uid)
+        except Exception:
+            pass
+        return 1
+
     def _handle_close_versement(self, v_id):
         if QMessageBox.question(self, "Clôturer", "Confirmer la clôture de ce versement ?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
-            journee = self.manager.cash_box.get_or_create_today_session(user_id=1)
+            user_id = self._current_user_id()
+            journee = self.manager.cash_box.get_or_create_today_session(user_id=user_id)
             journee_id = journee['id'] if journee else 1
-            success, msg = self.manager.versements.change_versement_status(v_id, 'CLOTURE', journee_id)
+            success, msg = self.manager.versements.change_versement_status(v_id, 'CLOTURE', journee_id, user_id=user_id)
             if success: self.load_data()
             else: QMessageBox.warning(self, "Erreur", msg)
 
@@ -1025,9 +1037,10 @@ class VersementsView(QWidget):
         }
         message = f"Confirmer: {labels.get(target_status, 'changer le statut de ce dossier')} ?"
         if QMessageBox.question(self, "Changer état", message, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
-            journee = self.manager.cash_box.get_or_create_today_session(user_id=1)
+            user_id = self._current_user_id()
+            journee = self.manager.cash_box.get_or_create_today_session(user_id=user_id)
             journee_id = journee['id'] if journee else 1
-            success, msg = self.manager.versements.change_versement_status(v_id, target_status, journee_id)
+            success, msg = self.manager.versements.change_versement_status(v_id, target_status, journee_id, user_id=user_id)
             if success: self.load_data()
             else: QMessageBox.warning(self, "Erreur", msg)
 
@@ -1626,7 +1639,8 @@ class VersementsView(QWidget):
         try:
             app = QApplication.instance()
             current_user = app.current_main_window.current_user if hasattr(app, 'current_main_window') else {}
-        except: current_user = {}
+        except Exception:
+            current_user = {}
 
         dlg = NewVersementDialog(self.manager, current_user, self)
         if dlg.exec() == QDialog.Accepted: self.load_data()

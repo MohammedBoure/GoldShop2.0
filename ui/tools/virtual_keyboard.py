@@ -421,7 +421,7 @@ class VirtualKeyboardDialog(QDialog):
         btn_backspace = QPushButton(" Effacer")
         btn_backspace.setProperty("is_vkb", True); btn_backspace.setFocusPolicy(Qt.NoFocus); btn_backspace.setMinimumHeight(40)
         try: btn_backspace.setIcon(qta.icon("fa5s.backspace", color="white"))
-        except: pass
+        except Exception: pass
         btn_backspace.setStyleSheet("background-color: #e67e22; color: white; font-weight: bold; border-radius: 6px;")
         btn_backspace.clicked.connect(self.backspace)
         bottom_row.addWidget(btn_backspace, stretch=2)

@@ -2,39 +2,41 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any, Iterable
+
+from database.decimal_utils import CONVERSION_TOLERANCE, EPSILON, ZERO, to_decimal
 
 
 def number(value: Any) -> float:
-    try:
-        return float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
+    return float(to_decimal(value))
 
 
 def payment_value_da(payment: dict[str, Any]) -> float:
     """Return one payment's DA equivalent without double-counting conversions."""
-    declared_da = number(payment.get("montant_da"))
-    tpe_da = number(payment.get("tpe_da"))
-    euro_equivalent = number(payment.get("montant_euro")) * number(
+    declared_da = to_decimal(payment.get("montant_da"))
+    tpe_da = to_decimal(payment.get("tpe_da"))
+    euro_equivalent = to_decimal(payment.get("montant_euro")) * to_decimal(
         payment.get("taux_change_euro")
     )
-    dollar_equivalent = number(payment.get("montant_dollar")) * number(
+    dollar_equivalent = to_decimal(payment.get("montant_dollar")) * to_decimal(
         payment.get("taux_change_dollar")
     )
-    old_gold_equivalent = number(payment.get("or_casse_g")) * number(
+    old_gold_equivalent = to_decimal(payment.get("or_casse_g")) * to_decimal(
         payment.get("prix_gramme_jour_da")
     )
-    old_silver_equivalent = number(payment.get("argent_casse_g")) * number(
+    old_silver_equivalent = to_decimal(payment.get("argent_casse_g")) * to_decimal(
         payment.get("prix_gramme_argent_jour_da")
     )
-    converted_equivalent = euro_equivalent + dollar_equivalent + old_gold_equivalent + old_silver_equivalent
+    converted_equivalent = (
+        euro_equivalent + dollar_equivalent + old_gold_equivalent + old_silver_equivalent
+    )
 
-    if converted_equivalent > 0 and abs(declared_da - converted_equivalent) <= 0.01:
+    if converted_equivalent > ZERO and abs(declared_da - converted_equivalent) <= CONVERSION_TOLERANCE:
         base_da = declared_da
     else:
         base_da = declared_da + converted_equivalent
-    return base_da + tpe_da
+    return float(base_da + tpe_da)
 
 
 def shop_price_per_gram(
@@ -52,13 +54,13 @@ def shop_price_per_gram(
             None,
         )
         if selected:
-            weight = number(selected.get("weight"))
-            price = number(selected.get("selling_price"))
-            return price / weight if price > 0 and weight > 0 else 0.0
+            weight = to_decimal(selected.get("weight"))
+            price = to_decimal(selected.get("selling_price"))
+            return float(price / weight) if price > ZERO and weight > ZERO else 0.0
 
-    total_weight = sum(number(row.get("weight")) for row in rows)
-    total_price = sum(number(row.get("selling_price")) for row in rows)
-    return total_price / total_weight if total_price > 0 and total_weight > 0 else 0.0
+    total_weight = sum((to_decimal(row.get("weight")) for row in rows), ZERO)
+    total_price = sum((to_decimal(row.get("selling_price")) for row in rows), ZERO)
+    return float(total_price / total_weight) if total_price > ZERO and total_weight > ZERO else 0.0
 
 
 def discount_for_target_price(
@@ -68,78 +70,72 @@ def discount_for_target_price(
     available_weight: Any = None,
 ) -> tuple[float, float]:
     """Return ``(discount_da, deducted_weight_g)`` for a target DA/g price."""
-    shop = number(shop_price)
-    target = number(target_price)
-    payment = max(0.0, number(payment_da))
-    if shop <= 0 or target <= 0 or payment <= 0:
+    shop = to_decimal(shop_price)
+    target = to_decimal(target_price)
+    payment = max(ZERO, to_decimal(payment_da))
+    if shop <= ZERO or target <= ZERO or payment <= ZERO:
         return 0.0, 0.0
 
     target = min(target, shop)
     deducted_weight = payment / target
     if available_weight is not None:
-        deducted_weight = min(deducted_weight, max(0.0, number(available_weight)))
+        deducted_weight = min(deducted_weight, max(ZERO, to_decimal(available_weight)))
 
-    discount = max(0.0, shop * deducted_weight - payment)
-    return discount, deducted_weight
+    discount = max(ZERO, (shop * deducted_weight) - payment)
+    return float(discount), float(deducted_weight)
 
 
 def price_after_discount(shop_price: Any, payment_da: Any, discount_da: Any) -> float:
     """Return the effective DA/g rate implied by a stored monetary discount."""
-    shop = number(shop_price)
-    payment = max(0.0, number(payment_da))
-    discount = max(0.0, number(discount_da))
+    shop = to_decimal(shop_price)
+    payment = max(ZERO, to_decimal(payment_da))
+    discount = max(ZERO, to_decimal(discount_da))
     gross_equivalent = payment + discount
-    if shop <= 0 or payment <= 0 or gross_equivalent <= 0:
+    if shop <= ZERO or payment <= ZERO or gross_equivalent <= ZERO:
         return 0.0
-    return shop * payment / gross_equivalent
+    return float(shop * payment / gross_equivalent)
 
 
 def _distribute_amount_equally(
-    amount: float,
+    amount: Decimal,
     item_records: list[dict[str, Any]],
     field_allocated: str,
     field_cap: str,
 ) -> None:
-    """Distribute amount equally among candidate items up to each item's capacity, transferring surplus to the next incomplete items."""
-    remaining_amount = max(0.0, float(amount or 0.0))
-    if remaining_amount <= 1e-6:
+    """Distribute amount equally among candidate items up to each item's capacity using exact Decimal."""
+    remaining_amount = max(ZERO, to_decimal(amount))
+    if remaining_amount <= EPSILON:
         return
 
-    while remaining_amount > 1e-6:
+    while remaining_amount > EPSILON:
         candidates = [
             r for r in item_records
-            if r.get("item_status") == "EN_COURS" and (r[field_cap] - r[field_allocated]) > 1e-6
+            if r.get("item_status") == "EN_COURS" and (r[field_cap] - r[field_allocated]) > EPSILON
         ]
         if not candidates:
             break
 
-        equal_share = remaining_amount / len(candidates)
+        equal_share = remaining_amount / Decimal(len(candidates))
         capped = [
             r for r in candidates
-            if (r[field_cap] - r[field_allocated]) < equal_share - 1e-6
+            if (r[field_cap] - r[field_allocated]) < equal_share - EPSILON
         ]
         if not capped:
             for r in candidates:
                 r[field_allocated] += equal_share
-            remaining_amount = 0.0
+            remaining_amount = ZERO
             break
-        else:
-            for r in capped:
-                capacity = r[field_cap] - r[field_allocated]
-                r[field_allocated] += capacity
-                remaining_amount -= capacity
+        for r in capped:
+            capacity = r[field_cap] - r[field_allocated]
+            r[field_allocated] += capacity
+            remaining_amount -= capacity
 
 
 def calculate_versement_item_balances(
     items: Iterable[dict[str, Any]],
     payments: Iterable[dict[str, Any]],
 ) -> dict[Any, dict[str, Any]]:
-    """Calculate deducted weight, remaining weight, paid money, and balance for each item.
-
-    Financial value and deducted weights for global payments are divided equally among
-    active incomplete products. When an item reaches 100% completion, remaining amounts
-    automatically transfer to the next incomplete products.
-    """
+    """Calculate deducted weight, remaining weight, paid money, and balance for each item."""
     item_records = []
     item_map = {}
 
@@ -148,16 +144,16 @@ def calculate_versement_item_balances(
         if status == "ANNULE":
             continue
         item_id = item.get("item_id", item.get("id"))
-        weight = float(item.get("display_weight") or item.get("weight") or 0.0)
-        price = float(item.get("display_price") or item.get("selling_price") or 0.0)
+        weight = to_decimal(item.get("display_weight") or item.get("weight"))
+        price = to_decimal(item.get("display_price") or item.get("selling_price"))
 
         record = {
             "item_id": item_id,
             "item_status": status,
             "weight": weight,
             "selling_price": price,
-            "deducted_g": 0.0,
-            "paid_da": 0.0,
+            "deducted_g": ZERO,
+            "paid_da": ZERO,
             "has_shared": False,
         }
         item_records.append(record)
@@ -166,14 +162,14 @@ def calculate_versement_item_balances(
             item_map[str(item_id)] = record
 
     for p in payments or []:
-        w_pay = max(0.0, number(p.get("poids_deduit_g")))
-        m_pay = max(0.0, payment_value_da(p))
+        w_pay = max(ZERO, to_decimal(p.get("poids_deduit_g")))
+        m_pay = max(ZERO, to_decimal(payment_value_da(p)))
         target_id = p.get("versement_item_id")
 
         if target_id is not None and target_id in item_map:
             target = item_map[target_id]
-            rem_w = max(0.0, target["weight"] - target["deducted_g"])
-            rem_m = max(0.0, target["selling_price"] - target["paid_da"])
+            rem_w = max(ZERO, target["weight"] - target["deducted_g"])
+            rem_m = max(ZERO, target["selling_price"] - target["paid_da"])
 
             w_alloc = min(w_pay, rem_w)
             m_alloc = min(m_pay, rem_m)
@@ -183,19 +179,19 @@ def calculate_versement_item_balances(
             w_surplus = w_pay - w_alloc
             m_surplus = m_pay - m_alloc
 
-            if w_surplus > 1e-6:
+            if w_surplus > EPSILON:
                 other_candidates = [r for r in item_records if r["item_id"] != target["item_id"]]
                 _distribute_amount_equally(w_surplus, other_candidates, "deducted_g", "weight")
-            if m_surplus > 1e-6:
+            if m_surplus > EPSILON:
                 other_candidates = [r for r in item_records if r["item_id"] != target["item_id"]]
                 _distribute_amount_equally(m_surplus, other_candidates, "paid_da", "selling_price")
         else:
-            if w_pay > 1e-6:
+            if w_pay > EPSILON:
                 _distribute_amount_equally(w_pay, item_records, "deducted_g", "weight")
                 for r in item_records:
                     if r.get("item_status") == "EN_COURS":
                         r["has_shared"] = True
-            if m_pay > 1e-6:
+            if m_pay > EPSILON:
                 _distribute_amount_equally(m_pay, item_records, "paid_da", "selling_price")
                 for r in item_records:
                     if r.get("item_status") == "EN_COURS":
@@ -203,11 +199,21 @@ def calculate_versement_item_balances(
 
     result = {}
     for r in item_records:
-        r["deducted_g"] = min(r["weight"], r["deducted_g"])
-        r["remaining_g"] = max(0.0, r["weight"] - r["deducted_g"])
-        r["paid_da"] = min(r["selling_price"], r["paid_da"])
-        r["remaining_da"] = max(0.0, r["selling_price"] - r["paid_da"])
-        result[r["item_id"]] = r
+        deducted_g = min(r["weight"], r["deducted_g"])
+        remaining_g = max(ZERO, r["weight"] - deducted_g)
+        paid_da = min(r["selling_price"], r["paid_da"])
+        remaining_da = max(ZERO, r["selling_price"] - paid_da)
+        result[r["item_id"]] = {
+            "item_id": r["item_id"],
+            "item_status": r["item_status"],
+            "weight": float(r["weight"]),
+            "selling_price": float(r["selling_price"]),
+            "deducted_g": float(deducted_g),
+            "remaining_g": float(remaining_g),
+            "paid_da": float(paid_da),
+            "remaining_da": float(remaining_da),
+            "has_shared": r["has_shared"],
+        }
 
     for item in items or []:
         if item.get("item_status") == "ANNULE":
@@ -234,50 +240,50 @@ def calculate_versement_financial_summary(
 ) -> dict[str, Any]:
     """Compute dossier-level totals, net due, customer surplus/credit, and per-payment allocation."""
     active_items = [row for row in (items or []) if row.get("item_status") != "ANNULE"]
-    total_weight_g = 0.0
-    total_estimated_price_da = 0.0
+    total_weight_g = ZERO
+    total_estimated_price_da = ZERO
     for item in active_items:
         item_type = str(item.get("item_type") or "WEIGHT").upper()
         qty = max(1, int(item.get("reserved_quantity") or 1)) if item_type == "PIECE" else 1
-        w = number(item.get("display_weight"))
-        if w <= 0:
-            w = number(item.get("weight")) * (qty if item_type == "PIECE" else 1)
-        p = number(item.get("display_price"))
-        if p <= 0:
-            p = number(item.get("selling_price")) * (qty if item_type == "PIECE" else 1)
-        total_weight_g += max(0.0, w)
-        total_estimated_price_da += max(0.0, p)
+        w = to_decimal(item.get("display_weight"))
+        if w <= ZERO:
+            w = to_decimal(item.get("weight")) * (qty if item_type == "PIECE" else 1)
+        p = to_decimal(item.get("display_price"))
+        if p <= ZERO:
+            p = to_decimal(item.get("selling_price")) * (qty if item_type == "PIECE" else 1)
+        total_weight_g += max(ZERO, w)
+        total_estimated_price_da += max(ZERO, p)
 
     payment_list = list(payments or [])
-    total_paid_da = sum(payment_value_da(p) for p in payment_list)
-    raw_remise_da = sum(number(p.get("remise_da")) for p in payment_list)
+    total_paid_da = sum((to_decimal(payment_value_da(p)) for p in payment_list), ZERO)
+    raw_remise_da = sum((to_decimal(p.get("remise_da")) for p in payment_list), ZERO)
 
-    if total_estimated_price_da > 0:
-        if raw_remise_da > 0 and total_paid_da <= total_estimated_price_da:
-            effective_remise_da = min(raw_remise_da, max(0.0, total_estimated_price_da - total_paid_da))
+    if total_estimated_price_da > ZERO:
+        if raw_remise_da > ZERO and total_paid_da <= total_estimated_price_da:
+            effective_remise_da = min(raw_remise_da, max(ZERO, total_estimated_price_da - total_paid_da))
         else:
-            effective_remise_da = 0.0
-        net_due_da = max(0.0, total_estimated_price_da - effective_remise_da)
-        allocated_paid_da = min(max(0.0, total_paid_da), net_due_da)
-        remaining_due_da = max(0.0, net_due_da - max(0.0, total_paid_da))
-        surplus_da = max(0.0, total_paid_da - net_due_da)
+            effective_remise_da = ZERO
+        net_due_da = max(ZERO, total_estimated_price_da - effective_remise_da)
+        allocated_paid_da = min(max(ZERO, total_paid_da), net_due_da)
+        remaining_due_da = max(ZERO, net_due_da - max(ZERO, total_paid_da))
+        surplus_da = max(ZERO, total_paid_da - net_due_da)
     else:
         effective_remise_da = raw_remise_da
-        net_due_da = max(0.0, total_paid_da)
-        allocated_paid_da = max(0.0, total_paid_da)
-        remaining_due_da = 0.0
-        surplus_da = 0.0
+        net_due_da = max(ZERO, total_paid_da)
+        allocated_paid_da = max(ZERO, total_paid_da)
+        remaining_due_da = ZERO
+        surplus_da = ZERO
 
     per_payment: list[dict[str, Any]] = []
     remaining_net = net_due_da
-    cum_surplus = 0.0
+    cum_surplus = ZERO
     for p in payment_list:
-        val = payment_value_da(p)
-        if total_estimated_price_da > 0:
-            if val >= 0:
+        val = to_decimal(payment_value_da(p))
+        if total_estimated_price_da > ZERO:
+            if val >= ZERO:
                 alloc = min(val, remaining_net)
-                surp = max(0.0, val - alloc)
-                remaining_net = max(0.0, remaining_net - alloc)
+                surp = max(ZERO, val - alloc)
+                remaining_net = max(ZERO, remaining_net - alloc)
                 cum_surplus += surp
             else:
                 refund = abs(val)
@@ -289,25 +295,23 @@ def calculate_versement_financial_summary(
                 surp = -from_surplus
         else:
             alloc = val
-            surp = 0.0
+            surp = ZERO
         per_payment.append({
             "payment_id": p.get("id"),
-            "value_da": val,
-            "allocated_da": alloc,
-            "surplus_da": surp,
+            "value_da": float(val),
+            "allocated_da": float(alloc),
+            "surplus_da": float(surp),
         })
 
     return {
-        "total_weight_g": total_weight_g,
-        "total_estimated_price_da": total_estimated_price_da,
-        "total_paid_da": total_paid_da,
-        "raw_remise_da": raw_remise_da,
-        "effective_remise_da": effective_remise_da,
-        "net_due_da": net_due_da,
-        "allocated_paid_da": allocated_paid_da,
-        "remaining_due_da": remaining_due_da,
-        "surplus_da": surplus_da,
+        "total_weight_g": float(total_weight_g),
+        "total_estimated_price_da": float(total_estimated_price_da),
+        "total_paid_da": float(total_paid_da),
+        "raw_remise_da": float(raw_remise_da),
+        "effective_remise_da": float(effective_remise_da),
+        "net_due_da": float(net_due_da),
+        "allocated_paid_da": float(allocated_paid_da),
+        "remaining_due_da": float(remaining_due_da),
+        "surplus_da": float(surplus_da),
         "per_payment": per_payment,
     }
-
-

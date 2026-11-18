@@ -6,31 +6,48 @@ class CashBoxManager:
         self.db = db_instance
 
     def get_or_create_today_session(self, user_id=None):
+        lock_acquired = False
         try:
             with self.db.get_db_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
-                
-                # استخدام fetchall لتفريغ الذاكرة المؤقتة بالكامل ومنع الخطأ
-                cursor.execute("SELECT * FROM DailySessions WHERE DATE(opened_at) = CURDATE() ORDER BY id DESC")
-                sessions = cursor.fetchall()
-                while cursor.nextset(): pass
-                
-                if sessions:
-                    return sessions[0] # إرجاع الجلسة الحالية
-                
-                cursor.execute(
-                    "INSERT INTO DailySessions (starting_cash_da, opened_by_user_id) VALUES (%s, %s)",
-                    (0.0, user_id)
-                )
-                conn.commit()
-                new_id = cursor.lastrowid
-                
-                cursor.execute("SELECT * FROM DailySessions WHERE id = %s", (new_id,))
-                new_sessions = cursor.fetchall()
-                while cursor.nextset(): pass
-                
-                return new_sessions[0] if new_sessions else None
-                
+                try:
+                    cursor.execute("SELECT GET_LOCK('goldshop_daily_session_lock', 10) AS acquired")
+                    lock_row = cursor.fetchone() or {}
+                    lock_acquired = bool(lock_row.get("acquired"))
+                    while cursor.nextset():
+                        pass
+
+                    # استخدام fetchall لتفريغ الذاكرة المؤقتة بالكامل ومنع الخطأ
+                    cursor.execute("SELECT * FROM DailySessions WHERE DATE(opened_at) = CURDATE() ORDER BY id DESC")
+                    sessions = cursor.fetchall()
+                    while cursor.nextset():
+                        pass
+
+                    if sessions:
+                        return sessions[0]  # إرجاع الجلسة الحالية
+
+                    cursor.execute(
+                        "INSERT INTO DailySessions (starting_cash_da, opened_by_user_id) VALUES (%s, %s)",
+                        (0.0, user_id)
+                    )
+                    conn.commit()
+                    new_id = cursor.lastrowid
+
+                    cursor.execute("SELECT * FROM DailySessions WHERE id = %s", (new_id,))
+                    new_sessions = cursor.fetchall()
+                    while cursor.nextset():
+                        pass
+
+                    return new_sessions[0] if new_sessions else None
+                finally:
+                    if lock_acquired:
+                        try:
+                            cursor.execute("SELECT RELEASE_LOCK('goldshop_daily_session_lock')")
+                            cursor.fetchall()
+                        except Exception:
+                            pass
+                    cursor.close()
+
         except Exception as e:
             logging.error(f"Erreur get_or_create_today_session: {e}")
             return None

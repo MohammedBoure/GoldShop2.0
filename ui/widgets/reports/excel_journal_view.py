@@ -1031,7 +1031,7 @@ class SaleProductsDialog(QDialog):
         try:
             button.setText("📋 Copier")
             button.setStyleSheet("background-color: #f1f5f9; color: #1e293b; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; font-weight: bold; padding: 4px 10px;")
-        except: pass
+        except RuntimeError: pass
 
     def _copy_all_barcodes(self, barcodes, button):
         from PySide6.QtWidgets import QApplication

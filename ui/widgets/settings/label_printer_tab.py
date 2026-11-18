@@ -617,7 +617,7 @@ class LabelPrinterSettingsTab(QWidget):
         def get_font(font_name, size):
             if size <= 0: return None
             try: return ImageFont.truetype(font_name, size)
-            except: return ImageFont.load_default()
+            except (OSError, IOError): return ImageFont.load_default()
 
         # 1. Static Text
         if self.chk_static_show.isChecked() and self.static_font.value() > 0:

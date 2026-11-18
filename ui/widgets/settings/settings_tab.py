@@ -272,7 +272,7 @@ class SettingsTab(QWidget):
 
     def get_system_printers(self):
         try: return QPrinterInfo.availablePrinterNames()
-        except: return []
+        except Exception: return []
 
     def _create_scroll_page(self):
         scroll = QScrollArea()

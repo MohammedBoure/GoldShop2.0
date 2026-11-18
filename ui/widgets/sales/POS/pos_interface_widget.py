@@ -238,13 +238,16 @@ class POSCheckoutDialog(QDialog):
         row.addStretch()
         return container, inp_amt, inp_rate, lbl_total
 
+    @staticmethod
+    def _parse_float(widget: QLineEdit) -> float:
+        try:
+            return float((widget.text() or "0").strip())
+        except (TypeError, ValueError):
+            return 0.0
+
     def _calc_devise_da(self, inp_amt: QLineEdit, inp_rate: QLineEdit) -> float:
         """Calcule montant_devise × taux → valeur DA."""
-        try: a = float(inp_amt.text() or 0)
-        except: a = 0.0
-        try: r = float(inp_rate.text() or 0)
-        except: r = 0.0
-        return a * r
+        return self._parse_float(inp_amt) * self._parse_float(inp_rate)
 
     def _refresh_devise_label(self, lbl: QLabel, symbol: str, accent: str, amount_da: float):
         lbl.setText(f"{symbol} {amount_da:,.2f} DA")
@@ -264,19 +267,11 @@ class POSCheckoutDialog(QDialog):
 
     def _get_oc_amount(self) -> float:
         """Retourne le montant en DA de l'or cassé (poids × prix/g)."""
-        try: w = float(self.inp_oc_weight.text() or 0)
-        except: w = 0.0
-        try: p = float(self.inp_oc_price.text() or 0)
-        except: p = 0.0
-        return w * p
+        return self._parse_float(self.inp_oc_weight) * self._parse_float(self.inp_oc_price)
 
     def _get_silver_amount(self) -> float:
         """Retourne le montant en DA de l'argent cassé (poids × prix/g)."""
-        try: w = float(self.inp_silver_weight.text() or 0)
-        except: w = 0.0
-        try: p = float(self.inp_silver_price.text() or 0)
-        except: p = 0.0
-        return w * p
+        return self._parse_float(self.inp_silver_weight) * self._parse_float(self.inp_silver_price)
 
     def _update_oc_and_cash(self):
         oc_amount = self._get_oc_amount()
@@ -323,8 +318,7 @@ class POSCheckoutDialog(QDialog):
         self.update_cash_auto()
 
     def update_cash_auto(self):
-        try: tpe = float(self.inp_tpe.text() or 0)
-        except: tpe = 0.0
+        tpe = self._parse_float(self.inp_tpe)
         oc_da     = self._get_oc_amount()
         silver_da = self._get_silver_amount()
         euro_da   = self._calc_devise_da(self.inp_euro_amt, self.inp_euro_rate)
@@ -334,30 +328,20 @@ class POSCheckoutDialog(QDialog):
             self.inp_cash.setText(f"{req_cash:.2f}")
 
     def get_payment_values(self):
-        try: cash = float(self.inp_cash.text() or 0)
-        except: cash = 0.0
-        try: tpe = float(self.inp_tpe.text() or 0)
-        except: tpe = 0.0
-        try: oc_weight = float(self.inp_oc_weight.text() or 0)
-        except: oc_weight = 0.0
-        try: oc_price = float(self.inp_oc_price.text() or 0)
-        except: oc_price = 0.0
+        cash = self._parse_float(self.inp_cash)
+        tpe = self._parse_float(self.inp_tpe)
+        oc_weight = self._parse_float(self.inp_oc_weight)
+        oc_price = self._parse_float(self.inp_oc_price)
         oc_amount = oc_weight * oc_price
 
-        try: silver_weight = float(self.inp_silver_weight.text() or 0)
-        except: silver_weight = 0.0
-        try: silver_price = float(self.inp_silver_price.text() or 0)
-        except: silver_price = 0.0
+        silver_weight = self._parse_float(self.inp_silver_weight)
+        silver_price = self._parse_float(self.inp_silver_price)
         silver_amount = silver_weight * silver_price
 
-        try: euro = float(self.inp_euro_amt.text() or 0)
-        except: euro = 0.0
-        try: taux_euro = float(self.inp_euro_rate.text() or 0)
-        except: taux_euro = 0.0
-        try: dollar = float(self.inp_dollar_amt.text() or 0)
-        except: dollar = 0.0
-        try: taux_dollar = float(self.inp_dollar_rate.text() or 0)
-        except: taux_dollar = 0.0
+        euro = self._parse_float(self.inp_euro_amt)
+        taux_euro = self._parse_float(self.inp_euro_rate)
+        dollar = self._parse_float(self.inp_dollar_amt)
+        taux_dollar = self._parse_float(self.inp_dollar_rate)
         obs = self.inp_obs.text().strip()
         vendeur_id = self.combo_vendeur.currentData()
         # cash, tpe, oc_weight(g), oc_price(DA/g), oc_amount(DA),
@@ -472,39 +456,54 @@ class POSInterfaceWidget(POSUIBuilder, POSClientManager, POSInventoryLoader, POS
 
         dialog = POSCheckoutDialog(self.manager, net_to_pay, client_name, self.session_info.get('user_id', 1), self.current_client_id, self)
         if dialog.exec() == QDialog.Accepted:
-            cash, tpe, oc_weight, oc_price, oc_amount, silver_weight, silver_price, silver_amount, euro, taux_euro, dollar, taux_dollar, vendeur_id, obs = dialog.get_payment_values()
+            try:
+                cash, tpe, oc_weight, oc_price, oc_amount, silver_weight, silver_price, silver_amount, euro, taux_euro, dollar, taux_dollar, vendeur_id, obs = dialog.get_payment_values()
 
-            journee = self.manager.cash_box.get_or_create_today_session(user_id=self.session_info.get('user_id', 1))
-            if not journee: return
-                
-            journee_id = journee['id']
+                current_uid = self.session_info.get('user_id', 1)
+                journee = self.manager.cash_box.get_or_create_today_session(user_id=current_uid)
+                if not journee:
+                    QMessageBox.critical(
+                        self,
+                        "Erreur de session",
+                        "Impossible d'ouvrir ou de récupérer la session de caisse du jour. Veuillez vérifier la connexion à la base de données.",
+                    )
+                    return
 
-            result = self.manager.sales.create_sale(
-                journee_id=journee_id,
-                client_id=self.current_client_id,
-                user_id=vendeur_id,
-                cart_items=self.cart_items,
-                total_amount=total_brut,
-                discount=self.calculated_discount_amount,
-                net_to_pay=net_to_pay,
-                cash_paid=cash,
-                tpe_paid=tpe,
-                old_gold_weight=oc_weight,
-                old_silver_weight=silver_weight,
-                old_silver_price=silver_price,
-                euro_paid=euro,
-                taux_change_euro=taux_euro,
-                dollar_paid=dollar,
-                taux_change_dollar=taux_dollar,
-                notes=obs
-            )
+                journee_id = journee['id']
 
-            if result.get("success"):
-                self.cart_items.clear()
-                self.update_totals()
-                if hasattr(self, 'refresh_cart'): self.refresh_cart()
-            else:
-                QMessageBox.critical(self, "Erreur", f"Erreur lors de l'enregistrement : {result.get('message')}")
+                result = self.manager.sales.create_sale(
+                    journee_id=journee_id,
+                    client_id=self.current_client_id,
+                    user_id=vendeur_id or current_uid,
+                    cart_items=self.cart_items,
+                    total_amount=total_brut,
+                    discount=self.calculated_discount_amount,
+                    net_to_pay=net_to_pay,
+                    cash_paid=cash,
+                    tpe_paid=tpe,
+                    old_gold_weight=oc_weight,
+                    old_silver_weight=silver_weight,
+                    old_silver_price=silver_price,
+                    euro_paid=euro,
+                    taux_change_euro=taux_euro,
+                    dollar_paid=dollar,
+                    taux_change_dollar=taux_dollar,
+                    notes=obs
+                )
+
+                if result.get("success"):
+                    self.cart_items.clear()
+                    self.update_totals()
+                    if hasattr(self, 'refresh_cart'): self.refresh_cart()
+                else:
+                    QMessageBox.critical(self, "Erreur", f"Erreur lors de l'enregistrement : {result.get('message')}")
+            except Exception as exc:
+                logging.exception("Erreur lors de l'encaissement POS: %s", exc)
+                QMessageBox.critical(
+                    self,
+                    "Erreur Critique",
+                    f"Une erreur inattendue est survenue lors de l'encaissement :\n{exc}",
+                )
 
     def open_quick_add_product(self, *args):
         from ui.dialogs.quick_add_product import QuickAddProductDialog
@@ -543,7 +542,16 @@ class POSInterfaceWidget(POSUIBuilder, POSClientManager, POSInventoryLoader, POS
                 remaining -= deduct
                 
                 if avail - deduct <= 0:
-                    self.manager.versements.cloture_versement(v['id'], journee_id=journee_id)
+                    self.manager.versements.cloture_versement(
+                        v['id'],
+                        journee_id=journee_id,
+                        user_id=self.session_info.get('user_id', 1),
+                    )
                     
         except Exception as e:
-            print(f"Erreur deduction versement: {e}")
+            logging.exception("Erreur deduction versement: %s", e)
+            QMessageBox.warning(
+                self,
+                "Erreur Versement",
+                f"Impossible de déduire le versement pour la facture {receipt_number} :\n{e}",
+            )

@@ -270,7 +270,7 @@ class PermissionsDialog(QDialog):
     def set_permissions_json(self, json_str):
         self.tree.blockSignals(True)
         try: perms = set(json.loads(json_str) if json_str else [])
-        except: perms = set()
+        except (TypeError, ValueError, json.JSONDecodeError): perms = set()
         for i in range(self.tree.topLevelItemCount()):
             self._apply(self.tree.topLevelItem(i), perms)
         self.tree.blockSignals(False)

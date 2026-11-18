@@ -1,5 +1,6 @@
 # ui/dialogs/close_session_dialog.py
 
+import logging
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QPushButton, QLineEdit, QHBoxLayout,
@@ -60,7 +61,8 @@ class CloseSessionDialog(QDialog):
             try:
                 bal = self.manager.cash_box.get_balance(location_id=self.location_id, currency_id=c['id'])
                 self.expected_totals[c['id']] = float(bal)
-            except:
+            except (TypeError, ValueError, Exception) as exc:
+                logging.warning("Session balance lookup failed for currency %s: %s", c.get('id'), exc)
                 self.expected_totals[c['id']] = 0.0
 
         self.count_spinboxes = {}

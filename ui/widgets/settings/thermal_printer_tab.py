@@ -3,6 +3,7 @@
 import os
 import io
 import copy
+import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout, 
     QComboBox, QCheckBox, QTextEdit, QPushButton, QLineEdit, QLabel, QFileDialog,
@@ -133,7 +134,7 @@ class ThermalPrinterTab(QWidget):
 
     def get_system_printers(self):
         try: return QPrinterInfo.availablePrinterNames()
-        except: return []
+        except Exception: return []
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -480,7 +481,9 @@ class ThermalPrinterTab(QWidget):
             img = qr.make_image(fill_color="black", back_color="white").convert("RGBA")
             qimg = QImage(img.tobytes("raw", "RGBA"), img.size[0], img.size[1], QImage.Format_RGBA8888)
             return qimg.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        except: return None
+        except Exception as exc:
+            logging.warning("Thermal QR generation error: %s", exc)
+            return None
 
     def generate_barcode_image(self, data, width, height, with_text=False):
         try:
@@ -492,7 +495,9 @@ class ThermalPrinterTab(QWidget):
             fp = io.BytesIO()
             code.write(fp, options); fp.seek(0)
             return QImage.fromData(fp.read()).scaled(width, height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-        except: return None
+        except Exception as exc:
+            logging.warning("Thermal barcode generation error: %s", exc)
+            return None
 
     # ==========================================
     # CORE DRAWING ENGINE

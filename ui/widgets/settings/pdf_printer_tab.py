@@ -4,6 +4,7 @@ import os
 import io
 import base64
 import copy
+import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QGroupBox, QFormLayout, 
     QComboBox, QSpinBox, QCheckBox, QPushButton, QLabel, QColorDialog, 
@@ -465,7 +466,7 @@ class PdfPrinterTab(QWidget):
                   self.inp_v_summary_remaining_weight,
                   self.spin_item_bc_w, self.spin_item_bc_h, self.cmb_inv_bc_mode]: 
             try: w.valueChanged.connect(self.generate_preview)
-            except: w.currentTextChanged.connect(self.generate_preview) if isinstance(w, QComboBox) else w.textChanged.connect(self.generate_preview)
+            except AttributeError: w.currentTextChanged.connect(self.generate_preview) if isinstance(w, QComboBox) else w.textChanged.connect(self.generate_preview)
             
         for chk in [self.chk_rc, self.chk_hist, self.chk_weight, self.chk_item_note, self.chk_col_code, self.chk_show_qr, self.chk_reste_weight, self.chk_versement_items_section, self.chk_versement_payment_rate]:
             chk.stateChanged.connect(self.generate_preview)
@@ -782,7 +783,9 @@ class PdfPrinterTab(QWidget):
             img = qr.make_image(fill_color="black", back_color="white")
             fp = io.BytesIO(); img.save(fp, format="PNG")
             return f"data:image/png;base64,{base64.b64encode(fp.getvalue()).decode()}"
-        except: return ""
+        except Exception as exc:
+            logging.warning("Printer asset generation error: %s", exc)
+            return ""
 
     def get_base64_barcode(self, data, height=10):
         try:
@@ -792,7 +795,9 @@ class PdfPrinterTab(QWidget):
             options = {'module_width': 0.2, 'module_height': height, 'font_size': 0, 'quiet_zone': 1.0}
             fp = io.BytesIO(); CODE(str(data), writer=writer).write(fp, options)
             return f"data:image/png;base64,{base64.b64encode(fp.getvalue()).decode()}"
-        except: return ""
+        except Exception as exc:
+            logging.warning("Printer asset generation error: %s", exc)
+            return ""
 
     def update_config_dict(self):
         self._write_widgets_to_config()

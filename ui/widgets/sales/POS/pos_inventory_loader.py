@@ -1,3 +1,4 @@
+import logging
 from PySide6.QtWidgets import QMessageBox, QDialog
 from PySide6.QtCore import Qt, QStringListModel, QEvent, QTimer
 
@@ -210,13 +211,12 @@ class POSInventoryLoader:
         try:
             with self.manager.db.get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SET SESSION query_cache_type = OFF")
                 cursor.execute("SELECT 1 FROM Inventory WHERE barcode = %s FOR UPDATE", (barcode,))
                 cursor.fetchall() # 🟢 قراءة النتيجة لمنع بقائها معلقة
                 while cursor.nextset(): pass # 🟢 تنظيف أي نتائج أخرى
                 conn.commit()
-        except:
-            pass
+        except Exception as exc:
+            logging.debug("Fresh barcode lock skipped: %s", exc)
         
         # 1. جلب المنتج من خلال الـ Manager
         item = self.manager.inventory.get_item_by_barcode(barcode)

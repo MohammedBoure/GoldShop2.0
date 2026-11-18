@@ -1,5 +1,15 @@
 import logging
 from datetime import datetime
+from decimal import Decimal
+from database.decimal_utils import (
+    WEIGHT_TOLERANCE,
+    ZERO,
+    quantize_money,
+    quantize_weight,
+    to_decimal,
+    to_money_float,
+    to_weight_float,
+)
 from database.profit_calculator import (
     direct_sale_revenues,
     item_cost_da,
@@ -15,6 +25,60 @@ class SalesManager:
     """
     def __init__(self, db_instance):
         self.db = db_instance
+
+    @staticmethod
+    def _next_receipt_number(cursor) -> str:
+        """توليد رقم فاتورة يومي متسلسل ومحمي بقفل المعاملة لتعدد الأجهزة."""
+        date_str = datetime.now().strftime("%Y%m%d")
+        seq_key = f"daily_receipt_seq_{date_str}"
+        lock_acquired = False
+
+        try:
+            cursor.execute("SELECT GET_LOCK('goldshop_receipt_seq_lock', 10) AS acquired")
+            lock_row = cursor.fetchone() or {}
+            lock_acquired = bool(lock_row.get("acquired"))
+
+            stored_seq = 0
+            has_metadata = True
+            try:
+                cursor.execute(
+                    "INSERT IGNORE INTO AppMetadata (meta_key, meta_value) VALUES (%s, '0')",
+                    (seq_key,),
+                )
+                cursor.execute(
+                    "SELECT meta_value FROM AppMetadata WHERE meta_key = %s FOR UPDATE",
+                    (seq_key,),
+                )
+                meta_row = cursor.fetchone() or {}
+                try:
+                    stored_seq = int(meta_row.get("meta_value") or 0)
+                except (TypeError, ValueError):
+                    stored_seq = 0
+            except Exception:
+                has_metadata = False
+
+            cursor.execute(
+                "SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(receipt_number, '-', -1) AS UNSIGNED)), 0) AS max_seq "
+                "FROM Sales WHERE receipt_number LIKE %s FOR UPDATE",
+                (f"FAC-{date_str}-%",),
+            )
+            max_row = cursor.fetchone() or {}
+            existing_max = int(max_row.get("max_seq") or 0)
+            next_seq = max(stored_seq, existing_max) + 1
+
+            if has_metadata:
+                cursor.execute(
+                    "UPDATE AppMetadata SET meta_value = %s WHERE meta_key = %s",
+                    (str(next_seq), seq_key),
+                )
+            return f"FAC-{date_str}-{next_seq:04d}"
+        finally:
+            if lock_acquired:
+                try:
+                    cursor.execute("SELECT RELEASE_LOCK('goldshop_receipt_seq_lock')")
+                    cursor.fetchall()
+                except Exception:
+                    pass
 
     # ============================================================
     # 1. إنشاء عملية البيع (تسجيل الفاتورة + خصم المخزون)
@@ -34,10 +98,7 @@ class SalesManager:
             cursor = conn.cursor(dictionary=True)
             conn.autocommit = False
 
-            date_str = datetime.now().strftime("%Y%m%d")
-            cursor.execute("SELECT COUNT(*) as cnt FROM Sales WHERE DATE(created_at) = CURDATE()")
-            count_today = cursor.fetchone()['cnt'] + 1
-            receipt_number = f"FAC-{date_str}-{count_today:04d}"
+            receipt_number = self._next_receipt_number(cursor)
 
             sale_query = """
                 INSERT INTO Sales (
@@ -50,9 +111,19 @@ class SalesManager:
             """
             cursor.execute(sale_query, (
                 receipt_number, journee_id, client_id, user_id,
-                total_amount, discount, net_to_pay, cash_paid, tpe_paid,
-                old_gold_weight, old_silver_weight, old_silver_price, impos_weight,
-                euro_paid, taux_change_euro, dollar_paid, taux_change_dollar,
+                to_money_float(total_amount),
+                to_money_float(discount),
+                to_money_float(net_to_pay),
+                to_money_float(cash_paid),
+                to_money_float(tpe_paid),
+                to_weight_float(old_gold_weight),
+                to_weight_float(old_silver_weight),
+                to_money_float(old_silver_price),
+                to_weight_float(impos_weight),
+                to_money_float(euro_paid),
+                to_money_float(taux_change_euro),
+                to_money_float(dollar_paid),
+                to_money_float(taux_change_dollar),
                 notes
             ))
             sale_id = cursor.lastrowid
@@ -63,10 +134,11 @@ class SalesManager:
                 barcode = item.get('barcode', '')
                 name = item.get('name', 'Article inconnu')
                 
-                sold_w = float(item.get('cart_sold_weight', 0))
+                sold_w_dec = quantize_weight(item.get('cart_sold_weight', 0))
+                sold_w = float(sold_w_dec)
                 sold_q = int(item.get('cart_sold_qty', 1))
-                unit_price = float(item.get('cart_unit_price', 0))
-                total_price = float(item.get('cart_line_total', 0))
+                unit_price = to_money_float(item.get('cart_unit_price', 0))
+                total_price = to_money_float(item.get('cart_line_total', 0))
                 
                 custom_note = str(item.get('custom_note') or '').strip()[:255]
                 metal_type_id = item.get('metal_type_id')
@@ -114,12 +186,13 @@ class SalesManager:
                         if status == 'Sold' and remaining_quantity <= 0:
                             raise ValueError("Cet article est déjà totalement vendu.")
                     else:
-                        remaining_weight = float(inventory.get("remaining_weight") if inventory.get("remaining_weight") is not None else inventory.get("weight") or 0.0)
+                        rem_w_raw = inventory.get("remaining_weight") if inventory.get("remaining_weight") is not None else inventory.get("weight")
+                        remaining_weight_dec = quantize_weight(rem_w_raw)
                         if active_versement_count > 0:
                             raise ValueError("Cet article pondéré est actuellement réservé dans un versement.")
-                        if sold_w <= 0 or sold_w > remaining_weight + 0.005:
+                        if sold_w_dec <= ZERO or sold_w_dec > remaining_weight_dec + WEIGHT_TOLERANCE:
                             raise ValueError("Le poids demandé dépasse le poids disponible.")
-                        if status == 'Sold' and remaining_weight <= 0.005:
+                        if status == 'Sold' and remaining_weight_dec <= WEIGHT_TOLERANCE:
                             raise ValueError("Cet article est déjà totalement vendu.")
 
                 if not metal_category or metal_category not in ('GOLD', 'SILVER'):
@@ -520,24 +593,24 @@ class SalesManager:
                 """, (journee_id,))
                 awo_totals = cursor.fetchone() or {}
 
-                total_oc_gold = float((sales_totals.get('total_oc_gold') or 0) + (vp_totals.get('total_oc_gold') or 0) + (awo_totals.get('total_oc_gold') or 0))
-                total_oc_silver = float((sales_totals.get('total_oc_silver') or 0) + (vp_totals.get('total_oc_silver') or 0) + (awo_totals.get('total_oc_silver') or 0))
-                total_ps_gold = float(weight_totals.get('total_p_s_gold') or 0)
-                total_ps_silver = float(weight_totals.get('total_p_s_silver') or 0)
-                total_ps = float((weight_totals.get('total_p_s') or 0) + (vp_totals.get('total_p_s') or 0))
+                total_oc_gold = to_weight_float(to_decimal(sales_totals.get('total_oc_gold')) + to_decimal(vp_totals.get('total_oc_gold')) + to_decimal(awo_totals.get('total_oc_gold')))
+                total_oc_silver = to_weight_float(to_decimal(sales_totals.get('total_oc_silver')) + to_decimal(vp_totals.get('total_oc_silver')) + to_decimal(awo_totals.get('total_oc_silver')))
+                total_ps_gold = to_weight_float(weight_totals.get('total_p_s_gold'))
+                total_ps_silver = to_weight_float(weight_totals.get('total_p_s_silver'))
+                total_ps = to_weight_float(to_decimal(weight_totals.get('total_p_s')) + to_decimal(vp_totals.get('total_p_s')))
 
                 return {
-                    'total_recette': float((sales_totals.get('total_recette') or 0) + (vp_totals.get('total_recette') or 0) + (awo_totals.get('total_recette') or 0)),
-                    'total_tpe': float((sales_totals.get('total_tpe') or 0) + (vp_totals.get('total_tpe') or 0) + (awo_totals.get('total_tpe') or 0)),
+                    'total_recette': to_money_float(to_decimal(sales_totals.get('total_recette')) + to_decimal(vp_totals.get('total_recette')) + to_decimal(awo_totals.get('total_recette'))),
+                    'total_tpe': to_money_float(to_decimal(sales_totals.get('total_tpe')) + to_decimal(vp_totals.get('total_tpe')) + to_decimal(awo_totals.get('total_tpe'))),
                     'total_oc': total_oc_gold,
                     'total_oc_gold': total_oc_gold,
                     'total_oc_silver': total_oc_silver,
-                    'total_euro': float((sales_totals.get('total_euro') or 0) + (vp_totals.get('total_euro') or 0)),
-                    'total_dollar': float((sales_totals.get('total_dollar') or 0) + (vp_totals.get('total_dollar') or 0)),
+                    'total_euro': to_money_float(to_decimal(sales_totals.get('total_euro')) + to_decimal(vp_totals.get('total_euro'))),
+                    'total_dollar': to_money_float(to_decimal(sales_totals.get('total_dollar')) + to_decimal(vp_totals.get('total_dollar'))),
                     'total_p_s': total_ps,
                     'total_p_s_gold': total_ps_gold,
                     'total_p_s_silver': total_ps_silver,
-                    'total_impos': float(sales_totals.get('total_impos') or 0)
+                    'total_impos': to_weight_float(sales_totals.get('total_impos'))
                 }
         except Exception as e:
             logging.error(f"Erreur get_daily_totals: {e}")
@@ -662,23 +735,27 @@ class SalesManager:
             WHERE vi.versement_id = %s AND vi.item_status != 'ANNULE'
         """, (versement_id,))
         source_items = cursor.fetchall()
-        items_brut_total = sum(
-            float(it.get("selling_price") or 0.0)
-            * (max(1, int(it.get("reserved_quantity") or 1)) if str(it.get("item_type") or "WEIGHT").upper() == "PIECE" else 1)
-            for it in source_items
+        items_brut_dec = sum(
+            (
+                to_decimal(it.get("selling_price"))
+                * (max(1, int(it.get("reserved_quantity") or 1)) if str(it.get("item_type") or "WEIGHT").upper() == "PIECE" else 1)
+                for it in source_items
+            ),
+            ZERO,
         )
-        if items_brut_total <= 0:
-            items_brut_total = sum(float(it.get("total_price_da") or 0.0) for it in (sale.get("items") or []))
+        if items_brut_dec <= ZERO:
+            items_brut_dec = sum((to_decimal(it.get("total_price_da")) for it in (sale.get("items") or [])), ZERO)
+        items_brut_total = to_money_float(items_brut_dec)
 
         sale["source_versement_id"] = versement_id
         summary = build_versement_payment_summary(payments, items_brut_total=items_brut_total)
         sale["versement_payment_summary"] = summary
         sale["payments_history"] = summary.get("payment_history", [])
 
-        versement_remise = float(summary.get("total_remise_da") or 0.0)
-        current_discount = float(sale.get("discount_da") or 0.0)
+        versement_remise = to_decimal(summary.get("total_remise_da"))
+        current_discount = to_decimal(sale.get("discount_da"))
         if is_final_versement_invoice:
-            sale["discount_da"] = versement_remise
+            sale["discount_da"] = float(quantize_money(versement_remise))
             sale["total_amount_da"] = summary["total_brut_da"]
             sale["net_to_pay_da"] = summary["net_to_pay_da"]
             sale["cash_paid_da"] = summary["cash_paid_da"]
@@ -687,12 +764,12 @@ class SalesManager:
             sale["impos_weight_g"] = summary["deducted_weight_g"]
         else:
             final_discount = max(current_discount, versement_remise)
-            sale["discount_da"] = final_discount
-            if final_discount > 0:
-                cur_net = float(sale.get("net_to_pay_da") or sale.get("total_amount_da") or 0.0)
-                cur_brut = float(sale.get("total_amount_da") or 0.0)
+            sale["discount_da"] = float(quantize_money(final_discount))
+            if final_discount > ZERO:
+                cur_net = to_decimal(sale.get("net_to_pay_da") if sale.get("net_to_pay_da") is not None else sale.get("total_amount_da"))
+                cur_brut = to_decimal(sale.get("total_amount_da"))
                 if cur_brut <= cur_net:
-                    sale["total_amount_da"] = cur_net + final_discount
+                    sale["total_amount_da"] = float(quantize_money(cur_net + final_discount))
 
         revenue_by_inventory = versement_revenues_by_inventory(source_items, payments)
         for item in sale.get("items") or []:
@@ -713,20 +790,23 @@ class SalesManager:
             if has_versement_source
             else direct_sale_revenues(items, sale.get("discount_da"))
         )
-        total_profit = total_cost = total_revenue = 0.0
+        total_profit = ZERO
+        total_cost = ZERO
+        total_revenue = ZERO
         for item, revenue in zip(items, revenues):
-            cost = item_cost_da(item)
-            profit = revenue - cost
-            item["realized_revenue_da"] = revenue
-            item["cost_da"] = cost
-            item["profit_da"] = profit
-            total_revenue += revenue
-            total_cost += cost
-            total_profit += profit
+            rev_dec = to_decimal(revenue)
+            cost_dec = to_decimal(item_cost_da(item))
+            profit_dec = rev_dec - cost_dec
+            item["realized_revenue_da"] = float(rev_dec)
+            item["cost_da"] = float(cost_dec)
+            item["profit_da"] = float(profit_dec)
+            total_revenue += rev_dec
+            total_cost += cost_dec
+            total_profit += profit_dec
 
-        sale["total_realized_revenue_da"] = total_revenue
-        sale["total_cost_da"] = total_cost
-        sale["total_profit_da"] = total_profit
+        sale["total_realized_revenue_da"] = float(total_revenue)
+        sale["total_cost_da"] = float(total_cost)
+        sale["total_profit_da"] = float(total_profit)
 
     def get_sale_details(self, sale_id: int) -> dict:
         try:
@@ -795,49 +875,10 @@ class SalesManager:
                     continue
                 day = row["sale_date"]
                 entry = by_day.setdefault(day, {"profit_da": 0.0, "revenue_da": 0.0, "cost_da": 0.0})
-                entry["profit_da"] += number(sale.get("total_profit_da"))
-                entry["revenue_da"] += number(sale.get("total_realized_revenue_da"))
-                entry["cost_da"] += number(sale.get("total_cost_da"))
+                entry["profit_da"] = to_money_float(to_decimal(entry["profit_da"]) + to_decimal(sale.get("total_profit_da")))
+                entry["revenue_da"] = to_money_float(to_decimal(entry["revenue_da"]) + to_decimal(sale.get("total_realized_revenue_da")))
+                entry["cost_da"] = to_money_float(to_decimal(entry["cost_da"]) + to_decimal(sale.get("total_cost_da")))
             return by_day
         except Exception as e:
             logging.error(f"Erreur get_monthly_profit_by_day: {e}")
             return {}
-
-    def update_sale_notes(self, sale_id: int, notes: str) -> bool:
-        """Mettre à jour la note / observation globale de la vente"""
-        try:
-            with self.db.get_db_connection() as conn:
-                cursor = conn.cursor()
-                query = "UPDATE Sales SET notes = %s WHERE id = %s"
-                cursor.execute(query, (notes, sale_id))
-                conn.commit()
-                return True
-        except Exception as e:
-            logging.error(f"Erreur update_sale_notes: {e}")
-            return False
-
-    def update_sale_item_notes(self, item_id: int, notes: str) -> bool:
-        """Mettre à jour la note / observation d'un article de vente"""
-        try:
-            with self.db.get_db_connection() as conn:
-                cursor = conn.cursor()
-                query = "UPDATE SaleItems SET custom_note = %s WHERE id = %s"
-                cursor.execute(query, (notes, item_id))
-                conn.commit()
-                return True
-        except Exception as e:
-            logging.error(f"Erreur update_sale_item_notes: {e}")
-            return False
-
-    def update_sale_seller(self, sale_id: int, user_id: int) -> bool:
-        """Mettre à jour le vendeur d'une vente"""
-        try:
-            with self.db.get_db_connection() as conn:
-                cursor = conn.cursor()
-                query = "UPDATE Sales SET user_id = %s WHERE id = %s"
-                cursor.execute(query, (user_id, sale_id))
-                conn.commit()
-                return True
-        except Exception as e:
-            logging.error(f"Erreur update_sale_seller: {e}")
-            return False

@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from decimal import Decimal
 from typing import Any, Iterable
+
+from database.decimal_utils import CONVERSION_TOLERANCE, ZERO, to_decimal
 
 
 _VRS_REFERENCE_RE = re.compile(r"\bVRS[-\s]?(\d+)\b", re.IGNORECASE)
 
 
 def number(value: Any) -> float:
-    try:
-        return float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
+    return float(to_decimal(value))
 
 
 def source_versement_id(receipt_number: Any = "", notes: Any = "") -> int | None:
@@ -27,28 +27,27 @@ def source_versement_id(receipt_number: Any = "", notes: Any = "") -> int | None
 
 
 def payment_amount_da(payment: dict[str, Any]) -> float:
-    """Return the DA value actually paid by the customer for one payment.
-
-    The Versement dialog fills montant_da with the DA equivalent when a
-    payment uses euro, dollar, or old gold. That value must therefore not be
-    added a second time. A deliberately entered cash amount remains
-    distinguishable because it differs from the computed equivalent; in that
-    case both the cash amount and foreign-currency equivalent are counted.
-    """
-    declared_da = number(payment.get("montant_da"))
-    tpe_da = number(payment.get("tpe_da"))
-    euro_equivalent = number(payment.get("montant_euro")) * number(payment.get("taux_change_euro"))
-    dollar_equivalent = number(payment.get("montant_dollar")) * number(payment.get("taux_change_dollar"))
-    old_gold_equivalent = number(payment.get("or_casse_g", payment.get("old_gold_weight_g"))) * number(payment.get("prix_gramme_jour_da", payment.get("old_gold_price_da", payment.get("gold_price_da"))))
-    old_silver_equivalent = number(payment.get("argent_casse_g", payment.get("old_silver_weight_g"))) * number(payment.get("prix_gramme_argent_jour_da", payment.get("old_silver_price_da", payment.get("silver_price_da"))))
+    """Return the DA value actually paid by the customer for one payment."""
+    declared_da = to_decimal(payment.get("montant_da"))
+    tpe_da = to_decimal(payment.get("tpe_da"))
+    euro_equivalent = to_decimal(payment.get("montant_euro")) * to_decimal(payment.get("taux_change_euro"))
+    dollar_equivalent = to_decimal(payment.get("montant_dollar")) * to_decimal(payment.get("taux_change_dollar"))
+    old_gold_equivalent = (
+        to_decimal(payment.get("or_casse_g", payment.get("old_gold_weight_g")))
+        * to_decimal(payment.get("prix_gramme_jour_da", payment.get("old_gold_price_da", payment.get("gold_price_da"))))
+    )
+    old_silver_equivalent = (
+        to_decimal(payment.get("argent_casse_g", payment.get("old_silver_weight_g")))
+        * to_decimal(payment.get("prix_gramme_argent_jour_da", payment.get("old_silver_price_da", payment.get("silver_price_da"))))
+    )
     computed_equivalent = euro_equivalent + dollar_equivalent + old_gold_equivalent + old_silver_equivalent
 
-    if computed_equivalent > 0 and abs(declared_da - computed_equivalent) <= 0.01:
+    if computed_equivalent > ZERO and abs(declared_da - computed_equivalent) <= CONVERSION_TOLERANCE:
         main_payment = declared_da
     else:
         main_payment = declared_da + euro_equivalent + dollar_equivalent
 
-    return main_payment + tpe_da
+    return float(main_payment + tpe_da)
 
 
 def allocation_shares(records: Iterable[dict[str, Any]]) -> list[float]:
@@ -57,78 +56,68 @@ def allocation_shares(records: Iterable[dict[str, Any]]) -> list[float]:
     if not rows:
         return []
 
-    bases: list[float] = []
+    bases: list[Decimal] = []
     for row in rows:
-        weight = number(row.get("sold_weight_g", row.get("inventory_weight", row.get("weight"))))
-        quantity = number(row.get("sold_quantity", row.get("inventory_quantity", row.get("quantity"))))
-        bases.append(weight if weight > 0 else max(0.0, quantity))
+        weight = to_decimal(row.get("sold_weight_g", row.get("inventory_weight", row.get("weight"))))
+        quantity = to_decimal(row.get("sold_quantity", row.get("inventory_quantity", row.get("quantity"))))
+        bases.append(weight if weight > ZERO else max(ZERO, quantity))
 
-    total = sum(bases)
-    if total > 0:
-        return [basis / total for basis in bases]
-    return [1.0 / len(rows)] * len(rows)
+    total = sum(bases, ZERO)
+    if total > ZERO:
+        return [float(basis / total) for basis in bases]
+    share = Decimal(1) / Decimal(len(rows))
+    return [float(share)] * len(rows)
 
 
 def item_cost_da(item: dict[str, Any]) -> float:
-    """Return the historical acquisition cost of a sold item.
-
-    ``Inventory.initial_cost`` is retained when a product's current gold cost
-    is edited. It is therefore the primary source. Older records without it
-    fall back to the current cost values as the best available legacy value.
-    """
+    """Return the historical acquisition cost of a sold item."""
     item_type = str(item.get("item_type") or "WEIGHT").upper()
-    initial_cost = number(item.get("inventory_initial_cost", item.get("initial_cost")))
-    sold_weight = number(item.get("sold_weight_g"))
-    sold_quantity = number(item.get("sold_quantity"))
-    inventory_weight = number(item.get("inventory_weight", item.get("weight")))
-    inventory_quantity = number(item.get("inventory_quantity", item.get("quantity")))
+    initial_cost = to_decimal(item.get("inventory_initial_cost", item.get("initial_cost")))
+    sold_weight = to_decimal(item.get("sold_weight_g"))
+    sold_quantity = to_decimal(item.get("sold_quantity"))
+    inventory_weight = to_decimal(item.get("inventory_weight", item.get("weight")))
+    inventory_quantity = to_decimal(item.get("inventory_quantity", item.get("quantity")))
 
-    if initial_cost > 0:
-        if item_type == "WEIGHT" and inventory_weight > 0:
-            return initial_cost * sold_weight / inventory_weight
-        if item_type != "WEIGHT" and inventory_quantity > 0:
-            return initial_cost * sold_quantity / inventory_quantity
-        if item_type == "WEIGHT" and sold_weight > 0:
-            return initial_cost
-        if item_type != "WEIGHT" and sold_quantity > 0:
-            return initial_cost
+    if initial_cost > ZERO:
+        if item_type == "WEIGHT" and inventory_weight > ZERO:
+            return float(initial_cost * sold_weight / inventory_weight)
+        if item_type != "WEIGHT" and inventory_quantity > ZERO:
+            return float(initial_cost * sold_quantity / inventory_quantity)
+        if item_type == "WEIGHT" and sold_weight > ZERO:
+            return float(initial_cost)
+        if item_type != "WEIGHT" and sold_quantity > ZERO:
+            return float(initial_cost)
 
-    cost_per_unit = number(item.get("metal_cost_per_gram", item.get("m_cost"))) + number(
+    cost_per_unit = to_decimal(item.get("metal_cost_per_gram", item.get("m_cost"))) + to_decimal(
         item.get("labor_cost_per_gram", item.get("l_cost"))
     )
-    return cost_per_unit * (sold_weight if item_type == "WEIGHT" else sold_quantity)
+    return float(cost_per_unit * (sold_weight if item_type == "WEIGHT" else sold_quantity))
 
 
 def direct_sale_revenues(items: Iterable[dict[str, Any]], discount_da: Any) -> list[float]:
     """Allocate a sale-level discount to its item revenues."""
     rows = list(items or [])
-    gross = [number(row.get("total_price_da", row.get("cart_line_total"))) for row in rows]
-    total_gross = sum(gross)
-    if total_gross <= 0:
-        return gross
-    discount = max(0.0, min(number(discount_da), total_gross))
-    return [value - discount * value / total_gross for value in gross]
+    gross = [to_decimal(row.get("total_price_da", row.get("cart_line_total"))) for row in rows]
+    total_gross = sum(gross, ZERO)
+    if total_gross <= ZERO:
+        return [float(v) for v in gross]
+    discount = max(ZERO, min(to_decimal(discount_da), total_gross))
+    return [float(value - (discount * value / total_gross)) for value in gross]
 
 
 def versement_revenues_by_inventory(
     source_items: Iterable[dict[str, Any]], payments: Iterable[dict[str, Any]]
 ) -> dict[Any, float]:
-    """Map actual Versement payments to inventory products.
-
-    A targeted payment follows its linked Versement item. A dossier-level
-    payment is distributed only across non-cancelled products by weight (or
-    quantity when no weight exists). A remise is deliberately excluded: it is
-    not money received and must not inflate realised profit.
-    """
+    """Map actual Versement payments to inventory products."""
     products = [row for row in (source_items or []) if row.get("inventory_id") is not None]
     if not products:
         return {}
 
-    result: dict[Any, float] = defaultdict(float)
+    result: dict[Any, Decimal] = defaultdict(lambda: ZERO)
     valid_inventory_ids = {row.get("inventory_id") for row in products}
-    unassigned = 0.0
+    unassigned = ZERO
     for payment in payments or []:
-        amount = payment_amount_da(payment)
+        amount = to_decimal(payment_amount_da(payment))
         target_inventory_id = payment.get("payment_inventory_id")
         if target_inventory_id in valid_inventory_ids:
             result[target_inventory_id] += amount
@@ -137,5 +126,5 @@ def versement_revenues_by_inventory(
 
     if unassigned:
         for row, share in zip(products, allocation_shares(products)):
-            result[row.get("inventory_id")] += unassigned * share
-    return dict(result)
+            result[row.get("inventory_id")] += unassigned * to_decimal(share)
+    return {k: float(v) for k, v in result.items()}

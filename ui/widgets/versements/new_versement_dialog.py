@@ -1205,7 +1205,8 @@ class NewVersementDialog(QDialog):
                     if client:
                         self.btn_select_client.setText(f"👤 Client : {client['name']}")
                         self.btn_select_client.setStyleSheet("background-color: #e8f7f4; color: #075f58; border: 1px solid #0f8f83; font-weight: bold; font-size: 15px; padding: 10px; border-radius: 6px;")
-            except: pass
+            except Exception as exc:
+                logging.warning("Client lookup error in NewVersementDialog: %s", exc)
         self.inp_barcode.setFocus()
 
     def save_versement(self):
